@@ -55,7 +55,7 @@ Project skills automate the rest: `/run-stack`, `/db-reset`, `/verify-api`, `/re
 - [x] Phase 1 — Server core
 - [x] Phase 2 — Web UI
 - [x] Phase 3 — Desktop app
-- [ ] Phase 4 — Terminal recorder
+- [x] Phase 4 — Terminal recorder
 - [ ] Phase 5 — Packaging, deploy & docs
 
 Full plan: `/Users/justin/.claude/plans/can-you-rebuild-me-humming-taco.md`.

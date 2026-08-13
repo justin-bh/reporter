@@ -1,0 +1,31 @@
+{
+  "name": "@reporter/term",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "reporter-term — record terminal sessions and upload them as evidence",
+  "bin": {
+    "reporter-term": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "@reporter/api-client": "workspace:*",
+    "@reporter/shared": "workspace:*",
+    "commander": "^13.0.0",
+    "env-paths": "^3.0.0",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "esbuild": "^0.24.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
