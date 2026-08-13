@@ -1,0 +1,87 @@
+/*
+ * reporter design tokens — the single source of color/shape/typography truth.
+ * Semantic roles only; app code references these (via the Tailwind theme), never
+ * raw hex. Light is the bare :root default; dark is applied either explicitly via
+ * [data-theme="dark"] or by system preference when no explicit theme is set.
+ */
+
+:root {
+  /* Surfaces */
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e2e5ea;
+
+  /* Text */
+  --text: #1a1d23;
+  --text-muted: #5b6472;
+
+  /* Accent (teal) */
+  --accent: #0e8a8a;
+  --accent-hover: #0b7373;
+  --accent-contrast: #ffffff;
+
+  /* Status */
+  --success: #1f9d55;
+  --warning: #c77700;
+  --danger: #d64545;
+  --danger-hover: #b83a3a;
+  --info: #2d7ff9;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 8px 30px rgba(16, 22, 34, 0.12);
+  --ring: 0 0 0 2px var(--accent);
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0e1116;
+  --surface: #171b22;
+  --surface-2: #1f242d;
+  --border: #2a303a;
+
+  --text: #e6e9ef;
+  --text-muted: #9aa4b2;
+
+  --accent: #2dd4bf;
+  --accent-hover: #4fe0cf;
+  --accent-contrast: #04211f;
+
+  --success: #3ddc84;
+  --warning: #f0b429;
+  --danger: #ff6b6b;
+  --danger-hover: #ff8585;
+  --info: #5ea2ff;
+
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0e1116;
+    --surface: #171b22;
+    --surface-2: #1f242d;
+    --border: #2a303a;
+
+    --text: #e6e9ef;
+    --text-muted: #9aa4b2;
+
+    --accent: #2dd4bf;
+    --accent-hover: #4fe0cf;
+    --accent-contrast: #04211f;
+
+    --success: #3ddc84;
+    --warning: #f0b429;
+    --danger: #ff6b6b;
+    --danger-hover: #ff8585;
+    --info: #5ea2ff;
+
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  }
+}

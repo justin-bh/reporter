@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+out
+coverage
+pnpm-lock.yaml
+apps/server/prisma/migrations
+*.cast

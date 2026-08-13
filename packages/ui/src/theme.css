@@ -1,0 +1,64 @@
+/*
+ * The stylesheet both the web app and the Electron renderer import. Pulls in
+ * Tailwind v4, the design tokens, and maps the tokens to Tailwind theme
+ * variables so utilities like `bg-surface`, `text-muted`, `text-accent`,
+ * `rounded-card` resolve to reporter's semantic roles.
+ *
+ * Consumers must include reporter's UI source in their Tailwind content scan,
+ * e.g. `@source "../../packages/ui/src";` alongside their own `@source`.
+ */
+@import 'tailwindcss';
+@import './tokens.css';
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-input: var(--radius-sm);
+  --radius-card: var(--radius);
+  --radius-panel: var(--radius-lg);
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  *:focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+    border-radius: var(--radius-sm);
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
+  }
+}

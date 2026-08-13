@@ -1,0 +1,120 @@
+import type {
+  CheckConnectionResult,
+  CreateEvidenceInput,
+  CreateOperationInput,
+  CreateTagInput,
+  Evidence,
+  Operation,
+  Tag,
+} from '@reporter/shared';
+import { buildAuthHeaders } from './sign.js';
+import { buildMultipart, type MultipartFile } from './multipart.js';
+
+export interface ReporterClientOptions {
+  /** Base server URL, e.g. `http://reporter.lan:8080` (no trailing slash needed). */
+  baseUrl: string;
+  accessKey: string;
+  /** Secret key, base64-encoded, exactly as issued by the server. */
+  secretKey: string;
+  /** Optional fetch override (for tests). Defaults to global `fetch`. */
+  fetch?: typeof fetch;
+}
+
+export class ReporterApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`reporter API error ${status}: ${body.slice(0, 200)}`);
+    this.name = 'ReporterApiError';
+  }
+}
+
+/**
+ * Typed client for the reporter HMAC client API (`/api/*`). Used by the desktop
+ * app and the terminal recorder. Signs every request with {@link buildAuthHeaders}.
+ */
+export class ReporterClient {
+  private readonly baseUrl: string;
+  private readonly accessKey: string;
+  private readonly secretKey: string;
+  private readonly doFetch: typeof fetch;
+
+  constructor(opts: ReporterClientOptions) {
+    this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
+    this.accessKey = opts.accessKey;
+    this.secretKey = opts.secretKey;
+    this.doFetch = opts.fetch ?? globalThis.fetch;
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    opts: { body?: Buffer; contentType?: string } = {},
+  ): Promise<T> {
+    const body = opts.body ?? Buffer.alloc(0);
+    const auth = buildAuthHeaders(method, path, body, this.accessKey, this.secretKey);
+    const headers: Record<string, string> = { ...auth };
+    if (opts.contentType) headers['Content-Type'] = opts.contentType;
+
+    const res = await this.doFetch(`${this.baseUrl}${path}`, {
+      method,
+      headers,
+      body: body.length > 0 ? new Uint8Array(body) : undefined,
+    });
+
+    const text = await res.text();
+    if (!res.ok) throw new ReporterApiError(res.status, text);
+    return (text ? JSON.parse(text) : undefined) as T;
+  }
+
+  /** Verify the server is reachable and the credentials are valid. */
+  checkConnection(): Promise<CheckConnectionResult> {
+    return this.request<CheckConnectionResult>('GET', '/api/checkconnection');
+  }
+
+  /** List the operations this API key's user can access. */
+  listOperations(): Promise<Operation[]> {
+    return this.request<Operation[]>('GET', '/api/operations');
+  }
+
+  createOperation(input: CreateOperationInput): Promise<Operation> {
+    const body = Buffer.from(JSON.stringify(input), 'utf8');
+    return this.request<Operation>('POST', '/api/operations', {
+      body,
+      contentType: 'application/json',
+    });
+  }
+
+  listTags(operationSlug: string): Promise<Tag[]> {
+    return this.request<Tag[]>('GET', `/api/operations/${encodeURIComponent(operationSlug)}/tags`);
+  }
+
+  createTag(operationSlug: string, input: CreateTagInput): Promise<Tag> {
+    const body = Buffer.from(JSON.stringify(input), 'utf8');
+    return this.request<Tag>('POST', `/api/operations/${encodeURIComponent(operationSlug)}/tags`, {
+      body,
+      contentType: 'application/json',
+    });
+  }
+
+  /**
+   * Create a piece of evidence. `metadata` is sent as the JSON `notes` part;
+   * `file` (when present) is the binary blob part (screenshot PNG, asciicast, …).
+   */
+  createEvidence(
+    operationSlug: string,
+    metadata: CreateEvidenceInput,
+    file?: { filename: string; contentType: string; data: Buffer },
+  ): Promise<Evidence> {
+    const files: MultipartFile[] = file
+      ? [{ field: 'file', filename: file.filename, contentType: file.contentType, data: file.data }]
+      : [];
+    const { body, contentType } = buildMultipart({ notes: JSON.stringify(metadata) }, files);
+    return this.request<Evidence>(
+      'POST',
+      `/api/operations/${encodeURIComponent(operationSlug)}/evidence`,
+      { body, contentType },
+    );
+  }
+}

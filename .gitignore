@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Prisma
+apps/server/prisma/*.db
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# Runtime data
+/data/
+blobs/
+*.log
+
+# Desktop packaging
+apps/desktop/release/
+apps/desktop/dist-electron/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Claude local overrides
+.claude/settings.local.json

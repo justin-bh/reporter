@@ -1,0 +1,74 @@
+# reporter — design system & style guide
+
+reporter spans three surfaces (web, desktop, terminal). They must feel like **one professional product**. This document is the contract; the `ux-ui` agent enforces it, and `@reporter/ui` implements it.
+
+## Principles
+
+1. **One product, three windows.** The desktop renderer is the web UI in a smaller frame — same components, same tokens. The terminal recorder is the same brand translated to ANSI. Nothing is bespoke per surface without a reason.
+2. **Calm and dense, not flashy.** This is an operator tool used for hours. Prefer clarity, generous hit targets, and low chrome over decoration.
+3. **Never a dead end.** Every async action shows loading → success/error. Every list has an empty state with a next action. Every destructive action confirms.
+4. **Consistent words.** Use the glossary below verbatim, everywhere.
+
+## Terminology glossary (use these exact words)
+
+| Term | Meaning | Never call it |
+|------|---------|---------------|
+| **Operation** | An engagement/project that scopes all data. | project, engagement, case |
+| **Evidence** | A single timestamped artifact (screenshot, recording, note…). | item, artifact, capture |
+| **Finding** | A reportable grouping of evidence. | issue, vuln, result |
+| **Tag** | A colored label on evidence, scoped to an operation. | label, category |
+| **Operator** | The user who captured a piece of evidence. | author, creator |
+| **API key** | An access-key/secret-key pair for client apps. | token, credential |
+
+Empty-state copy is warm and instructive ("No evidence yet — capture your first screenshot with the desktop app or drop a file here."). Errors are plain and actionable ("Couldn't reach the server. Check the server URL in Settings."). No stack traces in the UI.
+
+## Color tokens
+
+Defined as CSS variables in `@reporter/ui` (`src/tokens.css`), exposed to Tailwind via the preset. Semantic roles — **never reference raw hex in app code**.
+
+Primitive palette (brand): a slate-neutral base with a single confident **teal** accent, plus status hues.
+
+| Semantic role | Light | Dark |
+|---------------|-------|------|
+| `--bg` (app background) | `#f7f8fa` | `#0e1116` |
+| `--surface` (cards, panels) | `#ffffff` | `#171b22` |
+| `--surface-2` (raised) | `#f0f2f5` | `#1f242d` |
+| `--border` | `#e2e5ea` | `#2a303a` |
+| `--text` | `#1a1d23` | `#e6e9ef` |
+| `--text-muted` | `#5b6472` | `#9aa4b2` |
+| `--accent` (teal) | `#0e8a8a` | `#2dd4bf` |
+| `--accent-contrast` | `#ffffff` | `#04211f` |
+| `--success` | `#1f9d55` | `#3ddc84` |
+| `--warning` | `#c77700` | `#f0b429` |
+| `--danger` | `#d64545` | `#ff6b6b` |
+| `--info` | `#2d7ff9` | `#5ea2ff` |
+
+Tag colors are a fixed 12-swatch palette shared from `@reporter/shared` (`TAG_COLORS`) so a tag looks identical in the web timeline, desktop history, and CLI selection list.
+
+## Typography
+
+- **UI / body:** Inter (bundled in `@reporter/ui/fonts`, `--font-sans`).
+- **Code / terminal / monospace:** JetBrains Mono (`--font-mono`).
+- Type scale (rem): `xs .75 / sm .875 / base 1 / lg 1.125 / xl 1.25 / 2xl 1.5 / 3xl 1.875`.
+- Weights: 400 body, 500 medium (labels), 600 semibold (headings). No thin/black weights.
+
+## Spacing & shape
+
+- Spacing scale: `4 8 12 16 24 32 48` (px). Use Tailwind spacing tokens; no arbitrary values.
+- Radius: `--radius-sm 6px`, `--radius 10px`, `--radius-lg 14px`. Cards use `--radius`, inputs/buttons `--radius-sm`.
+- Elevation: one soft shadow token `--shadow` for popovers/modals; flat surfaces otherwise.
+- Focus: always a visible `--accent` focus ring (2px). Never remove outlines without a replacement.
+
+## Components (in `@reporter/ui`)
+
+`Button` (variants: primary/secondary/ghost/danger; sizes sm/md), `Input`, `Textarea`, `Select`, `Checkbox`, `Modal`, `Toast` (+ `useToast`), `Card`, `Badge`, `TagChip`, `TagPicker`, `Table`, `EmptyState`, `Spinner`, `DateRangePicker`, `Tabs`, `ThemeProvider`/`useTheme`. Pages compose these; they don't restyle them.
+
+## Terminal recorder styling
+
+`apps/term/src/theme.ts` maps the palette to ANSI: accent = teal, success = green, warning = yellow, danger = red, muted = gray. Symbols match GUI toast semantics: `✔` success, `✖` error, `⚠` warning, `›` prompt. Same glossary and tone as the GUI.
+
+## Accessibility baseline
+
+- Contrast ≥ 4.5:1 for text (tokens above are chosen to pass in both themes).
+- All interactive elements keyboard-reachable and focus-visible.
+- Modals trap focus and close on Esc. Forms label every input. Icons that carry meaning have `aria-label`.
