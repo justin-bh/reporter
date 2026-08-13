@@ -2,9 +2,8 @@
 node_modules/
 .pnpm-store/
 
-# Build output
+# Build output (note: apps/desktop/build holds tracked icon resources, not output)
 dist/
-build/
 out/
 *.tsbuildinfo
 

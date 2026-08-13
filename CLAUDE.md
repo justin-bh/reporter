@@ -54,7 +54,7 @@ Project skills automate the rest: `/run-stack`, `/db-reset`, `/verify-api`, `/re
 - [x] Phase 0 — Foundation & scaffolding
 - [x] Phase 1 — Server core
 - [x] Phase 2 — Web UI
-- [ ] Phase 3 — Desktop app
+- [x] Phase 3 — Desktop app
 - [ ] Phase 4 — Terminal recorder
 - [ ] Phase 5 — Packaging, deploy & docs
 

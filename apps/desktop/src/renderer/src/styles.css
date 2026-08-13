@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import '@reporter/ui/theme.css';
+
+/* Scan this renderer and the shared UI package for Tailwind classes. */
+@source '.';
+@source '../../../../../packages/ui/src';

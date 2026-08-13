@@ -1,0 +1,24 @@
+appId: local.reporter.desktop
+productName: reporter
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+# Native modules would be unpacked here; reporter-desktop currently uses none.
+asarUnpack: []
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  # Unsigned local builds; see apps/desktop/README.md for the notarization path.
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
