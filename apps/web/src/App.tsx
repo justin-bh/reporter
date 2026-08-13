@@ -1,0 +1,64 @@
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { Spinner } from '@reporter/ui';
+import { useAuth } from './auth.js';
+import { LoginPage } from './pages/LoginPage.js';
+import { SetupPage } from './pages/SetupPage.js';
+import { AppLayout } from './components/AppLayout.js';
+import { OperationLayout } from './components/OperationLayout.js';
+import { OperationsPage } from './pages/OperationsPage.js';
+import { TimelinePage } from './pages/TimelinePage.js';
+import { EvidenceDetailPage } from './pages/EvidenceDetailPage.js';
+import { FindingsPage } from './pages/FindingsPage.js';
+import { FindingDetailPage } from './pages/FindingDetailPage.js';
+import { TagsPage } from './pages/TagsPage.js';
+import { QueriesPage } from './pages/QueriesPage.js';
+import { OperationSettingsPage } from './pages/OperationSettingsPage.js';
+import { AccountPage } from './pages/AccountPage.js';
+import { AdminPage } from './pages/AdminPage.js';
+
+function FullPageSpinner() {
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <Spinner size={28} />
+    </div>
+  );
+}
+
+export function App() {
+  const { user, flags, loading } = useAuth();
+
+  if (loading) return <FullPageSpinner />;
+
+  // Unauthenticated: only login/setup are reachable.
+  if (!user) {
+    return (
+      <Routes>
+        {flags?.needsSetup && <Route path="/setup" element={<SetupPage />} />}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to={flags?.needsSetup ? '/setup' : '/login'} replace />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<Navigate to="/operations" replace />} />
+        <Route path="/operations" element={<OperationsPage />} />
+        <Route path="/operations/:slug" element={<OperationLayout />}>
+          <Route index element={<Navigate to="evidence" replace />} />
+          <Route path="evidence" element={<TimelinePage />} />
+          <Route path="evidence/:uuid" element={<EvidenceDetailPage />} />
+          <Route path="findings" element={<FindingsPage />} />
+          <Route path="findings/:uuid" element={<FindingDetailPage />} />
+          <Route path="tags" element={<TagsPage />} />
+          <Route path="queries" element={<QueriesPage />} />
+          <Route path="settings" element={<OperationSettingsPage />} />
+        </Route>
+        <Route path="/account" element={<AccountPage />} />
+        {user.admin && <Route path="/admin" element={<AdminPage />} />}
+        <Route path="*" element={<Navigate to="/operations" replace />} />
+      </Route>
+    </Routes>
+  );
+}

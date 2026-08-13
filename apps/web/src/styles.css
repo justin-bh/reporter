@@ -1,0 +1,8 @@
+@import 'tailwindcss';
+@import '@reporter/ui/theme.css';
+
+/* Scan this app's source and the shared UI package for Tailwind classes. */
+@source '.';
+@source '../../../packages/ui/src';
+
+/* asciinema-player base styles are imported in the TerminalPlayer component. */

@@ -1,13 +1,12 @@
 /*
- * The stylesheet both the web app and the Electron renderer import. Pulls in
- * Tailwind v4, the design tokens, and maps the tokens to Tailwind theme
- * variables so utilities like `bg-surface`, `text-muted`, `text-accent`,
- * `rounded-card` resolve to reporter's semantic roles.
+ * The design-token layer both the web app and the Electron renderer import,
+ * AFTER their own `@import 'tailwindcss'`. Maps reporter's tokens to Tailwind
+ * theme variables so utilities like `bg-surface`, `text-muted`, `text-accent`,
+ * `rounded-card` resolve to the semantic roles.
  *
- * Consumers must include reporter's UI source in their Tailwind content scan,
- * e.g. `@source "../../packages/ui/src";` alongside their own `@source`.
+ * Each consumer imports this and declares its own `@source` globs (its src plus
+ * `packages/ui/src`) so shared component classes are scanned.
  */
-@import 'tailwindcss';
 @import './tokens.css';
 
 @theme inline {
