@@ -1,0 +1,305 @@
+// reporter data model — the source of truth for the whole system.
+// Change shape here, then `prisma migrate dev --name <change>`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OperationStatus {
+  active
+  complete
+  archived
+}
+
+enum OperationRole {
+  admin
+  write
+  read
+}
+
+enum AuthScheme {
+  local
+  oidc
+  recovery
+}
+
+enum SavedQueryType {
+  evidence
+  findings
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  slug      String    @unique
+  firstName String    @map("first_name")
+  lastName  String    @map("last_name")
+  email     String    @unique
+  admin     Boolean   @default(false)
+  disabled  Boolean   @default(false)
+  headless  Boolean   @default(false)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  identities   AuthIdentity[]
+  webauthn     WebauthnCredential[]
+  recovery     RecoveryCode[]
+  apiKeys      ApiKey[]
+  sessions     Session[]
+  roles        UserOperationRole[]
+  prefs        UserOperationPref[]
+  evidence     Evidence[]
+
+  @@map("users")
+}
+
+model AuthIdentity {
+  id                Int        @id @default(autoincrement())
+  userId            Int        @map("user_id")
+  scheme            AuthScheme
+  identifier        String
+  passwordHash      String?    @map("password_hash")
+  mustResetPassword Boolean    @default(false) @map("must_reset_password")
+  totpSecret        String?    @map("totp_secret")
+  lastLogin         DateTime?  @map("last_login")
+  createdAt         DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scheme, identifier])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model WebauthnCredential {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  credentialId Bytes    @unique @map("credential_id")
+  publicKey    Bytes    @map("public_key")
+  signCount    Int      @default(0) @map("sign_count")
+  transports   String?
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("webauthn_credentials")
+}
+
+model RecoveryCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  codeHash  String    @unique @map("code_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("recovery_codes")
+}
+
+model ApiKey {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  accessKey String    @unique @map("access_key")
+  secretKey Bytes     @map("secret_key")
+  lastAuth  DateTime? @map("last_auth")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model Session {
+  id        String   @id // sha256 hex of the cookie token
+  userId    Int      @map("user_id")
+  data      Json?
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Operation {
+  id        Int             @id @default(autoincrement())
+  slug      String          @unique
+  name      String
+  status    OperationStatus @default(active)
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  roles       UserOperationRole[]
+  prefs       UserOperationPref[]
+  evidence    Evidence[]
+  findings    Finding[]
+  tags        Tag[]
+  savedQueries SavedQuery[]
+
+  @@map("operations")
+}
+
+model UserOperationRole {
+  id          Int           @id @default(autoincrement())
+  userId      Int           @map("user_id")
+  operationId Int           @map("operation_id")
+  role        OperationRole
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, operationId])
+  @@index([operationId])
+  @@map("user_operation_roles")
+}
+
+model UserOperationPref {
+  id          Int     @id @default(autoincrement())
+  userId      Int     @map("user_id")
+  operationId Int     @map("operation_id")
+  isFavorite  Boolean @default(false) @map("is_favorite")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, operationId])
+  @@map("user_operation_prefs")
+}
+
+model Tag {
+  id          Int    @id @default(autoincrement())
+  operationId Int    @map("operation_id")
+  name        String
+  colorName   String @map("color_name")
+
+  operation Operation     @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  evidence  EvidenceTag[]
+
+  @@unique([operationId, name])
+  @@index([operationId])
+  @@map("tags")
+}
+
+model DefaultTag {
+  id        Int    @id @default(autoincrement())
+  name      String @unique
+  colorName String @map("color_name")
+
+  @@map("default_tags")
+}
+
+model Evidence {
+  id             Int      @id @default(autoincrement())
+  uuid           String   @unique @default(uuid())
+  operationId    Int      @map("operation_id")
+  operatorId     Int      @map("operator_id")
+  description    String   @default("")
+  contentType    String   @map("content_type")
+  contentSubtype String?  @map("content_subtype")
+  fullBlobKey    String?  @map("full_blob_key")
+  thumbBlobKey   String?  @map("thumb_blob_key")
+  occurredAt     DateTime @map("occurred_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  operation Operation          @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  operator  User               @relation(fields: [operatorId], references: [id])
+  tags      EvidenceTag[]
+  findings  EvidenceFinding[]
+  metadata  EvidenceMetadata[]
+
+  @@index([operationId, occurredAt])
+  @@map("evidence")
+}
+
+model EvidenceMetadata {
+  id         Int    @id @default(autoincrement())
+  evidenceId Int    @map("evidence_id")
+  source     String
+  body       String @default("")
+  status     String @default("complete")
+
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, source])
+  @@map("evidence_metadata")
+}
+
+model FindingCategory {
+  id        Int       @id @default(autoincrement())
+  category  String    @unique
+  deletedAt DateTime? @map("deleted_at")
+
+  findings Finding[]
+
+  @@map("finding_categories")
+}
+
+model Finding {
+  id            Int      @id @default(autoincrement())
+  uuid          String   @unique @default(uuid())
+  operationId   Int      @map("operation_id")
+  categoryId    Int?     @map("category_id")
+  title         String
+  description   String   @default("")
+  readyToReport Boolean  @default(false) @map("ready_to_report")
+  ticketLink    String?  @map("ticket_link")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  operation Operation         @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  category  FindingCategory?  @relation(fields: [categoryId], references: [id])
+  evidence  EvidenceFinding[]
+
+  @@index([operationId])
+  @@map("findings")
+}
+
+model EvidenceTag {
+  evidenceId Int @map("evidence_id")
+  tagId      Int @map("tag_id")
+
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([evidenceId, tagId])
+  @@index([tagId])
+  @@map("evidence_tags")
+}
+
+model EvidenceFinding {
+  evidenceId Int @map("evidence_id")
+  findingId  Int @map("finding_id")
+
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  finding  Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@id([evidenceId, findingId])
+  @@index([findingId])
+  @@map("evidence_findings")
+}
+
+model SavedQuery {
+  id          Int            @id @default(autoincrement())
+  operationId Int            @map("operation_id")
+  name        String
+  query       String
+  type        SavedQueryType
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@unique([operationId, name, type])
+  @@map("saved_queries")
+}

@@ -1,0 +1,22 @@
+# Development database only. The full production stack (app + db) lives in
+# docker-compose.yml (Phase 5). Start with: docker compose -f docker-compose.dev.yml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: reporter-dev-db
+    environment:
+      POSTGRES_DB: reporter
+      POSTGRES_USER: reporter
+      POSTGRES_PASSWORD: reporter
+    ports:
+      - '5432:5432'
+    volumes:
+      - reporter_pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reporter']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  reporter_pgdata_dev: {}

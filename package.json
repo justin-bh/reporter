@@ -16,6 +16,7 @@
     "dev:web": "pnpm --filter @reporter/web dev",
     "dev:desktop": "pnpm --filter @reporter/desktop dev",
     "test": "vitest run",
+    "test:all": "vitest run && pnpm --filter @reporter/server test",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -24,11 +25,26 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "@reporter/api-client": "workspace:*",
     "@types/node": "^22.10.5",
     "eslint": "^9.18.0",
+    "globals": "^15.14.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
     "vitest": "^3.0.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines",
+      "sharp",
+      "@node-rs/argon2",
+      "better-sqlite3",
+      "electron",
+      "node-pty"
+    ]
   }
 }

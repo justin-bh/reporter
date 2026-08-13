@@ -51,8 +51,8 @@ Project skills automate the rest: `/run-stack`, `/db-reset`, `/verify-api`, `/re
 
 ## Build status
 
-- [x] Phase 0 — Foundation & scaffolding (in progress)
-- [ ] Phase 1 — Server core
+- [x] Phase 0 — Foundation & scaffolding
+- [x] Phase 1 — Server core
 - [ ] Phase 2 — Web UI
 - [ ] Phase 3 — Desktop app
 - [ ] Phase 4 — Terminal recorder

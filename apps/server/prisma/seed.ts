@@ -1,0 +1,198 @@
+/**
+ * Development/demo seed. Creates an admin + operator, default tags, finding
+ * categories, and a demo operation populated with evidence of several types so
+ * the timeline and every renderer have real content. Prints an API key pair for
+ * the operator (used by the /verify-api skill and the client apps).
+ *
+ * Run: `pnpm --filter @reporter/server seed`  (or via `prisma migrate reset`)
+ */
+import { randomUUID } from 'node:crypto';
+import { PrismaClient } from '@prisma/client';
+import sharp from 'sharp';
+import { LocalStore } from '../src/blobstore/local.js';
+import { createLocalUser } from '../src/services/users.js';
+import { generateApiKey } from '../src/services/apikeys.js';
+
+const db = new PrismaClient();
+const blobs = new LocalStore(process.env.BLOB_DIR ?? './.data/blobs');
+
+const DEFAULT_TAGS = [
+  { name: 'recon', colorName: 'blue' },
+  { name: 'foothold', colorName: 'orange' },
+  { name: 'priv-esc', colorName: 'red' },
+  { name: 'lateral-movement', colorName: 'violet' },
+  { name: 'exfil', colorName: 'pink' },
+  { name: 'cleanup', colorName: 'slate' },
+];
+
+const CATEGORIES = ['Vulnerability', 'Network', 'Web', 'Detection Gap'];
+
+async function putBlob(data: Buffer): Promise<string> {
+  const key = randomUUID();
+  await blobs.put(key, data);
+  return key;
+}
+
+async function main() {
+  // --- Users ---
+  let admin = await db.user.findUnique({ where: { email: 'admin@reporter.local' } });
+  if (!admin) {
+    admin = await createLocalUser(db, {
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'admin@reporter.local',
+      password: 'reporter-dev',
+      admin: true,
+    });
+  }
+
+  let operator = await db.user.findUnique({ where: { email: 'op@reporter.local' } });
+  if (!operator) {
+    operator = await createLocalUser(db, {
+      firstName: 'Olivia',
+      lastName: 'Operator',
+      email: 'op@reporter.local',
+      password: 'reporter-dev',
+    });
+  }
+
+  // --- Default tags + finding categories ---
+  for (const t of DEFAULT_TAGS) {
+    await db.defaultTag.upsert({
+      where: { name: t.name },
+      create: t,
+      update: { colorName: t.colorName },
+    });
+  }
+  for (const category of CATEGORIES) {
+    await db.findingCategory.upsert({ where: { category }, create: { category }, update: {} });
+  }
+
+  // --- Demo operation (recreate fresh) ---
+  const existing = await db.operation.findUnique({ where: { slug: 'acme-assessment' } });
+  if (existing) await db.operation.delete({ where: { id: existing.id } });
+
+  const op = await db.operation.create({
+    data: {
+      slug: 'acme-assessment',
+      name: 'Acme Corp — External Assessment',
+      tags: { create: DEFAULT_TAGS.map((t) => ({ name: t.name, colorName: t.colorName })) },
+      roles: {
+        create: [
+          { userId: admin.id, role: 'admin' },
+          { userId: operator.id, role: 'write' },
+        ],
+      },
+    },
+    include: { tags: true },
+  });
+  const tagByName = new Map(op.tags.map((t) => [t.name, t]));
+
+  // --- Evidence ---
+  const now = Date.now();
+  const at = (minsAgo: number) => new Date(now - minsAgo * 60_000);
+
+  // A note.
+  const note = await db.evidence.create({
+    data: {
+      operationId: op.id,
+      operatorId: operator.id,
+      contentType: 'none',
+      description: 'Kickoff: scope confirmed for acme.example.com and 203.0.113.0/24.',
+      occurredAt: at(240),
+    },
+  });
+
+  // A code block (stored as a text blob).
+  const codeBody = 'nmap -sV -Pn -oA acme 203.0.113.0/24\n# 22/tcp open ssh OpenSSH 8.2\n# 443/tcp open https nginx';
+  const codeblock = await db.evidence.create({
+    data: {
+      operationId: op.id,
+      operatorId: operator.id,
+      contentType: 'codeblock',
+      contentSubtype: 'bash',
+      description: 'Initial port scan',
+      fullBlobKey: await putBlob(Buffer.from(codeBody, 'utf8')),
+      occurredAt: at(180),
+      tags: { create: [{ tagId: tagByName.get('recon')!.id }] },
+    },
+  });
+
+  // A screenshot (generated placeholder PNG + thumbnail).
+  const png = await sharp({
+    create: { width: 640, height: 360, channels: 3, background: { r: 14, g: 138, b: 138 } },
+  })
+    .png()
+    .toBuffer();
+  const thumb = await sharp(png).resize(500, 500, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
+  await db.evidence.create({
+    data: {
+      operationId: op.id,
+      operatorId: operator.id,
+      contentType: 'image',
+      description: 'Login page reflected XSS proof',
+      fullBlobKey: await putBlob(png),
+      thumbBlobKey: await putBlob(thumb),
+      occurredAt: at(120),
+      tags: { create: [{ tagId: tagByName.get('foothold')!.id }] },
+    },
+  });
+
+  // A terminal recording (asciicast v2).
+  const cast = [
+    JSON.stringify({ version: 2, width: 80, height: 24, timestamp: Math.floor(now / 1000) }),
+    JSON.stringify([0.5, 'o', 'operator@acme:~$ id\r\n']),
+    JSON.stringify([1.0, 'o', 'uid=0(root) gid=0(root) groups=0(root)\r\n']),
+    JSON.stringify([1.6, 'o', 'operator@acme:~$ ']),
+  ].join('\n');
+  const recording = await db.evidence.create({
+    data: {
+      operationId: op.id,
+      operatorId: operator.id,
+      contentType: 'terminal-recording',
+      description: 'Root shell via sudo misconfiguration',
+      fullBlobKey: await putBlob(Buffer.from(cast, 'utf8')),
+      occurredAt: at(60),
+      tags: { create: [{ tagId: tagByName.get('priv-esc')!.id }] },
+    },
+  });
+
+  // --- A finding grouping some evidence ---
+  const category = await db.findingCategory.findUnique({ where: { category: 'Vulnerability' } });
+  const finding = await db.finding.create({
+    data: {
+      operationId: op.id,
+      title: 'Privilege escalation via sudo misconfiguration',
+      description: 'A sudo rule allowed the low-priv user to run a shell as root without a password.',
+      categoryId: category?.id ?? null,
+      readyToReport: true,
+    },
+  });
+  await db.evidenceFinding.createMany({
+    data: [
+      { evidenceId: recording.id, findingId: finding.id },
+      { evidenceId: codeblock.id, findingId: finding.id },
+    ],
+    skipDuplicates: true,
+  });
+  void note;
+
+  // --- API key for the operator ---
+  const key = await generateApiKey(db, operator.id);
+
+  console.log('\n✔ Seed complete.');
+  console.log('  Admin login:    admin@reporter.local / reporter-dev');
+  console.log('  Operator login: op@reporter.local / reporter-dev');
+  console.log('  Demo operation: acme-assessment');
+  console.log('\n  Operator API key (for /verify-api and client apps):');
+  console.log(`    REPORTER_ACCESS_KEY=${key.accessKey}`);
+  console.log(`    REPORTER_SECRET_KEY=${key.secretKey}\n`);
+}
+
+main()
+  .then(() => db.$disconnect())
+  .catch(async (err) => {
+    console.error(err);
+    await db.$disconnect();
+    process.exit(1);
+  });
