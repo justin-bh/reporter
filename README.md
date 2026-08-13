@@ -8,7 +8,7 @@ Capture screenshots, terminal recordings, and notes during an engagement; organi
 
 </div>
 
-> Status: **under construction.** A clean-room, all-TypeScript rebuild of the [ASHIRT](https://github.com/ashirt-ops) concept. See build progress in [`CLAUDE.md`](CLAUDE.md).
+> A clean-room, all-TypeScript rebuild of the [ASHIRT](https://github.com/ashirt-ops) concept. Self-hosted: run the server on your own machine, capture with the desktop app and terminal recorder.
 
 ## What's in the box
 
@@ -41,16 +41,28 @@ Capture screenshots, terminal recordings, and notes during an engagement; organi
 - **Tag** — a colored label on evidence, scoped to an operation.
 - **API key** — an access-key/secret-key pair a client app uses to submit evidence.
 
-## Quickstart (server, on Ubuntu) — _finalized in Phase 5_
+## Quickstart (server, on Ubuntu)
+
+Requires Docker with the Compose plugin. No Node.js needed on the server.
 
 ```bash
 git clone <this repo> reporter && cd reporter
-cp .env.example .env      # set SESSION_SECRET, DB_PASSWORD, and the first-admin credentials
-docker compose up -d      # postgres + app; migrations run automatically
-# open http://<server-ip>:8080 and finish first-admin setup
+cp .env.example .env      # set SESSION_SECRET, DB_PASSWORD, and ADMIN_EMAIL/ADMIN_PASSWORD
+docker compose up -d      # builds the image, starts postgres + app; migrations run automatically
 ```
 
-Then, in the web UI, open **Account → API keys**, generate a pair, and plug it into the desktop app or `reporter-term`.
+Open `http://<server-ip>:8080` and sign in with the admin credentials from `.env` (or complete the one-time **/setup** screen if you left them blank).
+
+Then, in the web UI, open **Account → API keys**, generate a pair, and plug it into the clients:
+
+- **Desktop app** — install from the [desktop build](apps/desktop/README.md), open Settings, and enter the server URL + keys.
+- **Terminal recorder** — `npm install -g @reporter/term`, then run `reporter-term` and follow the setup prompts. See [apps/term](apps/term/README.md).
+
+### Notes
+
+- **TLS**: the default is plain HTTP for a trusted LAN. To serve HTTPS, put a reverse proxy in front — e.g. add a [Caddy](https://caddyserver.com) service that does `reverse_proxy app:8080` and set `APP_URL=https://…` so session cookies are marked `Secure`.
+- **Backups**: the database (`pg_dump`) and the blob volume both hold state — see [apps/server/README.md](apps/server/README.md#backup--restore).
+- **S3 storage**: set `BLOB_STORE=s3` + the `S3_*` vars to store evidence in a bucket instead of the local volume.
 
 ## Development
 

@@ -1,0 +1,31 @@
+# Never copy host (macOS-arch) installs or build output into the Linux image.
+**/node_modules
+**/dist
+**/out
+**/release
+.pnpm-store
+
+.git
+.github
+.claude
+
+# Env & secrets
+.env
+**/.env
+*.local
+
+# Runtime / scratch
+.data
+blobs
+*.log
+coverage
+
+# Desktop artifacts (not built in the server image)
+apps/desktop/build
+apps/desktop/release
+
+# Docs / editor
+*.md
+.vscode
+.idea
+.DS_Store

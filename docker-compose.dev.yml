@@ -1,5 +1,8 @@
 # Development database only. The full production stack (app + db) lives in
-# docker-compose.yml (Phase 5). Start with: docker compose -f docker-compose.dev.yml up -d
+# docker-compose.yml. Start with: docker compose -f docker-compose.dev.yml up -d
+# A distinct project name keeps it isolated from the production stack, so a
+# `docker compose down` on one never touches the other.
+name: reporter-dev
 services:
   db:
     image: postgres:16-alpine

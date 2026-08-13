@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: reporter
+          POSTGRES_PASSWORD: reporter
+          POSTGRES_DB: reporter_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reporter"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://reporter:reporter@localhost:5432/reporter_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Install the server/web/term subtrees (skips the Electron desktop app).
+      - run: pnpm install --frozen-lockfile --filter "@reporter/web..." --filter "@reporter/server..." --filter "@reporter/term..."
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: |
+          pnpm --filter @reporter/shared build
+          pnpm --filter @reporter/api-client build
+          pnpm --filter @reporter/ui build
+          pnpm --filter @reporter/web build
+          pnpm --filter @reporter/server build
+          pnpm --filter @reporter/term build
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Server integration tests
+        run: pnpm --filter @reporter/server test

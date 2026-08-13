@@ -9,6 +9,6 @@
     "declarationMap": false,
     "sourceMap": false
   },
-  "include": ["src", "vite.config.ts"],
+  "include": ["src"],
   "exclude": ["dist", "node_modules"]
 }

@@ -56,6 +56,8 @@ Project skills automate the rest: `/run-stack`, `/db-reset`, `/verify-api`, `/re
 - [x] Phase 2 — Web UI
 - [x] Phase 3 — Desktop app
 - [x] Phase 4 — Terminal recorder
-- [ ] Phase 5 — Packaging, deploy & docs
+- [x] Phase 5 — Packaging, deploy & docs
+
+All phases complete. Deploy with `docker compose up -d`; dev with `docker compose -f docker-compose.dev.yml up -d` + `pnpm dev:server` / `pnpm dev:web`.
 
 Full plan: `/Users/justin/.claude/plans/can-you-rebuild-me-humming-taco.md`.
