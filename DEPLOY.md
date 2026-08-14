@@ -121,13 +121,19 @@ Output lands in `apps/desktop/release/`:
 - `reporter-<version>-arm64.dmg` (Apple Silicon) / `reporter-<version>.dmg` (Intel)
 - `.zip` equivalents
 
-> Builds are **unsigned**. To distribute without the Gatekeeper prompt below, add an Apple Developer signing identity + notarization in `apps/desktop/electron-builder.yml`.
+> The build is **ad-hoc signed** (via the `afterPack` hook) but **not notarized** — so it launches on any Mac after clearing quarantine (below), but is not distributed through Apple's notary service. For a prompt-free install, add an Apple Developer signing identity + notarization in `apps/desktop/electron-builder.yml`.
 
 ### Install
 
 1. Open the `.dmg` and drag **reporter** to Applications.
-2. First launch: because the build is unsigned, **right-click the app → Open**, then confirm. (Double-clicking shows "unidentified developer" and refuses.)
-3. The app runs in the **menu bar** (tray), not the Dock.
+2. **Clear the quarantine flag** so Gatekeeper allows the un-notarized app. In Terminal:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/reporter.app
+   ```
+   (macOS adds this flag to anything copied from another Mac / downloaded. Without this step you'll see an "unidentified developer" prompt; on macOS 15+ the right-click→Open shortcut no longer works, so the command above is the reliable method.)
+3. Launch it — the app runs in the **menu bar** (tray), not the Dock.
+
+> **"reporter.app is damaged and can't be opened"** means the app has a broken/absent signature (an older unsigned build, or the bundle was modified). Use a `.dmg` built with the current `afterPack` ad-hoc-signing hook; if you must fix a copy in place, re-sign it: `codesign --deep --force --sign - /Applications/reporter.app` then run the `xattr` command above (requires Xcode Command Line Tools).
 
 ### Configure
 

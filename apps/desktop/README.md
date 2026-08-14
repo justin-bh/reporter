@@ -7,7 +7,7 @@ A cross-platform tray app for capturing screenshots and code blocks and submitti
 Download the installer for your OS from your release location (see the `release`
 skill / `electron-builder` output), or build it yourself (below).
 
-- **macOS** — `reporter-<version>.dmg` (arm64 + x64). Unsigned local builds: right-click the app → **Open** the first time to bypass Gatekeeper.
+- **macOS** — `reporter-<version>.dmg` (arm64 + x64). The build is **ad-hoc signed but not notarized**, so after dragging to Applications, clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/reporter.app`. (A "damaged and can't be opened" error means an older, unsigned build — rebuild with the current `afterPack` hook, which ad-hoc signs the bundle.)
 - **Windows** — `reporter Setup <version>.exe` (NSIS).
 - **Linux** — `reporter-<version>.AppImage` (`chmod +x`, then run) or the `.deb`.
 
@@ -50,7 +50,7 @@ pnpm --filter @reporter/desktop build       # compile main/preload/renderer
 pnpm --filter @reporter/desktop package     # electron-builder installers → apps/desktop/release/
 ```
 
-Code-signing and notarization are not configured (local/unsigned builds). See `electron-builder.yml` to add signing for distribution.
+The `afterPack` hook (`scripts/afterPack.cjs`) ad-hoc signs the bundle so it launches on other Apple Silicon Macs (electron-builder otherwise leaves a broken signature after injecting `app.asar`, which Gatekeeper reports as "damaged"). Full notarization (a prompt-free install) requires an Apple Developer ID — see `electron-builder.yml`.
 
 ## Notes
 
