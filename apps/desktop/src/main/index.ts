@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { clipboard } from 'electron';
+import { clipboard, shell } from 'electron';
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron';
-import type { CaptureDraft, OperationLite, SettingsPatch, TagLite } from '../shared/types.js';
+import type { AboutInfo, CaptureDraft, OperationLite, SettingsPatch, TagLite } from '../shared/types.js';
 import { CH } from '../shared/channels.js';
 import {
   getCurrentOperation,
@@ -14,6 +14,8 @@ import { addItem, listQueue, removeItem, updateItem } from './queue.js';
 import { makeClient } from './reporter-client.js';
 import { drainQueue } from './uploader.js';
 import { captureScreenshot, type CaptureMode } from './capture.js';
+import { BUILD_INFO } from './build-info.js';
+import { checkForUpdates } from './updates.js';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -56,7 +58,7 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-function showView(view: 'history' | 'settings' | 'compose'): void {
+function showView(view: 'history' | 'settings' | 'compose' | 'about'): void {
   if (!mainWindow) mainWindow = createWindow();
   mainWindow.show();
   mainWindow.focus();
@@ -142,6 +144,7 @@ function buildTray(): void {
     { type: 'separator' },
     { label: 'History', click: () => showView('history') },
     { label: 'Settings', click: () => showView('settings') },
+    { label: `About reporter (v${BUILD_INFO.version})`, click: () => showView('about') },
     { type: 'separator' },
     {
       label: 'Quit reporter',
@@ -275,6 +278,34 @@ function registerIpc(): void {
 
   ipcMain.handle(CH.captureArea, () => captureAndCompose('area'));
   ipcMain.handle(CH.captureWindow, () => captureAndCompose('window'));
+
+  ipcMain.handle(CH.getAbout, (): AboutInfo => buildAboutInfo());
+  ipcMain.handle(CH.checkForUpdates, () => checkForUpdates());
+  ipcMain.handle(CH.openExternal, (_e, url: string) => {
+    // Only follow web links — never file:// or arbitrary schemes from the renderer.
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// About
+// ---------------------------------------------------------------------------
+
+function buildAboutInfo(): AboutInfo {
+  return {
+    productName: 'reporter',
+    version: BUILD_INFO.version,
+    commit: BUILD_INFO.commit,
+    buildDate: BUILD_INFO.buildDate,
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    v8: process.versions.v8,
+    platform: process.platform,
+    arch: process.arch,
+    homepage: BUILD_INFO.homepage,
+    serverUrl: getSettings().serverUrl,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +325,13 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     if (process.platform === 'darwin') app.dock?.hide(); // tray-only app
+    // Keep the OS-native "About" panel in sync with the in-app About view.
+    app.setAboutPanelOptions({
+      applicationName: 'reporter',
+      applicationVersion: BUILD_INFO.version,
+      version: BUILD_INFO.commit,
+      website: BUILD_INFO.homepage,
+    });
     mainWindow = createWindow();
     registerIpc();
     buildTray();

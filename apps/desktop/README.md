@@ -76,6 +76,18 @@ tccutil reset ScreenCapture local.reporter.desktop
 
 For a **prompt-free install on other people's Macs**, use a paid **Apple Developer ID** cert (`REPORTER_SIGN_IDENTITY="Developer ID Application: …"`) plus notarization — see `electron-builder.yml`.
 
+## Version & updates
+
+Open **About** (tray → *About reporter*, or the window nav) to see the app
+version, the exact build (git commit + date), the Electron/Chromium/Node
+versions, and the server you're pointed at. **Check for updates** compares your
+version against the latest published release and links to the download when a
+newer one exists.
+
+The version is single-sourced from `package.json` and bumped repo-wide with
+`pnpm run version:bump` (see the root `CLAUDE.md` → *Versioning & releases*).
+Pushing a `vX.Y.Z` tag builds the installers for each OS on native CI runners.
+
 ## Notes
 
 - The local queue and settings are stored as JSON via `electron-store` in the app's user-data directory. (For very large queues, `better-sqlite3` is a drop-in upgrade, at the cost of a native-module rebuild step.)

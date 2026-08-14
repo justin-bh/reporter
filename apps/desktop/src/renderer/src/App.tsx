@@ -3,8 +3,9 @@ import { useTheme, useToast } from '@reporter/ui';
 import { HistoryView } from './views/HistoryView.js';
 import { SettingsView } from './views/SettingsView.js';
 import { ComposeView } from './views/ComposeView.js';
+import { AboutView } from './views/AboutView.js';
 
-type View = 'history' | 'settings' | 'compose';
+type View = 'history' | 'settings' | 'compose' | 'about';
 
 export function App() {
   const [view, setView] = useState<View>('history');
@@ -33,6 +34,9 @@ export function App() {
           <NavBtn active={view === 'settings'} onClick={() => setView('settings')}>
             Settings
           </NavBtn>
+          <NavBtn active={view === 'about'} onClick={() => setView('about')}>
+            About
+          </NavBtn>
         </nav>
         <button
           onClick={toggle}
@@ -46,6 +50,7 @@ export function App() {
       <main className="flex-1 overflow-auto p-3">
         {view === 'history' && <HistoryView onCompose={() => setView('compose')} />}
         {view === 'settings' && <SettingsView />}
+        {view === 'about' && <AboutView />}
         {view === 'compose' && <ComposeView onDone={() => setView('history')} />}
       </main>
     </div>

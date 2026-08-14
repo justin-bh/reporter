@@ -13,6 +13,9 @@ export const CH = {
   getDraft: 'draft:get',
   captureArea: 'capture:area',
   captureWindow: 'capture:window',
+  getAbout: 'about:get',
+  checkForUpdates: 'update:check',
+  openExternal: 'shell:open-external',
   // main → renderer events
   queueChanged: 'event:queue-changed',
   draftReady: 'event:draft-ready',

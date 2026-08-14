@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { CH } from '../shared/channels.js';
 import type {
+  AboutInfo,
   CaptureDraft,
   ConnectionResult,
   DesktopSettings,
@@ -8,6 +9,7 @@ import type {
   QueueItem,
   SettingsPatch,
   TagLite,
+  UpdateCheckResult,
 } from '../shared/types.js';
 
 export interface SubmitPayload {
@@ -43,6 +45,9 @@ const reporter = {
   removeItem: (id: string): Promise<void> => ipcRenderer.invoke(CH.removeItem, id),
   captureArea: (): Promise<void> => ipcRenderer.invoke(CH.captureArea),
   captureWindow: (): Promise<void> => ipcRenderer.invoke(CH.captureWindow),
+  getAbout: (): Promise<AboutInfo> => ipcRenderer.invoke(CH.getAbout),
+  checkForUpdates: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(CH.checkForUpdates),
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CH.openExternal, url),
 
   onQueueChanged: (cb: () => void) => on(CH.queueChanged, cb),
   onDraftReady: (cb: () => void) => on(CH.draftReady, cb),
