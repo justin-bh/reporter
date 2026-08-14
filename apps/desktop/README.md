@@ -7,7 +7,8 @@ A cross-platform tray app for capturing screenshots and code blocks and submitti
 Download the installer for your OS from your release location (see the `release`
 skill / `electron-builder` output), or build it yourself (below).
 
-- **macOS** — `reporter-<version>.dmg` (arm64 + x64). The build is **ad-hoc signed but not notarized**, so after dragging to Applications, clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/reporter.app`. (A "damaged and can't be opened" error means an older, unsigned build — rebuild with the current `afterPack` hook, which ad-hoc signs the bundle.)
+- **macOS** — `reporter-<version>.dmg` (arm64 + x64). The build is **signed but not notarized**, so after dragging to Applications, clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/reporter.app`. (A "damaged and can't be opened" error means an older, unsigned build — rebuild with the current `afterPack` hook, which signs the bundle.)
+  - **Screen Recording resets after every rebuild?** That's the symptom of an **ad-hoc** build (the default). Ad-hoc signing gives the app no stable identity — macOS identifies it by its content hash, which changes on every rebuild, so the grant you gave the previous build no longer applies and you're re-prompted. Fix it once by building with a **stable code-signing identity** (see [Stable signing](#stable-signing-for-persistent-macos-permissions) below); then a single grant persists across all rebuilds and copies.
 - **Windows** — `reporter Setup <version>.exe` (NSIS).
 - **Linux** — `reporter-<version>.AppImage` (`chmod +x`, then run) or the `.deb`.
 
@@ -30,7 +31,7 @@ After a capture, a compose window opens: add a description and tags, confirm the
 
 ### Per-OS capture notes
 
-- **macOS** uses the native `screencapture` tool (you'll be asked for **Screen Recording** permission the first time). No configuration needed.
+- **macOS** uses the native `screencapture` tool (you'll be asked for **Screen Recording** permission the first time). No configuration needed. After granting, **quit and relaunch the app** — macOS only applies a new Screen Recording grant on the next launch. If you're re-prompted on a build you already granted, see [Stable signing](#stable-signing-for-persistent-macos-permissions).
 - **Linux / Windows** use a **capture command** template (Settings → Capture) with a `$FILE` placeholder. Examples:
   - GNOME: `gnome-screenshot -a -f $FILE`
   - KDE: `spectacle -rbn -o $FILE`
@@ -50,7 +51,30 @@ pnpm --filter @reporter/desktop build       # compile main/preload/renderer
 pnpm --filter @reporter/desktop package     # electron-builder installers → apps/desktop/release/
 ```
 
-The `afterPack` hook (`scripts/afterPack.cjs`) ad-hoc signs the bundle so it launches on other Apple Silicon Macs (electron-builder otherwise leaves a broken signature after injecting `app.asar`, which Gatekeeper reports as "damaged"). Full notarization (a prompt-free install) requires an Apple Developer ID — see `electron-builder.yml`.
+The `afterPack` hook (`scripts/afterPack.cjs`) signs the bundle so it launches on other Apple Silicon Macs (electron-builder otherwise leaves a broken signature after injecting `app.asar`, which Gatekeeper reports as "damaged"). By default it **ad-hoc** signs; set `REPORTER_SIGN_IDENTITY` to sign with a real identity instead (below). Full notarization (a prompt-free install) requires an Apple Developer ID — see `electron-builder.yml`.
+
+### Stable signing (for persistent macOS permissions)
+
+Ad-hoc signing pins the app's identity to its content hash, so **macOS permission grants (Screen Recording, Accessibility, …) reset on every rebuild**. Signing with a stable code-signing certificate anchors the app's *designated requirement* to the certificate instead, so one grant survives every rebuild and every copy.
+
+You don't need a paid Apple account for local dev — a **self-signed code-signing certificate** is enough:
+
+1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
+2. Name: `Reporter Dev` · Identity Type: **Self Signed Root** · Certificate Type: **Code Signing** → Create.
+3. Build with that identity:
+   ```bash
+   REPORTER_SIGN_IDENTITY="Reporter Dev" pnpm --filter @reporter/desktop package
+   ```
+   The `afterPack` hook prints the resulting **designated requirement**; confirm it's anchored to the certificate (`... and certificate leaf = H"…"`) rather than a `cdhash` — that's what makes the grant stable.
+4. Install/replace the app, grant **Screen Recording** once, and **quit + relaunch**. Future rebuilds signed with the same cert keep the grant.
+
+If macOS is still re-prompting after switching to a stable cert (because it remembers the old ad-hoc grants), clear the stale state once and re-grant:
+
+```bash
+tccutil reset ScreenCapture local.reporter.desktop
+```
+
+For a **prompt-free install on other people's Macs**, use a paid **Apple Developer ID** cert (`REPORTER_SIGN_IDENTITY="Developer ID Application: …"`) plus notarization — see `electron-builder.yml`.
 
 ## Notes
 
