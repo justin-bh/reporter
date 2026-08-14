@@ -60,6 +60,37 @@ export interface ConnectionResult {
   error?: string;
 }
 
+/** App + runtime version info shown in the About view. */
+export interface AboutInfo {
+  productName: string;
+  /** App version — the `apps/desktop/package.json` version stamped into installers. */
+  version: string;
+  /** Short git SHA the build was cut from (`unknown` outside a git checkout). */
+  commit: string;
+  /** ISO timestamp the bundle was built. */
+  buildDate: string;
+  electron: string;
+  chrome: string;
+  node: string;
+  v8: string;
+  platform: string;
+  arch: string;
+  /** Project homepage / release page. */
+  homepage: string;
+  /** Server the desktop app is currently pointed at (from settings). */
+  serverUrl: string;
+}
+
+/** Result of checking the release feed for a newer version. */
+export interface UpdateCheckResult {
+  status: 'up-to-date' | 'update-available' | 'error' | 'unknown';
+  currentVersion: string;
+  latestVersion?: string;
+  /** Link to the release when an update is available. */
+  releaseUrl?: string;
+  error?: string;
+}
+
 /** Draft passed to the compose window after a capture. */
 export interface CaptureDraft {
   contentType: 'image' | 'codeblock' | 'none';
