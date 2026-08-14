@@ -101,62 +101,86 @@ Then set `APP_URL=https://reporter.example.com` in `.env` (this makes session co
 
 ---
 
-## Part B — Desktop app on macOS
+## Part B — Desktop app (macOS, Windows, Linux)
 
-The desktop app is distributed as a `.dmg`. You build it once on a Mac, then install it on any Mac.
+Same tray app on all three OSes. Prebuilt artifacts land in `apps/desktop/release/`:
 
-### Build the installer (once, on a Mac)
+| OS | Artifact | Notes |
+|----|----------|-------|
+| macOS | `reporter-<version>-universal.dmg` | Universal — runs on Apple Silicon **and** Intel. Ad-hoc signed. |
+| Windows | `reporter-<version>-win-x64-portable.zip` | Portable — unzip and run `reporter.exe`. (For a real `.exe` installer, see [CI builds](#getting-real-installers-ci) — Wine on Apple Silicon can't build it.) |
+| Linux | `reporter-<version>-x86_64.AppImage`, `reporter-<version>-amd64.deb` | AppImage: `chmod +x` and run. deb: `sudo apt install ./…deb`. |
 
-Prerequisites: [Node.js 20+](https://nodejs.org) and pnpm (`npm install -g pnpm`).
+### Building the artifacts yourself
+
+Prerequisites: [Node.js 20+](https://nodejs.org), pnpm (`npm install -g pnpm`), and (for Linux/Windows on a non-Linux host) Docker.
 
 ```bash
 cd reporter
 pnpm install
 pnpm --filter @reporter/desktop build
-cd apps/desktop
-CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --publish never
+
+# macOS universal (.dmg) — build on a Mac:
+cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --universal --publish never
+
+# Linux (AppImage + deb) — build on Linux, or via Docker from any host:
+docker run --rm -v "$PWD":/project electronuserland/builder:wine \
+  bash -c "cd /project/apps/desktop && npx --yes electron-builder@25 --linux --publish never"
+
+# Windows portable zip — the Docker build assembles apps/desktop/release/win-unpacked;
+# zip that folder. A real NSIS installer must be built on Windows/CI (see below).
 ```
 
-Output lands in `apps/desktop/release/`:
-- `reporter-<version>-arm64.dmg` (Apple Silicon) / `reporter-<version>.dmg` (Intel)
-- `.zip` equivalents
+<a id="getting-real-installers-ci"></a>
+**Getting real installers (CI).** Wine can't run on Apple Silicon (16K memory pages), so a proper Windows `.exe` installer can't be produced on a Mac. The repo includes `.github/workflows/release.yml`, which builds signed-ready installers for **all three OSes on their native GitHub runners** (macOS `.dmg`, Windows `.exe`, Linux `.AppImage`/`.deb`) plus the terminal-recorder tarball. Push a `v*` tag (or run it manually) and download the artifacts.
 
-> The build is **ad-hoc signed** (via the `afterPack` hook) but **not notarized** — so it launches on any Mac after clearing quarantine (below), but is not distributed through Apple's notary service. For a prompt-free install, add an Apple Developer signing identity + notarization in `apps/desktop/electron-builder.yml`.
-
-### Install
+### Install — macOS
 
 1. Open the `.dmg` and drag **reporter** to Applications.
-2. **Clear the quarantine flag** so Gatekeeper allows the un-notarized app. In Terminal:
+2. **Clear the quarantine flag** so Gatekeeper allows the un-notarized app:
    ```bash
    xattr -dr com.apple.quarantine /Applications/reporter.app
    ```
-   (macOS adds this flag to anything copied from another Mac / downloaded. Without this step you'll see an "unidentified developer" prompt; on macOS 15+ the right-click→Open shortcut no longer works, so the command above is the reliable method.)
+   (macOS flags anything copied from another Mac / downloaded. On macOS 15+ the right-click→Open shortcut no longer bypasses this, so the command above is the reliable method.)
 3. Launch it — the app runs in the **menu bar** (tray), not the Dock.
 
-> **"reporter.app is damaged and can't be opened"** means the app has a broken/absent signature (an older unsigned build, or the bundle was modified). Use a `.dmg` built with the current `afterPack` ad-hoc-signing hook; if you must fix a copy in place, re-sign it: `codesign --deep --force --sign - /Applications/reporter.app` then run the `xattr` command above (requires Xcode Command Line Tools).
+> The `.dmg` is **ad-hoc signed** (via the `afterPack` hook) but **not notarized**. **"reporter.app is damaged"** means a broken/unsigned build — rebuild with the current hook, or re-sign a copy in place: `codesign --deep --force --sign - /Applications/reporter.app` then the `xattr` command above. A prompt-free install needs an Apple Developer ID (notarization) in `electron-builder.yml`.
 
-### Configure
+### Install — Windows
+
+1. Unzip `reporter-<version>-win-x64-portable.zip`.
+2. Run `reporter.exe` inside the extracted folder. (SmartScreen may warn about an unknown publisher on an unsigned build — **More info → Run anyway**.)
+3. The app lives in the **system tray**. For a Start-menu installer instead of the portable app, use the CI-built `.exe`.
+
+### Install — Linux
+
+- **AppImage:** `chmod +x reporter-<version>-x86_64.AppImage && ./reporter-<version>-x86_64.AppImage`
+- **deb:** `sudo apt install ./reporter-<version>-amd64.deb`
+
+The app runs in the system tray. On **Wayland**, global hotkeys don't fire — use the tray menu or bind a shortcut to `reporter-desktop --capture-area`.
+
+### Configure (all platforms)
 
 1. Click the menu-bar icon → **Settings**.
 2. Enter the **Server URL** (`http://<server-ip>:8080`) and your **Access key** + **Secret key** — see [Getting API keys](#getting-api-keys).
 3. Click **Test connection**; on success it loads your operations. Pick a **Current operation**.
 
-### Grant Screen Recording permission
+### Grant capture permission (macOS)
 
-The first screenshot capture triggers a macOS **Screen Recording** permission prompt (System Settings → Privacy & Security → Screen Recording). Enable **reporter** and relaunch it.
+On macOS the first screenshot capture triggers a **Screen Recording** permission prompt (System Settings → Privacy & Security → Screen Recording). Enable **reporter** and relaunch it. On Windows/Linux, configure the capture command in Settings if the default doesn't fit your setup.
 
 ### Use
 
-- Menu-bar menu → **Capture area** / **Capture window**, or the global hotkeys **⌘⇧7** / **⌘⇧8**.
+- Tray/menu-bar menu → **Capture area** / **Capture window**, or the global hotkeys **⌘/Ctrl+Shift+7** / **⌘/Ctrl+Shift+8**.
 - Add a description + tags in the compose window → **Add evidence**. Items queue and upload automatically; **History** shows status and lets you retry failures.
 
 ---
 
 ## Part C — Terminal recorder
 
-`reporter-term` records shell sessions as asciicast and uploads them as evidence. Works on macOS and Linux.
+`reporter-term` records shell sessions as asciicast and uploads them as evidence. Works on **macOS, Linux, and Windows** — the *same* tarball installs on all three (node-pty pulls the right binary per platform).
 
-### Build & install
+### Build the tarball (once)
 
 Prerequisites: Node.js 20+ and pnpm.
 
@@ -164,10 +188,22 @@ Prerequisites: Node.js 20+ and pnpm.
 cd reporter
 pnpm install
 pnpm --filter @reporter/term run pack          # NOTE: `run pack`, not `pnpm pack`
-npm install -g ./apps/term/reporter-term-0.1.0.tgz
 ```
 
-This produces a self-contained tarball (only `node-pty` is a runtime dependency) and installs the `reporter-term` command globally.
+This produces a self-contained tarball at `apps/term/reporter-term-<version>.tgz` (only `node-pty` is a runtime dependency; everything else is bundled). Copy it to each machine and install:
+
+### Install per OS
+
+```bash
+npm install -g ./reporter-term-0.1.0.tgz
+```
+
+- **macOS / Windows** — installs directly (node-pty ships prebuilt binaries).
+- **Linux** — node-pty has no Linux prebuild, so it compiles on install. Install a toolchain first:
+  ```bash
+  sudo apt-get install -y python3 make g++     # Debian/Ubuntu
+  npm install -g ./reporter-term-0.1.0.tgz
+  ```
 
 ### Configure & use
 

@@ -22,6 +22,7 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from '../api/hooks.js';
 import { formatDateTime } from '../lib/format.js';
+import { copyToClipboard } from '../lib/clipboard.js';
 
 export function AccountPage() {
   const [tab, setTab] = useState('profile');
@@ -227,9 +228,10 @@ function CopyRow({ label, value }: { label: string; value: string }) {
           variant="secondary"
           size="sm"
           className="flex-none"
-          onClick={() => {
-            navigator.clipboard.writeText(value);
-            toast.success(`${label} copied`);
+          onClick={async () => {
+            const ok = await copyToClipboard(value);
+            if (ok) toast.success(`${label} copied`);
+            else toast.error('Copy failed — select the text and copy manually');
           }}
         >
           Copy

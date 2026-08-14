@@ -26,6 +26,8 @@ mac:
     - dmg
     - zip
   # Unsigned local builds; see apps/desktop/README.md for the notarization path.
+# Clean filenames everywhere (the package name is scoped: @reporter/desktop).
+artifactName: ${productName}-${version}-${arch}.${ext}
 win:
   target:
     - nsis
@@ -34,3 +36,4 @@ linux:
     - AppImage
     - deb
   category: Development
+  maintainer: reporter <noreply@reporter.local>

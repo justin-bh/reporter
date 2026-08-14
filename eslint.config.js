@@ -19,8 +19,9 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // Node scripts and CommonJS/ESM tooling files run in Node.
-    files: ['scripts/**/*.{js,mjs,cjs}', '**/*.mjs'],
+    files: ['**/*.mjs', '**/*.cjs', '**/scripts/**/*.{js,mjs,cjs}'],
     languageOptions: { globals: { ...globals.node } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     rules: {

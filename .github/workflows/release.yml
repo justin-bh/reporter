@@ -1,0 +1,68 @@
+name: Release
+
+# Builds the desktop installers on each OS's native runner (the reliable way to
+# produce a proper Windows .exe — Wine on an Apple Silicon dev box can't) plus
+# the reporter-term tarball. Triggers on a version tag, or run manually.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac --universal
+          - os: windows-latest
+            args: --win
+          - os: ubuntu-latest
+            args: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @reporter/desktop build
+      - name: Package desktop app
+        run: pnpm --filter @reporter/desktop exec electron-builder ${{ matrix.args }} --publish never
+        env:
+          # Unsigned/ad-hoc builds. Add APPLE/CSC + notarization secrets here for
+          # signed releases (macOS), or WIN_CSC_LINK for Windows signing.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+          if-no-files-found: warn
+
+  terminal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @reporter/term run pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reporter-term-tarball
+          path: apps/term/*.tgz

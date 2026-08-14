@@ -8,7 +8,9 @@ Record terminal sessions and upload them to a reporter server as terminal-record
 npm install -g @reporter/term
 ```
 
-Requires Node.js 20+. `node-pty` (a native addon) is installed alongside; prebuilt binaries cover macOS, Linux, and Windows.
+Requires Node.js 20+. `node-pty` (a native addon) is installed alongside. It ships prebuilt binaries for **macOS and Windows**; on **Linux** it compiles on install, so install a toolchain first: `sudo apt-get install -y python3 make g++` (Debian/Ubuntu) or the equivalent.
+
+> Published to a registry, `@reporter/term` installs as above. Building from this repo, produce the tarball with `pnpm --filter @reporter/term run pack` and `npm install -g ./apps/term/reporter-term-<version>.tgz`.
 
 ## First run
 
