@@ -30,7 +30,7 @@ export async function drainQueue(onChange: () => void): Promise<void> {
           file = { filename: basename(item.filePath), contentType: 'image/png', data };
         }
         const created = await client.createEvidence(
-          item.operationSlug,
+          item.engagementSlug,
           {
             contentType: item.contentType,
             description: item.description,

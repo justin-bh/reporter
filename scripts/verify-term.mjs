@@ -23,9 +23,10 @@ const check = (name, ok, detail = '') => {
 
 // --- Record a command through a PTY into asciicast v2 ---
 const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
-const args = process.platform === 'win32'
-  ? ['-Command', 'echo "hello from reporter-term"']
-  : ['-lc', 'echo "hello from reporter-term"; id | head -1'];
+const args =
+  process.platform === 'win32'
+    ? ['-Command', 'echo "hello from reporter-term"']
+    : ['-lc', 'echo "hello from reporter-term"; id | head -1'];
 
 const p = ptyPkg.spawn(shell, args, {
   name: 'xterm-256color',
@@ -52,7 +53,7 @@ check('recording captured the command output', cast.includes('hello from reporte
 // --- Upload as terminal-recording evidence ---
 const client = new ReporterClient({ baseUrl, accessKey, secretKey });
 try {
-  const ops = await client.listOperations();
+  const ops = await client.listEngagements();
   const slug = ops.find((o) => o.slug === 'acme-assessment')?.slug ?? ops[0]?.slug;
   const ev = await client.createEvidence(
     slug,

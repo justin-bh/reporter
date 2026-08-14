@@ -1,6 +1,6 @@
 /**
  * Development/demo seed. Creates an admin + operator, default tags, finding
- * categories, and a demo operation populated with evidence of several types so
+ * categories, and a demo engagement populated with evidence of several types so
  * the timeline and every renderer have real content. Prints an API key pair for
  * the operator (used by the /verify-api skill and the client apps).
  *
@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { scoreVector } from '@reporter/shared';
 import sharp from 'sharp';
 import { LocalStore } from '../src/blobstore/local.js';
 import { createLocalUser } from '../src/services/users.js';
@@ -68,11 +69,11 @@ async function main() {
     await db.findingCategory.upsert({ where: { category }, create: { category }, update: {} });
   }
 
-  // --- Demo operation (recreate fresh) ---
-  const existing = await db.operation.findUnique({ where: { slug: 'acme-assessment' } });
-  if (existing) await db.operation.delete({ where: { id: existing.id } });
+  // --- Demo engagement (recreate fresh) ---
+  const existing = await db.engagement.findUnique({ where: { slug: 'acme-assessment' } });
+  if (existing) await db.engagement.delete({ where: { id: existing.id } });
 
-  const op = await db.operation.create({
+  const eng = await db.engagement.create({
     data: {
       slug: 'acme-assessment',
       name: 'Acme Corp — External Assessment',
@@ -86,7 +87,7 @@ async function main() {
     },
     include: { tags: true },
   });
-  const tagByName = new Map(op.tags.map((t) => [t.name, t]));
+  const tagByName = new Map(eng.tags.map((t) => [t.name, t]));
 
   // --- Evidence ---
   const now = Date.now();
@@ -95,7 +96,7 @@ async function main() {
   // A note.
   const note = await db.evidence.create({
     data: {
-      operationId: op.id,
+      engagementId: eng.id,
       operatorId: operator.id,
       contentType: 'none',
       description: 'Kickoff: scope confirmed for acme.example.com and 203.0.113.0/24.',
@@ -104,10 +105,11 @@ async function main() {
   });
 
   // A code block (stored as a text blob).
-  const codeBody = 'nmap -sV -Pn -oA acme 203.0.113.0/24\n# 22/tcp open ssh OpenSSH 8.2\n# 443/tcp open https nginx';
+  const codeBody =
+    'nmap -sV -Pn -oA acme 203.0.113.0/24\n# 22/tcp open ssh OpenSSH 8.2\n# 443/tcp open https nginx';
   const codeblock = await db.evidence.create({
     data: {
-      operationId: op.id,
+      engagementId: eng.id,
       operatorId: operator.id,
       contentType: 'codeblock',
       contentSubtype: 'bash',
@@ -124,10 +126,13 @@ async function main() {
   })
     .png()
     .toBuffer();
-  const thumb = await sharp(png).resize(500, 500, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
+  const thumb = await sharp(png)
+    .resize(500, 500, { fit: 'inside' })
+    .jpeg({ quality: 80 })
+    .toBuffer();
   await db.evidence.create({
     data: {
-      operationId: op.id,
+      engagementId: eng.id,
       operatorId: operator.id,
       contentType: 'image',
       description: 'Login page reflected XSS proof',
@@ -147,7 +152,7 @@ async function main() {
   ].join('\n');
   const recording = await db.evidence.create({
     data: {
-      operationId: op.id,
+      engagementId: eng.id,
       operatorId: operator.id,
       contentType: 'terminal-recording',
       description: 'Root shell via sudo misconfiguration',
@@ -157,23 +162,42 @@ async function main() {
     },
   });
 
-  // --- A finding grouping some evidence ---
+  // --- Findings grouping some evidence ---
   const category = await db.findingCategory.findUnique({ where: { category: 'Vulnerability' } });
+  // A fully CVSS-rated, report-ready finding (High 8.8, scope-changed local privesc).
+  const privesc = scoreVector('CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H')!;
   const finding = await db.finding.create({
     data: {
-      operationId: op.id,
+      engagementId: eng.id,
       title: 'Privilege escalation via sudo misconfiguration',
-      description: 'A sudo rule allowed the low-priv user to run a shell as root without a password.',
+      description:
+        'A sudo rule allowed the low-priv user to run a shell as root without a password.',
       categoryId: category?.id ?? null,
+      severity: privesc.severity,
+      cvssVector: privesc.vector,
+      cvssScore: privesc.score,
+      position: 0,
       readyToReport: true,
     },
   });
   await db.evidenceFinding.createMany({
     data: [
-      { evidenceId: recording.id, findingId: finding.id },
-      { evidenceId: codeblock.id, findingId: finding.id },
+      { evidenceId: recording.id, findingId: finding.id, position: 0 },
+      { evidenceId: codeblock.id, findingId: finding.id, position: 1 },
     ],
     skipDuplicates: true,
+  });
+  // A second finding rated with a simple (manual) severity, not yet report-ready.
+  await db.finding.create({
+    data: {
+      engagementId: eng.id,
+      title: 'Verbose error messages disclose stack traces',
+      description: 'Unhandled exceptions return full stack traces to unauthenticated users.',
+      categoryId: category?.id ?? null,
+      severity: 'medium',
+      position: 1,
+      readyToReport: false,
+    },
   });
   void note;
 
@@ -183,7 +207,7 @@ async function main() {
   console.log('\n✔ Seed complete.');
   console.log('  Admin login:    admin@reporter.local / reporter-dev');
   console.log('  Operator login: op@reporter.local / reporter-dev');
-  console.log('  Demo operation: acme-assessment');
+  console.log('  Demo engagement: acme-assessment');
   console.log('\n  Operator API key (for /verify-api and client apps):');
   console.log(`    REPORTER_ACCESS_KEY=${key.accessKey}`);
   console.log(`    REPORTER_SECRET_KEY=${key.secretKey}\n`);

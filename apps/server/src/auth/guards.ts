@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { isDateWithinSkew, parseAuthorization, verifySignature } from '@reporter/api-client';
-import { ROLE_RANK, type OperationRole } from '@reporter/shared';
+import { ROLE_RANK, type EngagementRole } from '@reporter/shared';
 import type { User } from '@prisma/client';
 import type { AuthedUser } from '../types.js';
 import { SESSION_COOKIE, resolveSession } from './session.js';
@@ -76,27 +76,27 @@ export async function requireAdmin(req: FastifyRequest): Promise<void> {
 }
 
 /**
- * Returns a preHandler that requires at least `minRole` on the operation named
+ * Returns a preHandler that requires at least `minRole` on the engagement named
  * by `:slug`. Site admins bypass. Run after an auth guard.
  */
-export function requireOperationRole(minRole: OperationRole) {
+export function requireEngagementRole(minRole: EngagementRole) {
   return async (req: FastifyRequest): Promise<void> => {
     const user = req.authedUser;
     if (!user) throw new HttpError(401, 'Not authenticated');
 
     const slug = (req.params as { slug?: string }).slug;
-    if (!slug) throw new HttpError(400, 'Missing operation slug');
+    if (!slug) throw new HttpError(400, 'Missing engagement slug');
 
-    const operation = await req.server.db.operation.findUnique({ where: { slug } });
-    if (!operation) throw new HttpError(404, 'Operation not found');
+    const engagement = await req.server.db.engagement.findUnique({ where: { slug } });
+    if (!engagement) throw new HttpError(404, 'Engagement not found');
 
-    if (user.admin) return; // site admins can access every operation
+    if (user.admin) return; // site admins can access every engagement
 
-    const role = await req.server.db.userOperationRole.findUnique({
-      where: { userId_operationId: { userId: user.id, operationId: operation.id } },
+    const role = await req.server.db.userEngagementRole.findUnique({
+      where: { userId_engagementId: { userId: user.id, engagementId: engagement.id } },
     });
     if (!role || ROLE_RANK[role.role] < ROLE_RANK[minRole]) {
-      throw new HttpError(403, 'Insufficient role for this operation');
+      throw new HttpError(403, 'Insufficient role for this engagement');
     }
   };
 }

@@ -1,146 +1,166 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Badge, Button, EmptyState, Input, Spinner, TagChip } from '@reporter/ui';
-import { EVIDENCE_TYPE_LABELS, type Evidence } from '@reporter/shared';
-import { useTimeline } from '../api/hooks.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { Button, EmptyState, ErrorState, Spinner, cn } from '@reporter/ui';
+import {
+  isEmptyQuery,
+  parseQuery,
+  stringifyQuery,
+  type Evidence,
+  type ParsedQuery,
+} from '@reporter/shared';
+import { useTimeline, type EvidenceOperator } from '../api/hooks.js';
 import { CreateEvidenceModal } from '../components/evidence/CreateEvidenceModal.js';
-import { evidenceThumbUrl } from '../lib/urls.js';
-import { formatRelative } from '../lib/format.js';
+import { FilterBar } from '../components/evidence/FilterBar.js';
+import { EvidenceDayGroup } from '../components/evidence/EvidenceDayGroup.js';
+import { groupByLocalDay } from '../lib/group-evidence.js';
+
+const EMPTY_QUERY: ParsedQuery = {
+  text: [],
+  tags: [],
+  operators: [],
+  types: [],
+  dateRanges: [],
+  uuids: [],
+  sortAsc: false,
+};
+
+/** The distinct operators present on the current page (a fallback filter source). */
+function operatorsFromItems(items: Evidence[]): EvidenceOperator[] {
+  const bySlug = new Map<string, EvidenceOperator>();
+  for (const ev of items)
+    if (!bySlug.has(ev.operator.slug)) bySlug.set(ev.operator.slug, ev.operator);
+  return [...bySlug.values()];
+}
 
 export function TimelinePage() {
   const { slug = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const page = Number(params.get('page') ?? '1');
-  const [queryInput, setQueryInput] = useState(q);
   const [adding, setAdding] = useState(false);
 
-  const { data, isLoading, isError } = useTimeline(slug, q, page);
+  const parsed = useMemo(() => parseQuery(q), [q]);
+  const { data, isLoading, isError, isFetching, refetch } = useTimeline(slug, q, page);
 
-  function runSearch(e: FormEvent) {
-    e.preventDefault();
-    const next = new URLSearchParams(params);
-    if (queryInput) next.set('q', queryInput);
-    else next.delete('q');
-    next.delete('page');
-    setParams(next);
-  }
+  const applyQuery = useCallback(
+    (next: ParsedQuery) => {
+      const nextParams = new URLSearchParams(params);
+      const canonical = stringifyQuery(next);
+      if (canonical) nextParams.set('q', canonical);
+      else nextParams.delete('q');
+      nextParams.delete('page'); // any filter change returns to the first page
+      setParams(nextParams);
+    },
+    [params, setParams],
+  );
 
-  function goPage(p: number) {
-    const next = new URLSearchParams(params);
-    next.set('page', String(p));
-    setParams(next);
-  }
+  const goPage = (p: number) => {
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('page', String(p));
+    setParams(nextParams);
+  };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  const groups = useMemo(() => (data ? groupByLocalDay(data.items) : []), [data]);
+  const operatorsOnPage = useMemo(() => operatorsFromItems(data?.items ?? []), [data]);
+
+  // Collapse state is view-local (not in the URL, so shared links stay clean).
+  // Default policy: the newest day is always open; if there are <=3 days open all
+  // of them (the common, sparse case), otherwise collapse all but the first.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const groupSig = groups.map((g) => g.key).join('|');
+  // groupSig captures the identity of the current day set; re-run only when it changes.
+  useEffect(() => {
+    setCollapsed(groups.length <= 3 ? new Set() : new Set(groups.slice(1).map((g) => g.key)));
+  }, [groupSig]);
+
+  const toggleDay = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const expandAll = () => setCollapsed(new Set());
+  const collapseAll = () => setCollapsed(new Set(groups.map((g) => g.key)));
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <form onSubmit={runSearch} className="flex flex-1 gap-2">
-          <Input
-            value={queryInput}
-            onChange={(e) => setQueryInput(e.target.value)}
-            placeholder='Filter — e.g. tag:sqli type:image operator:olivia "reflected xss"'
-            aria-label="Filter evidence"
-          />
-          <Button type="submit" variant="secondary">
-            Search
-          </Button>
-        </form>
-        <Button onClick={() => setAdding(true)}>Add evidence</Button>
-      </div>
+      <FilterBar
+        slug={slug}
+        parsed={parsed}
+        onChange={applyQuery}
+        operatorsOnPage={operatorsOnPage}
+        onAdd={() => setAdding(true)}
+        onExpandAll={expandAll}
+        onCollapseAll={collapseAll}
+        showGroupControls={groups.length > 1}
+      />
 
-      {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size={26} />
-        </div>
-      ) : isError ? (
-        <p className="text-danger">Couldn't load the timeline.</p>
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          title={q ? 'No evidence matches your filter' : 'No evidence yet'}
-          description={
-            q
-              ? 'Try a broader query, or clear the filter.'
-              : 'Capture your first screenshot with the desktop app, record a terminal session, or add evidence here.'
-          }
-          action={<Button onClick={() => setAdding(true)}>Add evidence</Button>}
-        />
-      ) : (
-        <>
-          <ul className="flex flex-col gap-2">
-            {data.items.map((ev) => (
-              <EvidenceRow key={ev.uuid} slug={slug} ev={ev} />
+      <div className="mt-4">
+        {isLoading ? (
+          <div className="flex justify-center py-16">
+            <Spinner size={26} />
+          </div>
+        ) : isError ? (
+          <ErrorState description="Couldn't load the timeline." onRetry={() => refetch()} />
+        ) : !data || data.items.length === 0 ? (
+          <EmptyState
+            title={isEmptyQuery(parsed) ? 'No evidence yet' : 'No evidence matches your filter'}
+            description={
+              isEmptyQuery(parsed)
+                ? 'Capture your first screenshot with the desktop app, record a terminal session, or add evidence here.'
+                : 'Try a broader query, or clear the filter to see everything.'
+            }
+            action={
+              isEmptyQuery(parsed) ? (
+                <Button onClick={() => setAdding(true)}>Add evidence</Button>
+              ) : (
+                <Button variant="secondary" onClick={() => applyQuery(EMPTY_QUERY)}>
+                  Clear filters
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <div className={cn('flex flex-col gap-4', isFetching && 'opacity-70 transition-opacity')}>
+            {groups.map((g) => (
+              <EvidenceDayGroup
+                key={g.key}
+                group={g}
+                slug={slug}
+                isOpen={!collapsed.has(g.key)}
+                onToggle={() => toggleDay(g.key)}
+              />
             ))}
-          </ul>
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-center gap-3 text-sm">
-              <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => goPage(page - 1)}>
-                Previous
-              </Button>
-              <span className="text-muted">
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => goPage(page + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+            {totalPages > 1 && (
+              <div className="mt-2 flex items-center justify-center gap-3 text-sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => goPage(page - 1)}
+                >
+                  Previous
+                </Button>
+                <span className="text-muted">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => goPage(page + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <CreateEvidenceModal slug={slug} open={adding} onClose={() => setAdding(false)} />
     </div>
   );
 }
-
-function EvidenceRow({ slug, ev }: { slug: string; ev: Evidence }) {
-  return (
-    <li>
-      <Link
-        to={`/operations/${slug}/evidence/${ev.uuid}`}
-        className="flex items-center gap-3 rounded-card border border-border bg-surface p-3 transition-colors hover:border-accent/50"
-      >
-        <div className="h-12 w-12 flex-none overflow-hidden rounded-input border border-border bg-surface-2">
-          {ev.hasThumbnail ? (
-            <img src={evidenceThumbUrl(slug, ev.uuid)} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-lg text-muted">
-              {TYPE_ICON[ev.contentType] ?? '•'}
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text">
-            {ev.description || <span className="text-muted">No description</span>}
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-            <Badge tone="neutral">{EVIDENCE_TYPE_LABELS[ev.contentType]}</Badge>
-            <span>
-              {ev.operator.firstName} {ev.operator.lastName}
-            </span>
-            <span>· {formatRelative(ev.occurredAt)}</span>
-            {ev.tags.slice(0, 4).map((t) => (
-              <TagChip key={t.id} name={t.name} colorName={t.colorName} />
-            ))}
-          </div>
-        </div>
-      </Link>
-    </li>
-  );
-}
-
-const TYPE_ICON: Record<string, string> = {
-  image: '🖼',
-  codeblock: '⌨',
-  'terminal-recording': '▸',
-  'http-request-cycle': '⇄',
-  event: '⚑',
-  none: '✎',
-};

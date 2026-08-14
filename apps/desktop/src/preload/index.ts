@@ -5,7 +5,7 @@ import type {
   CaptureDraft,
   ConnectionResult,
   DesktopSettings,
-  OperationLite,
+  EngagementLite,
   QueueItem,
   SettingsPatch,
   TagLite,
@@ -13,7 +13,7 @@ import type {
 } from '../shared/types.js';
 
 export interface SubmitPayload {
-  operationSlug: string;
+  engagementSlug: string;
   description: string;
   tagIds: number[];
   contentType: 'image' | 'codeblock' | 'none';
@@ -33,10 +33,10 @@ const reporter = {
   saveSettings: (patch: SettingsPatch): Promise<DesktopSettings> =>
     ipcRenderer.invoke(CH.saveSettings, patch),
   testConnection: (): Promise<ConnectionResult> => ipcRenderer.invoke(CH.testConnection),
-  listOperations: (): Promise<OperationLite[]> => ipcRenderer.invoke(CH.listOperations),
+  listEngagements: (): Promise<EngagementLite[]> => ipcRenderer.invoke(CH.listEngagements),
   listTags: (slug: string): Promise<TagLite[]> => ipcRenderer.invoke(CH.listTags, slug),
-  setOperation: (slug: string | null): Promise<DesktopSettings> =>
-    ipcRenderer.invoke(CH.setOperation, slug),
+  setEngagement: (slug: string | null): Promise<DesktopSettings> =>
+    ipcRenderer.invoke(CH.setEngagement, slug),
   getQueue: (): Promise<QueueItem[]> => ipcRenderer.invoke(CH.getQueue),
   getDraft: (): Promise<CaptureDraft | null> => ipcRenderer.invoke(CH.getDraft),
   submitDraft: (payload: SubmitPayload): Promise<{ ok: boolean }> =>

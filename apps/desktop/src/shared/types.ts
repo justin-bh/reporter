@@ -5,7 +5,7 @@ export interface DesktopSettings {
   accessKey: string;
   /** Whether a secret key is stored (the secret itself is never sent to the renderer). */
   hasSecret: boolean;
-  currentOperationSlug: string | null;
+  currentEngagementSlug: string | null;
   /** Capture command template with a `$FILE` placeholder (non-macOS / override). */
   captureCommand: string;
   hotkeys: { captureArea: string; captureWindow: string };
@@ -18,7 +18,7 @@ export interface SettingsPatch {
   serverUrl?: string;
   accessKey?: string;
   secret?: string;
-  currentOperationSlug?: string | null;
+  currentEngagementSlug?: string | null;
   captureCommand?: string;
   hotkeys?: { captureArea: string; captureWindow: string };
 }
@@ -27,7 +27,7 @@ export type QueueStatus = 'pending' | 'submitting' | 'submitted' | 'failed';
 
 export interface QueueItem {
   id: string;
-  operationSlug: string;
+  engagementSlug: string;
   contentType: 'image' | 'codeblock' | 'none';
   /** Absolute path to the captured file (image evidence). */
   filePath?: string;
@@ -43,7 +43,7 @@ export interface QueueItem {
   createdAt: string;
 }
 
-export interface OperationLite {
+export interface EngagementLite {
   slug: string;
   name: string;
 }

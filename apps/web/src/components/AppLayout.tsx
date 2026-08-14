@@ -17,12 +17,12 @@ export function AppLayout() {
     <div className="min-h-screen bg-bg text-text">
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
-          <Link to="/operations" className="flex items-center gap-2 font-semibold">
+          <Link to="/engagements" className="flex items-center gap-2 font-semibold">
             <Logo size={26} />
             reporter
           </Link>
           <nav className="ml-4 flex items-center gap-1 text-sm">
-            <TopLink to="/operations">Operations</TopLink>
+            <TopLink to="/engagements">Engagements</TopLink>
             {user?.admin && <TopLink to="/admin">Admin</TopLink>}
           </nav>
           <div className="ml-auto flex items-center gap-2">

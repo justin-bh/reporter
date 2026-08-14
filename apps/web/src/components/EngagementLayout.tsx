@@ -1,12 +1,12 @@
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 import { Badge, Spinner } from '@reporter/ui';
-import { useOperation } from '../api/hooks.js';
+import { useEngagement } from '../api/hooks.js';
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
 
-export function OperationLayout() {
+export function EngagementLayout() {
   const { slug = '' } = useParams();
-  const { data: op, isLoading, isError } = useOperation(slug);
+  const { data: eng, isLoading, isError } = useEngagement(slug);
 
   const tabs = [
     { to: 'evidence', label: 'Evidence' },
@@ -21,13 +21,13 @@ export function OperationLayout() {
       <div className="mb-4">
         {isLoading ? (
           <Spinner />
-        ) : isError || !op ? (
-          <p className="text-danger">Couldn't load this operation.</p>
+        ) : isError || !eng ? (
+          <p className="text-danger">Couldn't load this engagement.</p>
         ) : (
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold text-text">{op.name}</h1>
-            <Badge tone={STATUS_TONE[op.status]}>{op.status}</Badge>
-            <span className="text-sm text-muted">{op.numEvidence ?? 0} evidence</span>
+            <h1 className="text-2xl font-semibold text-text">{eng.name}</h1>
+            <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
+            <span className="text-sm text-muted">{eng.numEvidence ?? 0} evidence</span>
           </div>
         )}
       </div>

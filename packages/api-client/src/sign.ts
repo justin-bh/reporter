@@ -20,7 +20,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
  */
 export interface SignParams {
   method: string;
-  /** Path including query string, e.g. `/api/operations/acme/evidence?page=1`. */
+  /** Path including query string, e.g. `/api/engagements/acme/evidence?page=1`. */
   path: string;
   /** RFC 1123 GMT date string, e.g. `Wed, 13 Aug 2026 20:01:00 GMT`. */
   date: string;

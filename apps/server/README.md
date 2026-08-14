@@ -16,22 +16,22 @@ pnpm dev:server                                         # http://localhost:8080
 
 ## Configuration (environment)
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `DATABASE_URL` | — (required) | PostgreSQL connection string. |
-| `SESSION_SECRET` | dev fallback | Secret for signing session cookies. **Set in production** (`openssl rand -hex 32`). |
-| `PORT` | `8080` | HTTP port. |
-| `HOST` | `0.0.0.0` | Bind address. |
-| `APP_URL` | `http://localhost:8080` | Public URL. Cookies are marked `Secure` only when this is `https://` (or `COOKIE_SECURE=true`). |
-| `COOKIE_SECURE` | derived | Force-enable/disable the `Secure` cookie flag. |
-| `BLOB_STORE` | `local` | `local` (filesystem) or `s3`. |
-| `BLOB_DIR` | `./.data/blobs` | Local blob directory (when `BLOB_STORE=local`). |
-| `S3_BUCKET` / `S3_REGION` / `S3_ENDPOINT` / `S3_PREFIX` | — | S3 settings (when `BLOB_STORE=s3`). |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | S3 credentials. |
-| `MAX_UPLOAD_BYTES` | `104857600` | Max evidence upload size (100 MB). |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | — | Create the first admin on boot if the users table is empty (headless deploys). Otherwise use the web `/setup` screen. |
-| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | Optional OIDC login (extension point). |
-| `WEBAUTHN_RP_ID` | — | Optional WebAuthn relying-party id (extension point). |
+| Variable                                                | Default                 | Purpose                                                                                                               |
+| ------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                          | — (required)            | PostgreSQL connection string.                                                                                         |
+| `SESSION_SECRET`                                        | dev fallback            | Secret for signing session cookies. **Set in production** (`openssl rand -hex 32`).                                   |
+| `PORT`                                                  | `8080`                  | HTTP port.                                                                                                            |
+| `HOST`                                                  | `0.0.0.0`               | Bind address.                                                                                                         |
+| `APP_URL`                                               | `http://localhost:8080` | Public URL. Cookies are marked `Secure` only when this is `https://` (or `COOKIE_SECURE=true`).                       |
+| `COOKIE_SECURE`                                         | derived                 | Force-enable/disable the `Secure` cookie flag.                                                                        |
+| `BLOB_STORE`                                            | `local`                 | `local` (filesystem) or `s3`.                                                                                         |
+| `BLOB_DIR`                                              | `./.data/blobs`         | Local blob directory (when `BLOB_STORE=local`).                                                                       |
+| `S3_BUCKET` / `S3_REGION` / `S3_ENDPOINT` / `S3_PREFIX` | —                       | S3 settings (when `BLOB_STORE=s3`).                                                                                   |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`           | —                       | S3 credentials.                                                                                                       |
+| `MAX_UPLOAD_BYTES`                                      | `104857600`             | Max evidence upload size (100 MB).                                                                                    |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD`                        | —                       | Create the first admin on boot if the users table is empty (headless deploys). Otherwise use the web `/setup` screen. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | —                       | Optional OIDC login (extension point).                                                                                |
+| `WEBAUTHN_RP_ID`                                        | —                       | Optional WebAuthn relying-party id (extension point).                                                                 |
 
 ## S3-compatible storage
 

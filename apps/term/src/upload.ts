@@ -4,7 +4,7 @@ import type { TermConfig } from './config.js';
 import { makeClient } from './client.js';
 
 export interface RecordingMeta {
-  operationSlug: string;
+  engagementSlug: string;
   description: string;
   tagIds: number[];
 }
@@ -18,7 +18,7 @@ export async function uploadCast(
   const data = await readFile(castPath);
   const client = makeClient(config);
   const evidence = await client.createEvidence(
-    meta.operationSlug,
+    meta.engagementSlug,
     {
       contentType: 'terminal-recording',
       description: meta.description,

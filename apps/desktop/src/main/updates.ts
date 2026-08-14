@@ -37,7 +37,11 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'reporter-desktop' },
     });
     if (!res.ok) {
-      return { status: 'error', currentVersion, error: `Update check failed (HTTP ${res.status}).` };
+      return {
+        status: 'error',
+        currentVersion,
+        error: `Update check failed (HTTP ${res.status}).`,
+      };
     }
     const data = (await res.json()) as { tag_name?: string; html_url?: string };
     const latestVersion = (data.tag_name ?? '').replace(/^v/, '');

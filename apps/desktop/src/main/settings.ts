@@ -8,7 +8,7 @@ interface Persisted {
   accessKey: string;
   /** base64 of the (encrypted, when possible) secret key. */
   secretEnc: string | null;
-  currentOperationSlug: string | null;
+  currentEngagementSlug: string | null;
   captureCommand: string;
   hotkeys: { captureArea: string; captureWindow: string };
 }
@@ -25,7 +25,7 @@ const store = new Store<Persisted>({
     serverUrl: '',
     accessKey: '',
     secretEnc: null,
-    currentOperationSlug: null,
+    currentEngagementSlug: null,
     captureCommand: defaultCaptureCommand(),
     hotkeys: {
       captureArea: 'CommandOrControl+Shift+7',
@@ -60,7 +60,7 @@ export function getSettings(): DesktopSettings {
     serverUrl: store.get('serverUrl'),
     accessKey: store.get('accessKey'),
     hasSecret: Boolean(store.get('secretEnc')),
-    currentOperationSlug: store.get('currentOperationSlug'),
+    currentEngagementSlug: store.get('currentEngagementSlug'),
     captureCommand: store.get('captureCommand'),
     hotkeys: store.get('hotkeys'),
     weakSecretStorage: weakSecretStorage(),
@@ -70,8 +70,8 @@ export function getSettings(): DesktopSettings {
 export function saveSettings(patch: SettingsPatch): DesktopSettings {
   if (patch.serverUrl !== undefined) store.set('serverUrl', patch.serverUrl.replace(/\/+$/, ''));
   if (patch.accessKey !== undefined) store.set('accessKey', patch.accessKey);
-  if (patch.currentOperationSlug !== undefined)
-    store.set('currentOperationSlug', patch.currentOperationSlug);
+  if (patch.currentEngagementSlug !== undefined)
+    store.set('currentEngagementSlug', patch.currentEngagementSlug);
   if (patch.captureCommand !== undefined) store.set('captureCommand', patch.captureCommand);
   if (patch.hotkeys !== undefined) store.set('hotkeys', patch.hotkeys);
 
@@ -117,8 +117,8 @@ export function getCredentials(): Credentials | null {
   return { serverUrl, accessKey, secret };
 }
 
-export function getCurrentOperation(): string | null {
-  return store.get('currentOperationSlug');
+export function getCurrentEngagement(): string | null {
+  return store.get('currentEngagementSlug');
 }
 
 export function getHotkeys() {

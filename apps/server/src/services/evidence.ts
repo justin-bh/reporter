@@ -7,11 +7,13 @@ import type { Pagination } from '../helpers/pagination.js';
 import { evidenceInclude, serializeEvidence } from './serializers.js';
 
 export interface CreateEvidenceArgs {
-  operationId: number;
-  operationSlug: string;
+  engagementId: number;
+  engagementSlug: string;
   operatorId: number;
   metadata: CreateEvidenceInput;
   file?: { data: Buffer; mimeType: string; filename: string };
+  /** Preserve a specific uuid (used when importing evidence); defaults to a new one. */
+  uuid?: string;
 }
 
 const THUMB_MAX = 500;
@@ -31,7 +33,9 @@ export async function createEvidence(
     await app.blobs.put(fullBlobKey, file.data);
     if (metadata.contentType === 'image') {
       try {
-        const thumb = await sharp(file.data)
+        // Cap decoded pixels (~40 MP, far above any legitimate screenshot) so a
+        // decompression-bomb image can't exhaust memory during thumbnailing.
+        const thumb = await sharp(file.data, { limitInputPixels: 40_000_000 })
           .resize(THUMB_MAX, THUMB_MAX, { fit: 'inside', withoutEnlargement: true })
           .jpeg({ quality: 80 })
           .toBuffer();
@@ -48,11 +52,11 @@ export async function createEvidence(
     await app.blobs.put(fullBlobKey, Buffer.from(metadata.content, 'utf8'));
   }
 
-  // Only attach tags that actually belong to this operation.
+  // Only attach tags that actually belong to this engagement.
   const validTags =
     metadata.tagIds.length > 0
       ? await app.db.tag.findMany({
-          where: { id: { in: metadata.tagIds }, operationId: args.operationId },
+          where: { id: { in: metadata.tagIds }, engagementId: args.engagementId },
           select: { id: true },
         })
       : [];
@@ -61,7 +65,8 @@ export async function createEvidence(
 
   const created = await app.db.evidence.create({
     data: {
-      operationId: args.operationId,
+      uuid: args.uuid,
+      engagementId: args.engagementId,
       operatorId: args.operatorId,
       description: metadata.description ?? '',
       contentType: metadata.contentType,
@@ -74,7 +79,7 @@ export async function createEvidence(
     include: evidenceInclude,
   });
 
-  return serializeEvidence(created, args.operationSlug);
+  return serializeEvidence(created, args.engagementSlug);
 }
 
 export interface EvidenceListResult {
@@ -84,15 +89,15 @@ export interface EvidenceListResult {
   pageSize: number;
 }
 
-/** List evidence for an operation, filtered by a parsed timeline query. */
+/** List evidence for an engagement, filtered by a parsed timeline query. */
 export async function listEvidence(
   app: FastifyInstance,
-  operationId: number,
-  operationSlug: string,
+  engagementId: number,
+  engagementSlug: string,
   query: ParsedQuery,
   pagination: Pagination,
 ): Promise<EvidenceListResult> {
-  const where = buildEvidenceWhere(query, operationId);
+  const where = buildEvidenceWhere(query, engagementId);
   const [rows, total] = await app.db.$transaction([
     app.db.evidence.findMany({
       where,
@@ -105,7 +110,7 @@ export async function listEvidence(
   ]);
 
   return {
-    items: rows.map((r) => serializeEvidence(r, operationSlug)),
+    items: rows.map((r) => serializeEvidence(r, engagementSlug)),
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,

@@ -2,7 +2,7 @@ import type {
   Evidence as DbEvidence,
   Finding as DbFinding,
   FindingCategory,
-  Operation as DbOperation,
+  Engagement as DbEngagement,
   SavedQuery as DbSavedQuery,
   Tag as DbTag,
   User as DbUser,
@@ -10,8 +10,8 @@ import type {
 import type {
   Evidence,
   Finding,
-  Operation,
-  OperationRole,
+  Engagement,
+  EngagementRole,
   SavedQuery,
   Tag,
   User,
@@ -29,15 +29,20 @@ export function serializeUser(u: DbUser): User {
   };
 }
 
-export function serializeOperation(
-  op: DbOperation,
-  extras: { role?: OperationRole; favorite?: boolean; numUsers?: number; numEvidence?: number } = {},
-): Operation {
+export function serializeEngagement(
+  eng: DbEngagement,
+  extras: {
+    role?: EngagementRole;
+    favorite?: boolean;
+    numUsers?: number;
+    numEvidence?: number;
+  } = {},
+): Engagement {
   return {
-    slug: op.slug,
-    name: op.name,
-    status: op.status,
-    createdAt: op.createdAt.toISOString(),
+    slug: eng.slug,
+    name: eng.name,
+    status: eng.status,
+    createdAt: eng.createdAt.toISOString(),
     role: extras.role,
     favorite: extras.favorite,
     numUsers: extras.numUsers,
@@ -54,10 +59,10 @@ type EvidenceWithRelations = DbEvidence & {
   tags: { tag: DbTag }[];
 };
 
-export function serializeEvidence(e: EvidenceWithRelations, operationSlug: string): Evidence {
+export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: string): Evidence {
   return {
     uuid: e.uuid,
-    operationSlug,
+    engagementSlug,
     operator: {
       slug: e.operator.slug,
       firstName: e.operator.firstName,
@@ -78,15 +83,19 @@ type FindingWithRelations = DbFinding & {
   _count?: { evidence: number };
 };
 
-export function serializeFinding(f: FindingWithRelations, operationSlug: string): Finding {
+export function serializeFinding(f: FindingWithRelations, engagementSlug: string): Finding {
   return {
     uuid: f.uuid,
-    operationSlug,
+    engagementSlug,
     title: f.title,
     description: f.description,
     category: f.category?.category ?? null,
+    severity: f.severity,
+    cvssVector: f.cvssVector,
+    cvssScore: f.cvssScore,
     readyToReport: f.readyToReport,
     ticketLink: f.ticketLink,
+    position: f.position,
     numEvidence: f._count?.evidence ?? 0,
     createdAt: f.createdAt.toISOString(),
   };

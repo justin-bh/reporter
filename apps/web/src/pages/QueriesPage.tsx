@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Card, EmptyState, ErrorState, Field, Input, Spinner, useConfirm, useToast } from '@reporter/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Field,
+  Input,
+  Spinner,
+  useConfirm,
+  useToast,
+} from '@reporter/ui';
 import { useCreateSavedQuery, useDeleteSavedQuery, useSavedQueries } from '../api/hooks.js';
 
 export function QueriesPage() {
@@ -57,7 +67,7 @@ export function QueriesPage() {
                   <code className="block truncate font-mono text-xs text-muted">{q.query}</code>
                 </div>
                 <div className="flex flex-none items-center gap-2">
-                  <Link to={`/operations/${slug}/evidence?q=${encodeURIComponent(q.query)}`}>
+                  <Link to={`/engagements/${slug}/evidence?q=${encodeURIComponent(q.query)}`}>
                     <Button size="sm" variant="secondary">
                       Run
                     </Button>
@@ -81,8 +91,13 @@ export function QueriesPage() {
         <Field label="Name" htmlFor="q-name">
           <Input id="q-name" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Query" htmlFor="q-query" hint='e.g. tag:sqli type:image'>
-          <Input id="q-query" value={query} onChange={(e) => setQuery(e.target.value)} className="font-mono" />
+        <Field label="Query" htmlFor="q-query" hint="e.g. tag:sqli type:image">
+          <Input
+            id="q-query"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="font-mono"
+          />
         </Field>
         <Button onClick={add} loading={create.isPending} disabled={!name || !query}>
           Save query

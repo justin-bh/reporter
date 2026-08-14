@@ -59,23 +59,23 @@ export async function buildApp(
   // Capture the raw body for every request so `/api/*` can HMAC-verify it, while
   // still exposing parsed JSON to handlers. Multipart bodies stay as a Buffer;
   // handlers parse them with busboy from `req.rawBody`.
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body: Buffer, done) => {
+    req.rawBody = body;
+    if (body.length === 0) return done(null, undefined);
+    try {
+      done(null, JSON.parse(body.toString('utf8')));
+    } catch (err) {
+      done(err as Error);
+    }
+  });
   app.addContentTypeParser(
-    'application/json',
+    'multipart/form-data',
     { parseAs: 'buffer' },
     (req, body: Buffer, done) => {
       req.rawBody = body;
-      if (body.length === 0) return done(null, undefined);
-      try {
-        done(null, JSON.parse(body.toString('utf8')));
-      } catch (err) {
-        done(err as Error);
-      }
+      done(null, body);
     },
   );
-  app.addContentTypeParser('multipart/form-data', { parseAs: 'buffer' }, (req, body: Buffer, done) => {
-    req.rawBody = body;
-    done(null, body);
-  });
 
   await app.register(cookie);
   await app.register(rateLimit, { global: false });

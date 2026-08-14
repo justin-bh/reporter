@@ -12,7 +12,7 @@ For any changed UI (`apps/web`, `apps/desktop/src/renderer`, `apps/term`):
 
 1. **Tokens, not literals.** No hard-coded hex colors, no arbitrary spacing/`px` values, no ad-hoc font sizes. Everything resolves to `@reporter/ui` tokens / Tailwind scale. Grep for `#[0-9a-fA-F]{3,6}` and `style={{` in diffs.
 2. **Reuse over reinvention.** New buttons/inputs/modals/tables must be the `@reporter/ui` primitives. A one-off is only acceptable if you first tried and rejected extending the primitive — say why.
-3. **Terminology.** Exact glossary words (Operation, Evidence, Finding, Tag, Operator, API key). Flag "project", "item", "label", "token", etc.
+3. **Terminology.** Exact glossary words (Engagement, Evidence, Finding, Tag, Operator, API key). Flag "project", "item", "label", "token", etc.
 4. **Both themes.** Renders correctly in light and dark; contrast ≥ 4.5:1 for text.
 5. **State coverage.** Loading, empty (with a next action), and error states all present. No dead ends. Destructive actions confirm.
 6. **Accessibility.** Keyboard-reachable, visible focus rings, labeled inputs, Esc-closable focus-trapped modals, aria-labels on meaningful icons.

@@ -31,7 +31,7 @@ export function TagsPage() {
   async function removeTag(id: number, tagName: string) {
     const ok = await confirm({
       title: 'Delete tag',
-      message: `Delete the tag “${tagName}”? It will be removed from all evidence in this operation.`,
+      message: `Delete the tag “${tagName}”? It will be removed from all evidence in this engagement.`,
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -59,12 +59,19 @@ export function TagsPage() {
         ) : isError ? (
           <ErrorState description="Couldn’t load tags." onRetry={() => refetch()} />
         ) : !tags || tags.length === 0 ? (
-          <EmptyState title="No tags yet" description="Create tags to organize and filter evidence." />
+          <EmptyState
+            title="No tags yet"
+            description="Create tags to organize and filter evidence."
+          />
         ) : (
           <div className="flex flex-wrap gap-2">
             {tags.map((t) => (
               <span key={t.id} className="inline-flex items-center gap-1">
-                <TagChip name={t.name} colorName={t.colorName} onRemove={() => removeTag(t.id, t.name)} />
+                <TagChip
+                  name={t.name}
+                  colorName={t.colorName}
+                  onRemove={() => removeTag(t.id, t.name)}
+                />
               </span>
             ))}
           </div>

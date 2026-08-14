@@ -32,7 +32,10 @@ export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement
 export function Checkbox({ label, className, id, ...rest }: CheckboxProps) {
   const inputId = id ?? `cb-${label.replace(/\s+/g, '-').toLowerCase()}`;
   return (
-    <label htmlFor={inputId} className={cn('flex cursor-pointer items-center gap-2 text-sm text-text', className)}>
+    <label
+      htmlFor={inputId}
+      className={cn('flex cursor-pointer items-center gap-2 text-sm text-text', className)}
+    >
       <input
         id={inputId}
         type="checkbox"

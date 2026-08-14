@@ -31,13 +31,13 @@ try {
   const conn = await client.checkConnection();
   check('checkConnection', conn.ok === true, `user=${conn.user?.email} v${conn.serverVersion}`);
 
-  const ops = await client.listOperations();
+  const ops = await client.listEngagements();
   const demo = ops.find((o) => o.slug === 'acme-assessment');
-  check('listOperations includes demo', Boolean(demo), `${ops.length} operation(s)`);
+  check('listEngagements includes demo', Boolean(demo), `${ops.length} engagement(s)`);
 
   const slug = demo?.slug ?? ops[0]?.slug;
   if (!slug) {
-    check('has an operation to write to', false);
+    check('has an engagement to write to', false);
   } else {
     const created = await client.createEvidence(
       slug,

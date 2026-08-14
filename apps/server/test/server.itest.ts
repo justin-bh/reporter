@@ -28,10 +28,10 @@ beforeEach(async () => {
   await truncateAll(app);
 });
 
-/** Set up an operation with the three seeded users attached at their roles. */
-async function setupOperation() {
+/** Set up an engagement with the three seeded users attached at their roles. */
+async function setupEngagement() {
   const users = await seedUsers(app);
-  const op = await app.db.operation.create({
+  const eng = await app.db.engagement.create({
     data: {
       slug: 'op1',
       name: 'Op One',
@@ -46,7 +46,7 @@ async function setupOperation() {
     },
     include: { tags: true },
   });
-  return { users, op, tag: op.tags[0]! };
+  return { users, eng, tag: eng.tags[0]! };
 }
 
 describe('session auth', () => {
@@ -87,9 +87,9 @@ describe('session auth', () => {
   });
 });
 
-describe('operation role enforcement', () => {
+describe('engagement role enforcement', () => {
   it('lets a writer create evidence but forbids a reader', async () => {
-    const { tag } = await setupOperation();
+    const { tag } = await setupEngagement();
 
     const write = await postEvidence('writer@test.local', tag.id);
     expect(write.statusCode).toBe(201);
@@ -106,16 +106,116 @@ describe('operation role enforcement', () => {
     );
     return app.inject({
       method: 'POST',
-      url: '/web/operations/op1/evidence',
+      url: '/web/engagements/op1/evidence',
       headers: { ...WEB_HEADERS, cookie, 'content-type': contentType },
       payload: body,
     });
   }
 });
 
+describe('engagement membership management', () => {
+  /** An engagement whose only member is the (system + engagement) admin. */
+  async function setupAdminOnly() {
+    const users = await seedUsers(app);
+    await app.db.engagement.create({
+      data: {
+        slug: 'op1',
+        name: 'Op One',
+        roles: { create: [{ userId: users.admin.id, role: 'admin' }] },
+      },
+    });
+    return users;
+  }
+
+  it('adds a member by email (case-insensitive) and lists them', async () => {
+    await setupAdminOnly();
+    const cookie = await loginCookie(app, 'admin@test.local', 'password123');
+
+    const added = await app.inject({
+      method: 'POST',
+      url: '/web/engagements/op1/users',
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { email: 'WRITER@Test.Local', role: 'write' },
+    });
+    expect(added.statusCode).toBe(200);
+    expect(added.json().user.email).toBe('writer@test.local');
+    expect(added.json().role).toBe('write');
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/web/engagements/op1/users',
+      headers: { cookie },
+    });
+    expect(list.statusCode).toBe(200);
+    const emails = list
+      .json()
+      .map((m: { user: { email: string } }) => m.user.email)
+      .sort();
+    expect(emails).toEqual(['admin@test.local', 'writer@test.local']);
+  });
+
+  it('re-roles an existing member instead of duplicating them', async () => {
+    await setupAdminOnly();
+    const cookie = await loginCookie(app, 'admin@test.local', 'password123');
+    const add = (role: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/web/engagements/op1/users',
+        headers: { ...WEB_HEADERS, cookie },
+        payload: { email: 'reader@test.local', role },
+      });
+
+    expect((await add('read')).json().role).toBe('read');
+    expect((await add('admin')).json().role).toBe('admin');
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/web/engagements/op1/users',
+      headers: { cookie },
+    });
+    expect(list.json()).toHaveLength(2); // admin + reader, no duplicate row
+  });
+
+  it('returns 404 when no account matches the email', async () => {
+    await setupAdminOnly();
+    const cookie = await loginCookie(app, 'admin@test.local', 'password123');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/web/engagements/op1/users',
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { email: 'nobody@test.local', role: 'read' },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('forbids non-admin members from managing membership', async () => {
+    const users = await seedUsers(app);
+    await app.db.engagement.create({
+      data: {
+        slug: 'op1',
+        name: 'Op One',
+        roles: {
+          create: [
+            { userId: users.admin.id, role: 'admin' },
+            { userId: users.reader.id, role: 'read' },
+          ],
+        },
+      },
+    });
+    const cookie = await loginCookie(app, 'reader@test.local', 'password123');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/web/engagements/op1/users',
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { email: 'writer@test.local', role: 'read' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
 describe('evidence pipeline', () => {
   it('stores a screenshot, generates a thumbnail, and serves both', async () => {
-    const { tag } = await setupOperation();
+    const { tag } = await setupEngagement();
     const cookie = await loginCookie(app, 'writer@test.local', 'password123');
 
     const { body, contentType } = buildMultipart(
@@ -124,7 +224,7 @@ describe('evidence pipeline', () => {
     );
     const created = await app.inject({
       method: 'POST',
-      url: '/web/operations/op1/evidence',
+      url: '/web/engagements/op1/evidence',
       headers: { ...WEB_HEADERS, cookie, 'content-type': contentType },
       payload: body,
     });
@@ -135,7 +235,7 @@ describe('evidence pipeline', () => {
 
     const content = await app.inject({
       method: 'GET',
-      url: `/web/operations/op1/evidence/${ev.uuid}/content`,
+      url: `/web/engagements/op1/evidence/${ev.uuid}/content`,
       headers: { cookie },
     });
     expect(content.statusCode).toBe(200);
@@ -143,7 +243,7 @@ describe('evidence pipeline', () => {
 
     const thumb = await app.inject({
       method: 'GET',
-      url: `/web/operations/op1/evidence/${ev.uuid}/thumbnail`,
+      url: `/web/engagements/op1/evidence/${ev.uuid}/thumbnail`,
       headers: { cookie },
     });
     expect(thumb.statusCode).toBe(200);
@@ -151,11 +251,11 @@ describe('evidence pipeline', () => {
   });
 
   it('filters the timeline by tag, type, and text', async () => {
-    const { tag, users, op } = await setupOperation();
+    const { tag, users, eng } = await setupEngagement();
     // Two evidence: one tagged image "alpha", one untagged note "beta".
     await app.db.evidence.create({
       data: {
-        operationId: op.id,
+        engagementId: eng.id,
         operatorId: users.writer.id,
         contentType: 'image',
         description: 'alpha finding',
@@ -165,7 +265,7 @@ describe('evidence pipeline', () => {
     });
     await app.db.evidence.create({
       data: {
-        operationId: op.id,
+        engagementId: eng.id,
         operatorId: users.writer.id,
         contentType: 'none',
         description: 'beta note',
@@ -192,7 +292,7 @@ describe('evidence pipeline', () => {
   async function timeline(cookie: string, q: string) {
     const res = await app.inject({
       method: 'GET',
-      url: `/web/operations/op1/evidence?q=${encodeURIComponent(q)}`,
+      url: `/web/engagements/op1/evidence?q=${encodeURIComponent(q)}`,
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
@@ -202,10 +302,10 @@ describe('evidence pipeline', () => {
 
 describe('findings', () => {
   it('links evidence to a finding and shows it in the detail view', async () => {
-    const { op, users, tag } = await setupOperation();
+    const { eng, users, tag } = await setupEngagement();
     const evidence = await app.db.evidence.create({
       data: {
-        operationId: op.id,
+        engagementId: eng.id,
         operatorId: users.writer.id,
         contentType: 'none',
         description: 'linked note',
@@ -218,7 +318,7 @@ describe('findings', () => {
     const finding = (
       await app.inject({
         method: 'POST',
-        url: '/web/operations/op1/findings',
+        url: '/web/engagements/op1/findings',
         headers: { ...WEB_HEADERS, cookie },
         payload: { title: 'F1', description: 'd', category: 'Web' },
       })
@@ -226,7 +326,7 @@ describe('findings', () => {
 
     const attach = await app.inject({
       method: 'POST',
-      url: `/web/operations/op1/findings/${finding.uuid}/evidence`,
+      url: `/web/engagements/op1/findings/${finding.uuid}/evidence`,
       headers: { ...WEB_HEADERS, cookie },
       payload: { evidenceUuids: [evidence.uuid] },
     });
@@ -234,7 +334,7 @@ describe('findings', () => {
 
     const detail = await app.inject({
       method: 'GET',
-      url: `/web/operations/op1/findings/${finding.uuid}`,
+      url: `/web/engagements/op1/findings/${finding.uuid}`,
       headers: { cookie },
     });
     expect(detail.json().evidence).toHaveLength(1);
@@ -256,7 +356,11 @@ describe('API keys', () => {
     const { accessKey, secretKey } = gen.json();
     expect(secretKey).toBeTruthy();
 
-    const list = await app.inject({ method: 'GET', url: '/web/account/api-keys', headers: { cookie } });
+    const list = await app.inject({
+      method: 'GET',
+      url: '/web/account/api-keys',
+      headers: { cookie },
+    });
     expect(list.json()[0].accessKey).toBe(accessKey);
     expect(list.json()[0].secretKey).toBeUndefined();
 
@@ -271,7 +375,7 @@ describe('API keys', () => {
 
 describe('HMAC client API', () => {
   it('accepts a correctly signed request', async () => {
-    const { users } = await setupOperation();
+    const { users } = await setupEngagement();
     const key = await apiKeyFor(app, users.writer.id);
     const headers = buildAuthHeaders(
       'GET',
@@ -286,7 +390,7 @@ describe('HMAC client API', () => {
   });
 
   it('creates evidence over a signed multipart request', async () => {
-    const { users, tag } = await setupOperation();
+    const { users, tag } = await setupEngagement();
     const key = await apiKeyFor(app, users.writer.id);
     const { body, contentType } = buildMultipart(
       { notes: JSON.stringify({ contentType: 'image', description: 'via api', tagIds: [tag.id] }) },
@@ -294,14 +398,14 @@ describe('HMAC client API', () => {
     );
     const auth = buildAuthHeaders(
       'POST',
-      '/api/operations/op1/evidence',
+      '/api/engagements/op1/evidence',
       body,
       key.accessKey,
       key.secretKey,
     );
     const res = await app.inject({
       method: 'POST',
-      url: '/api/operations/op1/evidence',
+      url: '/api/engagements/op1/evidence',
       headers: { ...auth, 'content-type': contentType },
       payload: body,
     });
@@ -310,28 +414,46 @@ describe('HMAC client API', () => {
   });
 
   it('rejects a tampered body, an expired date, and an unknown key', async () => {
-    const { users } = await setupOperation();
+    const { users } = await setupEngagement();
     const key = await apiKeyFor(app, users.writer.id);
 
     // Tampered signature.
-    const good = buildAuthHeaders('GET', '/api/operations', Buffer.alloc(0), key.accessKey, key.secretKey);
+    const good = buildAuthHeaders(
+      'GET',
+      '/api/engagements',
+      Buffer.alloc(0),
+      key.accessKey,
+      key.secretKey,
+    );
     const tampered = { ...good, authorization: `${key.accessKey}:AAAAstalesignatureAAAA==` };
-    expect((await app.inject({ method: 'GET', url: '/api/operations', headers: tampered })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/engagements', headers: tampered })).statusCode,
+    ).toBe(401);
 
     // Expired date (outside skew).
     const old = new Date(Date.now() - 60 * 60 * 1000).toUTCString();
     const expired = buildAuthHeaders(
       'GET',
-      '/api/operations',
+      '/api/engagements',
       Buffer.alloc(0),
       key.accessKey,
       key.secretKey,
       old,
     );
-    expect((await app.inject({ method: 'GET', url: '/api/operations', headers: expired })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/engagements', headers: expired })).statusCode,
+    ).toBe(401);
 
     // Unknown access key.
-    const unknown = buildAuthHeaders('GET', '/api/operations', Buffer.alloc(0), 'nope', key.secretKey);
-    expect((await app.inject({ method: 'GET', url: '/api/operations', headers: unknown })).statusCode).toBe(401);
+    const unknown = buildAuthHeaders(
+      'GET',
+      '/api/engagements',
+      Buffer.alloc(0),
+      'nope',
+      key.secretKey,
+    );
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/engagements', headers: unknown })).statusCode,
+    ).toBe(401);
   });
 });

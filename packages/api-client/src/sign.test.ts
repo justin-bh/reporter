@@ -25,18 +25,18 @@ describe('computeSignature', () => {
     const body = Buffer.from('{"hello":"world"}');
     const sig = computeSignature({
       method: 'POST',
-      path: '/api/operations/acme/evidence',
+      path: '/api/engagements/acme/evidence',
       date: DATE,
       body,
       secretKeyBase64: SECRET_B64,
     });
-    expect(sig).toBe(reference('POST', '/api/operations/acme/evidence', DATE, body));
+    expect(sig).toBe(reference('POST', '/api/engagements/acme/evidence', DATE, body));
   });
 
   it('is deterministic for identical inputs', () => {
     const args = {
       method: 'GET',
-      path: '/api/operations',
+      path: '/api/engagements',
       date: DATE,
       body: Buffer.alloc(0),
       secretKeyBase64: SECRET_B64,
@@ -46,7 +46,7 @@ describe('computeSignature', () => {
 
   it('uppercases the method so verbs are canonical', () => {
     const base = {
-      path: '/api/operations',
+      path: '/api/engagements',
       date: DATE,
       body: Buffer.alloc(0),
       secretKeyBase64: SECRET_B64,
@@ -59,14 +59,14 @@ describe('computeSignature', () => {
   it('changes when any signed component changes', () => {
     const base = {
       method: 'POST',
-      path: '/api/operations/acme/evidence',
+      path: '/api/engagements/acme/evidence',
       date: DATE,
       body: Buffer.from('a'),
       secretKeyBase64: SECRET_B64,
     };
     const sig = computeSignature(base);
     expect(computeSignature({ ...base, method: 'PUT' })).not.toBe(sig);
-    expect(computeSignature({ ...base, path: '/api/operations/other/evidence' })).not.toBe(sig);
+    expect(computeSignature({ ...base, path: '/api/engagements/other/evidence' })).not.toBe(sig);
     expect(computeSignature({ ...base, date: 'Thu, 14 Aug 2026 20:01:00 GMT' })).not.toBe(sig);
     expect(computeSignature({ ...base, body: Buffer.from('b') })).not.toBe(sig);
   });
@@ -76,7 +76,7 @@ describe('verifySignature', () => {
   it('accepts a correct signature and rejects a tampered one', () => {
     const params = {
       method: 'POST',
-      path: '/api/operations/acme/evidence',
+      path: '/api/engagements/acme/evidence',
       date: DATE,
       body: Buffer.from('payload'),
       secretKeyBase64: SECRET_B64,

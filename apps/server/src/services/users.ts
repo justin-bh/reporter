@@ -16,10 +16,7 @@ export interface CreateLocalUserArgs {
  * Create a user with a `local` auth identity. Headless users (no password) are
  * used for automated API-only clients. The email is the local identifier.
  */
-export async function createLocalUser(
-  db: PrismaClient,
-  args: CreateLocalUserArgs,
-): Promise<User> {
+export async function createLocalUser(db: PrismaClient, args: CreateLocalUserArgs): Promise<User> {
   const slug = await uniqueSlug(
     slugify(`${args.firstName} ${args.lastName}`) || args.email.split('@')[0]!,
     async (s) => (await db.user.count({ where: { slug: s } })) > 0,

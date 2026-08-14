@@ -16,8 +16,8 @@ skill / `electron-builder` output), or build it yourself (below).
 
 1. Open **Settings** (tray → Settings, or the window nav).
 2. Enter the **Server URL** (e.g. `http://reporter.lan:8080`), your **Access key**, and **Secret key** — generate a pair in the web UI under **Account → API keys**.
-3. Click **Test connection**; on success it loads your operations.
-4. Choose a **Current operation** (tray → Operation, or Settings). Captures go there.
+3. Click **Test connection**; on success it loads your engagements.
+4. Choose a **Current engagement** (tray → Engagement, or Settings). Captures go there.
 
 ## Capturing
 
@@ -27,7 +27,7 @@ From the tray menu (or global hotkeys):
 - **Capture window** — default `⌘/Ctrl + Shift + 8`
 - **Add code block from clipboard**
 
-After a capture, a compose window opens: add a description and tags, confirm the operation, and **Add evidence**. Items queue locally and upload automatically; failed uploads can be retried from **History**.
+After a capture, a compose window opens: add a description and tags, confirm the engagement, and **Add evidence**. Items queue locally and upload automatically; failed uploads can be retried from **History**.
 
 ### Per-OS capture notes
 
@@ -55,7 +55,7 @@ The `afterPack` hook (`scripts/afterPack.cjs`) signs the bundle so it launches o
 
 ### Stable signing (for persistent macOS permissions)
 
-Ad-hoc signing pins the app's identity to its content hash, so **macOS permission grants (Screen Recording, Accessibility, …) reset on every rebuild**. Signing with a stable code-signing certificate anchors the app's *designated requirement* to the certificate instead, so one grant survives every rebuild and every copy.
+Ad-hoc signing pins the app's identity to its content hash, so **macOS permission grants (Screen Recording, Accessibility, …) reset on every rebuild**. Signing with a stable code-signing certificate anchors the app's _designated requirement_ to the certificate instead, so one grant survives every rebuild and every copy.
 
 You don't need a paid Apple account for local dev — a **self-signed code-signing certificate** is enough:
 
@@ -78,14 +78,14 @@ For a **prompt-free install on other people's Macs**, use a paid **Apple Develop
 
 ## Version & updates
 
-Open **About** (tray → *About reporter*, or the window nav) to see the app
+Open **About** (tray → _About reporter_, or the window nav) to see the app
 version, the exact build (git commit + date), the Electron/Chromium/Node
 versions, and the server you're pointed at. **Check for updates** compares your
 version against the latest published release and links to the download when a
 newer one exists.
 
 The version is single-sourced from `package.json` and bumped repo-wide with
-`pnpm run version:bump` (see the root `CLAUDE.md` → *Versioning & releases*).
+`pnpm run version:bump` (see the root `CLAUDE.md` → _Versioning & releases_).
 Pushing a `vX.Y.Z` tag builds the installers for each OS on native CI runners.
 
 ## Notes

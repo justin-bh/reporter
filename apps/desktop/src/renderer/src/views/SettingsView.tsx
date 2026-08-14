@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Select, useToast } from '@reporter/ui';
-import type { DesktopSettings, OperationLite } from '../../../shared/types.js';
+import type { DesktopSettings, EngagementLite } from '../../../shared/types.js';
 
 export function SettingsView() {
   const toast = useToast();
@@ -9,7 +9,7 @@ export function SettingsView() {
   const [accessKey, setAccessKey] = useState('');
   const [secret, setSecret] = useState('');
   const [captureCommand, setCaptureCommand] = useState('');
-  const [operations, setOperations] = useState<OperationLite[]>([]);
+  const [engagements, setEngagements] = useState<EngagementLite[]>([]);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -47,7 +47,7 @@ export function SettingsView() {
       const res = await window.reporter.testConnection();
       if (res.ok) {
         toast.success(`Connected as ${res.user}`);
-        setOperations(await window.reporter.listOperations());
+        setEngagements(await window.reporter.listEngagements());
       } else {
         toast.error(res.error ?? 'Connection failed');
       }
@@ -56,8 +56,8 @@ export function SettingsView() {
     }
   }
 
-  async function pickOperation(slug: string) {
-    const next = await window.reporter.setOperation(slug || null);
+  async function pickEngagement(slug: string) {
+    const next = await window.reporter.setEngagement(slug || null);
     setSettings(next);
   }
 
@@ -66,15 +66,29 @@ export function SettingsView() {
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-text">Server</h2>
         <Field label="Server URL" htmlFor="url" hint="e.g. http://reporter.lan:8080">
-          <Input id="url" value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} placeholder="http://localhost:8080" />
+          <Input
+            id="url"
+            value={serverUrl}
+            onChange={(e) => setServerUrl(e.target.value)}
+            placeholder="http://localhost:8080"
+          />
         </Field>
         <Field label="Access key" htmlFor="ak">
-          <Input id="ak" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} className="font-mono" />
+          <Input
+            id="ak"
+            value={accessKey}
+            onChange={(e) => setAccessKey(e.target.value)}
+            className="font-mono"
+          />
         </Field>
         <Field
           label="Secret key"
           htmlFor="sk"
-          hint={settings?.hasSecret ? 'A secret is stored. Enter a new one to replace it.' : 'From Account → API keys in the web UI.'}
+          hint={
+            settings?.hasSecret
+              ? 'A secret is stored. Enter a new one to replace it.'
+              : 'From Account → API keys in the web UI.'
+          }
         >
           <Input
             id="sk"
@@ -87,7 +101,8 @@ export function SettingsView() {
         </Field>
         {settings?.weakSecretStorage && (
           <p className="text-xs text-warning">
-            ⚠ No system keyring detected — the secret is stored with weak encryption on this machine.
+            ⚠ No system keyring detected — the secret is stored with weak encryption on this
+            machine.
           </p>
         )}
         <div className="flex gap-2">
@@ -101,22 +116,25 @@ export function SettingsView() {
       </section>
 
       <section className="flex flex-col gap-3 border-t border-border pt-4">
-        <h2 className="text-sm font-semibold text-text">Current operation</h2>
-        {operations.length === 0 ? (
-          <p className="text-xs text-muted">Test the connection to load operations.</p>
+        <h2 className="text-sm font-semibold text-text">Current engagement</h2>
+        {engagements.length === 0 ? (
+          <p className="text-xs text-muted">Test the connection to load engagements.</p>
         ) : (
-          <Select value={settings?.currentOperationSlug ?? ''} onChange={(e) => pickOperation(e.target.value)}>
+          <Select
+            value={settings?.currentEngagementSlug ?? ''}
+            onChange={(e) => pickEngagement(e.target.value)}
+          >
             <option value="">— none —</option>
-            {operations.map((op) => (
-              <option key={op.slug} value={op.slug}>
-                {op.name}
+            {engagements.map((eng) => (
+              <option key={eng.slug} value={eng.slug}>
+                {eng.name}
               </option>
             ))}
           </Select>
         )}
-        {settings?.currentOperationSlug && (
+        {settings?.currentEngagementSlug && (
           <div className="text-xs text-muted">
-            Capturing to <Badge tone="accent">{settings.currentOperationSlug}</Badge>
+            Capturing to <Badge tone="accent">{settings.currentEngagementSlug}</Badge>
           </div>
         )}
       </section>
@@ -128,10 +146,16 @@ export function SettingsView() {
           htmlFor="cc"
           hint="Used on Linux/Windows. Use $FILE for the output path. macOS uses the native tool."
         >
-          <Input id="cc" value={captureCommand} onChange={(e) => setCaptureCommand(e.target.value)} className="font-mono" />
+          <Input
+            id="cc"
+            value={captureCommand}
+            onChange={(e) => setCaptureCommand(e.target.value)}
+            className="font-mono"
+          />
         </Field>
         <p className="text-xs text-muted">
-          Global hotkeys default to ⌘/Ctrl+Shift+7 (area) and +8 (window). On Wayland, use the tray menu.
+          Global hotkeys default to ⌘/Ctrl+Shift+7 (area) and +8 (window). On Wayland, use the tray
+          menu.
         </p>
       </section>
     </div>

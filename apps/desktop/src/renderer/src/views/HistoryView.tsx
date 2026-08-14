@@ -68,7 +68,7 @@ export function HistoryView({ onCompose }: { onCompose: () => void }) {
                 </p>
                 <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
                   <Badge tone={STATUS_TONE[item.status]}>{item.status}</Badge>
-                  <span>{item.operationSlug}</span>
+                  <span>{item.engagementSlug}</span>
                 </div>
                 {item.status === 'failed' && item.error && (
                   <p className="mt-1 truncate text-xs text-danger" title={item.error}>
@@ -78,7 +78,11 @@ export function HistoryView({ onCompose }: { onCompose: () => void }) {
               </div>
               <div className="flex flex-none gap-1">
                 {item.status === 'failed' && (
-                  <Button size="sm" variant="secondary" onClick={() => window.reporter.retryItem(item.id)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => window.reporter.retryItem(item.id)}
+                  >
                     Retry
                   </Button>
                 )}

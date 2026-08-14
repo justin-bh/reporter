@@ -16,6 +16,7 @@ export function parsePagination(query: Record<string, unknown>): Pagination {
 }
 
 function toInt(value: unknown, fallback: number): number {
-  const n = typeof value === 'string' ? parseInt(value, 10) : typeof value === 'number' ? value : NaN;
+  const n =
+    typeof value === 'string' ? parseInt(value, 10) : typeof value === 'number' ? value : NaN;
   return Number.isFinite(n) ? n : fallback;
 }
