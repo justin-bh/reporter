@@ -35,7 +35,7 @@ reporter-term config          # show the config file path and current values
 
 **Recording:** `reporter-term` drops you into your shell inside a recorded PTY. Work as normal; type `exit` or press **Ctrl-D** to stop. Then choose:
 
-- **Upload to reporter** — pick an operation, add a description and tags, and it uploads. (Optionally delete the local copy afterward.)
+- **Upload to reporter** — pick an engagement, add a description and tags, and it uploads. (Optionally delete the local copy afterward.)
 - **Keep locally only** — the `.cast` stays in your recordings folder.
 - **Discard** — delete it.
 

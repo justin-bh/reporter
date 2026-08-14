@@ -27,9 +27,9 @@ Electron tray app for screenshot / codeblock capture. electron-vite (main/preloa
 
 ## Version & About
 
-- **Single source of truth** for the app version is `apps/desktop/package.json` `version` (what electron-builder stamps into installers). Bump it repo-wide with `pnpm run version:bump` — never hand-edit (see root `CLAUDE.md` → *Versioning & releases*).
-- **Build metadata is injected** by `electron.vite.config.ts` `define` into the *main* bundle only: `__APP_VERSION__`, `__APP_HOMEPAGE__`, `__GIT_COMMIT__`, `__BUILD_DATE__` (declared in `src/env.d.ts`, read via `src/main/build-info.ts`). CI can override `GIT_COMMIT` / `BUILD_DATE` env vars for reproducible builds.
-- **About view** (`src/renderer/src/views/AboutView.tsx`): tray → *About reporter* or window nav → **About**. Shows version, commit, build date, Electron/Chromium/Node/V8, platform, server URL. IPC: `about:get` → `AboutInfo`. `update:check` hits the GitHub *releases/latest* API for the repo in `homepage` and compares SemVer (never throws; unset/unreachable feed degrades gracefully). Links open via `shell:open-external` (https-only). `app.setAboutPanelOptions` keeps the OS-native panel in sync.
+- **Single source of truth** for the app version is `apps/desktop/package.json` `version` (what electron-builder stamps into installers). Bump it repo-wide with `pnpm run version:bump` — never hand-edit (see root `CLAUDE.md` → _Versioning & releases_).
+- **Build metadata is injected** by `electron.vite.config.ts` `define` into the _main_ bundle only: `__APP_VERSION__`, `__APP_HOMEPAGE__`, `__GIT_COMMIT__`, `__BUILD_DATE__` (declared in `src/env.d.ts`, read via `src/main/build-info.ts`). CI can override `GIT_COMMIT` / `BUILD_DATE` env vars for reproducible builds.
+- **About view** (`src/renderer/src/views/AboutView.tsx`): tray → _About reporter_ or window nav → **About**. Shows version, commit, build date, Electron/Chromium/Node/V8, platform, server URL. IPC: `about:get` → `AboutInfo`. `update:check` hits the GitHub _releases/latest_ API for the repo in `homepage` and compares SemVer (never throws; unset/unreachable feed degrades gracefully). Links open via `shell:open-external` (https-only). `app.setAboutPanelOptions` keeps the OS-native panel in sync.
 
 ## Gotchas (flag to users)
 

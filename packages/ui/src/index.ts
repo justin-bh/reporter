@@ -5,14 +5,17 @@ export * from './Spinner.js';
 export * from './Input.js';
 export * from './Card.js';
 export * from './Badge.js';
+export * from './SeverityBadge.js';
 export * from './TagChip.js';
 export * from './TagPicker.js';
 export * from './EmptyState.js';
 export * from './ErrorState.js';
 export * from './Modal.js';
+export * from './Popover.js';
 export * from './Confirm.js';
 export * from './Toast.js';
 export * from './Select.js';
+export * from './DateRangePicker.js';
 export * from './Table.js';
 export * from './Tabs.js';
 

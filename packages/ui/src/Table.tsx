@@ -13,7 +13,11 @@ export function Table({ className, children, ...rest }: HTMLAttributes<HTMLTable
 }
 
 export function Thead({ children }: { children: ReactNode }) {
-  return <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-muted">{children}</thead>;
+  return (
+    <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-muted">
+      {children}
+    </thead>
+  );
 }
 
 export function Tbody({ children }: { children: ReactNode }) {

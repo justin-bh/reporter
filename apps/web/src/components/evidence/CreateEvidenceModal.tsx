@@ -1,15 +1,10 @@
 import { useState } from 'react';
+import { Button, Field, Input, Modal, Select, TagPicker, Textarea, useToast } from '@reporter/ui';
 import {
-  Button,
-  Field,
-  Input,
-  Modal,
-  Select,
-  TagPicker,
-  Textarea,
-  useToast,
-} from '@reporter/ui';
-import { EVIDENCE_TYPE_LABELS, type CreateEvidenceInput, type EvidenceType } from '@reporter/shared';
+  EVIDENCE_TYPE_LABELS,
+  type CreateEvidenceInput,
+  type EvidenceType,
+} from '@reporter/shared';
 import { useCreateEvidence, useTags } from '../../api/hooks.js';
 
 const CREATABLE: EvidenceType[] = ['image', 'codeblock', 'none', 'event', 'http-request-cycle'];
@@ -36,7 +31,9 @@ export function CreateEvidenceModal({
 
   const needsFile = type === 'image';
   const needsText = type !== 'image';
-  const canSubmit = needsFile ? Boolean(file) : content.trim().length > 0 || description.trim().length > 0;
+  const canSubmit = needsFile
+    ? Boolean(file)
+    : content.trim().length > 0 || description.trim().length > 0;
 
   function reset() {
     setType('image');
@@ -85,7 +82,11 @@ export function CreateEvidenceModal({
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Type" htmlFor="ev-type">
-            <Select id="ev-type" value={type} onChange={(e) => setType(e.target.value as EvidenceType)}>
+            <Select
+              id="ev-type"
+              value={type}
+              onChange={(e) => setType(e.target.value as EvidenceType)}
+            >
               {CREATABLE.map((t) => (
                 <option key={t} value={t}>
                   {EVIDENCE_TYPE_LABELS[t]}
@@ -95,13 +96,22 @@ export function CreateEvidenceModal({
           </Field>
           {type === 'codeblock' && (
             <Field label="Language" htmlFor="ev-lang" hint="Optional">
-              <Input id="ev-lang" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="bash" />
+              <Input
+                id="ev-lang"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                placeholder="bash"
+              />
             </Field>
           )}
         </div>
 
         <Field label="Description" htmlFor="ev-desc">
-          <Input id="ev-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <Input
+            id="ev-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
         </Field>
 
         {needsFile ? (
@@ -134,7 +144,7 @@ export function CreateEvidenceModal({
             tags={tags ?? []}
             selectedIds={tagIds}
             onChange={setTagIds}
-            emptyHint="No tags in this operation yet — add some on the Tags tab."
+            emptyHint="No tags in this engagement yet — add some on the Tags tab."
           />
         </Field>
       </div>

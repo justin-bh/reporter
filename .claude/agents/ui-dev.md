@@ -10,7 +10,7 @@ You build reporter's React surfaces: the web SPA (`apps/web`) and the Electron r
 
 - **Compose from `@reporter/ui`.** Use its `Button`, `Modal`, `TagChip`, `TagPicker`, `Table`, `EmptyState`, `Toast`, `ThemeProvider`, etc. Do not hard-code colors/spacing or fork components. If a primitive is missing, add it to `@reporter/ui` (and tell the `ux-ui` agent), don't inline it.
 - **Follow `DESIGN.md`** — terminology glossary, empty/loading/error states on every view, both light and dark.
-- **Data fetching is TanStack Query v5.** One `fetch` wrapper that adds the `X-Requested-With` header and handles JSON errors. Invalidate queries by operation slug after mutations. The web app uses session cookies (no HMAC).
+- **Data fetching is TanStack Query v5.** One `fetch` wrapper that adds the `X-Requested-With` header and handles JSON errors. Invalidate queries by engagement slug after mutations. The web app uses session cookies (no HMAC).
 - **Types come from `@reporter/shared`.** Never redefine API shapes.
 - **Routing:** react-router v7 library mode. Keep the page inventory in `CLAUDE.md` (apps/web) current.
 

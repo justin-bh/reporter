@@ -159,7 +159,9 @@ function HarViewer({ slug, uuid }: { slug: string; uuid: string }) {
         ))}
       </div>
       <pre className="max-h-[50vh] overflow-auto rounded-card border border-border bg-surface-2 p-4 text-xs">
-        <code className="font-mono">{active ? JSON.stringify(active, null, 2) : 'No entry selected'}</code>
+        <code className="font-mono">
+          {active ? JSON.stringify(active, null, 2) : 'No entry selected'}
+        </code>
       </pre>
     </div>
   );

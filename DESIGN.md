@@ -11,14 +11,15 @@ reporter spans three surfaces (web, desktop, terminal). They must feel like **on
 
 ## Terminology glossary (use these exact words)
 
-| Term | Meaning | Never call it |
-|------|---------|---------------|
-| **Operation** | An engagement/project that scopes all data. | project, engagement, case |
-| **Evidence** | A single timestamped artifact (screenshot, recording, note…). | item, artifact, capture |
-| **Finding** | A reportable grouping of evidence. | issue, vuln, result |
-| **Tag** | A colored label on evidence, scoped to an operation. | label, category |
-| **Operator** | The user who captured a piece of evidence. | author, creator |
-| **API key** | An access-key/secret-key pair for client apps. | token, credential |
+| Term           | Meaning                                                                            | Never call it            |
+| -------------- | ---------------------------------------------------------------------------------- | ------------------------ |
+| **Engagement** | The top-level container that scopes all evidence, findings, and tags.              | operation, project, case |
+| **Evidence**   | A single timestamped artifact (screenshot, recording, note…).                      | item, artifact, capture  |
+| **Finding**    | A reportable grouping of evidence.                                                 | issue, vuln, result      |
+| **Severity**   | A finding's risk rating on the CVSS v3.1 scale: None, Low, Medium, High, Critical. | priority, criticality    |
+| **Tag**        | A colored label on evidence, scoped to an engagement.                              | label, category          |
+| **Operator**   | The user who captured a piece of evidence.                                         | author, creator          |
+| **API key**    | An access-key/secret-key pair for client apps.                                     | token, credential        |
 
 Empty-state copy is warm and instructive ("No evidence yet — capture your first screenshot with the desktop app or drop a file here."). Errors are plain and actionable ("Couldn't reach the server. Check the server URL in Settings."). No stack traces in the UI.
 
@@ -28,20 +29,20 @@ Defined as CSS variables in `@reporter/ui` (`src/tokens.css`), exposed to Tailwi
 
 Primitive palette (brand): a slate-neutral base with a single confident **teal** accent, plus status hues.
 
-| Semantic role | Light | Dark |
-|---------------|-------|------|
-| `--bg` (app background) | `#f7f8fa` | `#0e1116` |
+| Semantic role               | Light     | Dark      |
+| --------------------------- | --------- | --------- |
+| `--bg` (app background)     | `#f7f8fa` | `#0e1116` |
 | `--surface` (cards, panels) | `#ffffff` | `#171b22` |
-| `--surface-2` (raised) | `#f0f2f5` | `#1f242d` |
-| `--border` | `#e2e5ea` | `#2a303a` |
-| `--text` | `#1a1d23` | `#e6e9ef` |
-| `--text-muted` | `#5b6472` | `#9aa4b2` |
-| `--accent` (teal) | `#0e8a8a` | `#2dd4bf` |
-| `--accent-contrast` | `#ffffff` | `#04211f` |
-| `--success` | `#1f9d55` | `#3ddc84` |
-| `--warning` | `#c77700` | `#f0b429` |
-| `--danger` | `#d64545` | `#ff6b6b` |
-| `--info` | `#2d7ff9` | `#5ea2ff` |
+| `--surface-2` (raised)      | `#f0f2f5` | `#1f242d` |
+| `--border`                  | `#e2e5ea` | `#2a303a` |
+| `--text`                    | `#1a1d23` | `#e6e9ef` |
+| `--text-muted`              | `#5b6472` | `#9aa4b2` |
+| `--accent` (teal)           | `#0e8a8a` | `#2dd4bf` |
+| `--accent-contrast`         | `#ffffff` | `#04211f` |
+| `--success`                 | `#1f9d55` | `#3ddc84` |
+| `--warning`                 | `#c77700` | `#f0b429` |
+| `--danger`                  | `#d64545` | `#ff6b6b` |
+| `--info`                    | `#2d7ff9` | `#5ea2ff` |
 
 Tag colors are a fixed 12-swatch palette shared from `@reporter/shared` (`TAG_COLORS`) so a tag looks identical in the web timeline, desktop history, and CLI selection list.
 
@@ -61,7 +62,7 @@ Tag colors are a fixed 12-swatch palette shared from `@reporter/shared` (`TAG_CO
 
 ## Components (in `@reporter/ui`)
 
-`Button` (variants: primary/secondary/ghost/danger; sizes sm/md), `Input`, `Textarea`, `Select`, `Checkbox`, `Modal`, `Toast` (+ `useToast`), `Card`, `Badge`, `TagChip`, `TagPicker`, `Table`, `EmptyState`, `Spinner`, `DateRangePicker`, `Tabs`, `ThemeProvider`/`useTheme`. Pages compose these; they don't restyle them.
+`Button` (variants: primary/secondary/ghost/danger; sizes sm/md), `Input`, `Textarea`, `Select`, `Checkbox`, `Modal`, `Confirm` (`useConfirm`), `Toast` (+ `useToast`), `Card`, `Badge`, `SeverityBadge`, `TagChip`, `TagPicker`, `Table`, `EmptyState`, `Spinner`, `DateRangePicker`, `Tabs`, `ThemeProvider`/`useTheme`. Pages compose these; they don't restyle them.
 
 ## Terminal recorder styling
 

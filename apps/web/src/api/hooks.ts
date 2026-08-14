@@ -3,11 +3,12 @@ import type {
   ApiKey,
   CreateEvidenceInput,
   CreateFindingInput,
-  CreateOperationInput,
+  CreateEngagementInput,
   CreateTagInput,
   Evidence,
   Finding,
-  Operation,
+  FindingsImportResult,
+  Engagement,
   SavedQuery,
   Tag,
   User,
@@ -21,31 +22,34 @@ export interface TimelineResult {
   pageSize: number;
 }
 
-const opKey = (slug: string) => ['operation', slug];
+const engKey = (slug: string) => ['engagement', slug];
 
-// --- Operations ---
-export const useOperations = () =>
-  useQuery({ queryKey: ['operations'], queryFn: () => api.get<Operation[]>('/web/operations') });
+// --- Engagements ---
+export const useEngagements = () =>
+  useQuery({ queryKey: ['engagements'], queryFn: () => api.get<Engagement[]>('/web/engagements') });
 
-export const useOperation = (slug: string) =>
-  useQuery({ queryKey: opKey(slug), queryFn: () => api.get<Operation>(`/web/operations/${slug}`) });
+export const useEngagement = (slug: string) =>
+  useQuery({
+    queryKey: engKey(slug),
+    queryFn: () => api.get<Engagement>(`/web/engagements/${slug}`),
+  });
 
-export function useCreateOperation() {
+export function useCreateEngagement() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateOperationInput) => api.post<Operation>('/web/operations', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['operations'] }),
+    mutationFn: (input: CreateEngagementInput) => api.post<Engagement>('/web/engagements', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['engagements'] }),
   });
 }
 
-export function useUpdateOperation(slug: string) {
+export function useUpdateEngagement(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<Pick<Operation, 'name' | 'status'>>) =>
-      api.put<Operation>(`/web/operations/${slug}`, patch),
+    mutationFn: (patch: Partial<Pick<Engagement, 'name' | 'status'>>) =>
+      api.put<Engagement>(`/web/engagements/${slug}`, patch),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['operations'] });
-      qc.invalidateQueries({ queryKey: opKey(slug) });
+      qc.invalidateQueries({ queryKey: ['engagements'] });
+      qc.invalidateQueries({ queryKey: engKey(slug) });
     },
   });
 }
@@ -53,8 +57,8 @@ export function useUpdateOperation(slug: string) {
 export function useToggleFavorite(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (favorite: boolean) => api.post(`/web/operations/${slug}/favorite`, { favorite }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['operations'] }),
+    mutationFn: (favorite: boolean) => api.post(`/web/engagements/${slug}/favorite`, { favorite }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['engagements'] }),
   });
 }
 
@@ -64,14 +68,25 @@ export const useTimeline = (slug: string, q: string, page: number) =>
     queryKey: ['timeline', slug, q, page],
     queryFn: () =>
       api.get<TimelineResult>(
-        `/web/operations/${slug}/evidence?q=${encodeURIComponent(q)}&page=${page}`,
+        `/web/engagements/${slug}/evidence?q=${encodeURIComponent(q)}&page=${page}`,
       ),
   });
 
 export const useEvidence = (slug: string, uuid: string) =>
   useQuery({
     queryKey: ['evidence', slug, uuid],
-    queryFn: () => api.get<Evidence>(`/web/operations/${slug}/evidence/${uuid}`),
+    queryFn: () => api.get<Evidence>(`/web/engagements/${slug}/evidence/${uuid}`),
+  });
+
+/** An operator as it appears on evidence (for the timeline operator filter). */
+export type EvidenceOperator = Evidence['operator'];
+
+/** Distinct operators who have evidence in the engagement (read-level). */
+export const useEvidenceOperators = (slug: string) =>
+  useQuery({
+    queryKey: ['evidence-operators', slug],
+    queryFn: () => api.get<EvidenceOperator[]>(`/web/engagements/${slug}/evidence/operators`),
+    staleTime: 5 * 60_000,
   });
 
 export function useCreateEvidence(slug: string) {
@@ -81,7 +96,7 @@ export function useCreateEvidence(slug: string) {
       const form = new FormData();
       form.append('notes', JSON.stringify(args.metadata));
       if (args.file) form.append('file', args.file);
-      return api.postForm<Evidence>(`/web/operations/${slug}/evidence`, form);
+      return api.postForm<Evidence>(`/web/engagements/${slug}/evidence`, form);
     },
     onSuccess: () => invalidateTimeline(qc, slug),
   });
@@ -91,7 +106,7 @@ export function useUpdateEvidence(slug: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { uuid: string; patch: Record<string, unknown> }) =>
-      api.put<Evidence>(`/web/operations/${slug}/evidence/${args.uuid}`, args.patch),
+      api.put<Evidence>(`/web/engagements/${slug}/evidence/${args.uuid}`, args.patch),
     onSuccess: (_d, v) => {
       invalidateTimeline(qc, slug);
       qc.invalidateQueries({ queryKey: ['evidence', slug, v.uuid] });
@@ -102,24 +117,27 @@ export function useUpdateEvidence(slug: string) {
 export function useDeleteEvidence(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (uuid: string) => api.del(`/web/operations/${slug}/evidence/${uuid}`),
+    mutationFn: (uuid: string) => api.del(`/web/engagements/${slug}/evidence/${uuid}`),
     onSuccess: () => invalidateTimeline(qc, slug),
   });
 }
 
 function invalidateTimeline(qc: ReturnType<typeof useQueryClient>, slug: string) {
   qc.invalidateQueries({ queryKey: ['timeline', slug] });
-  qc.invalidateQueries({ queryKey: ['operations'] });
+  qc.invalidateQueries({ queryKey: ['engagements'] });
 }
 
 // --- Tags ---
 export const useTags = (slug: string) =>
-  useQuery({ queryKey: ['tags', slug], queryFn: () => api.get<Tag[]>(`/web/operations/${slug}/tags`) });
+  useQuery({
+    queryKey: ['tags', slug],
+    queryFn: () => api.get<Tag[]>(`/web/engagements/${slug}/tags`),
+  });
 
 export function useCreateTag(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateTagInput) => api.post<Tag>(`/web/operations/${slug}/tags`, input),
+    mutationFn: (input: CreateTagInput) => api.post<Tag>(`/web/engagements/${slug}/tags`, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tags', slug] }),
   });
 }
@@ -128,7 +146,7 @@ export function useUpdateTag(slug: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: number; patch: Partial<Tag> }) =>
-      api.put<Tag>(`/web/operations/${slug}/tags/${args.id}`, args.patch),
+      api.put<Tag>(`/web/engagements/${slug}/tags/${args.id}`, args.patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tags', slug] }),
   });
 }
@@ -136,7 +154,7 @@ export function useUpdateTag(slug: string) {
 export function useDeleteTag(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.del(`/web/operations/${slug}/tags/${id}`),
+    mutationFn: (id: number) => api.del(`/web/engagements/${slug}/tags/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tags', slug] }),
   });
 }
@@ -145,21 +163,21 @@ export function useDeleteTag(slug: string) {
 export const useFindings = (slug: string) =>
   useQuery({
     queryKey: ['findings', slug],
-    queryFn: () => api.get<Finding[]>(`/web/operations/${slug}/findings`),
+    queryFn: () => api.get<Finding[]>(`/web/engagements/${slug}/findings`),
   });
 
 export const useFinding = (slug: string, uuid: string) =>
   useQuery({
     queryKey: ['finding', slug, uuid],
     queryFn: () =>
-      api.get<Finding & { evidence: Evidence[] }>(`/web/operations/${slug}/findings/${uuid}`),
+      api.get<Finding & { evidence: Evidence[] }>(`/web/engagements/${slug}/findings/${uuid}`),
   });
 
 export function useCreateFinding(slug: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateFindingInput) =>
-      api.post<Finding>(`/web/operations/${slug}/findings`, input),
+      api.post<Finding>(`/web/engagements/${slug}/findings`, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['findings', slug] }),
   });
 }
@@ -168,7 +186,7 @@ export function useUpdateFinding(slug: string, uuid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: Record<string, unknown>) =>
-      api.put<Finding>(`/web/operations/${slug}/findings/${uuid}`, patch),
+      api.put<Finding>(`/web/engagements/${slug}/findings/${uuid}`, patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['findings', slug] });
       qc.invalidateQueries({ queryKey: ['finding', slug, uuid] });
@@ -179,7 +197,17 @@ export function useUpdateFinding(slug: string, uuid: string) {
 export function useDeleteFinding(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (uuid: string) => api.del(`/web/operations/${slug}/findings/${uuid}`),
+    mutationFn: (uuid: string) => api.del(`/web/engagements/${slug}/findings/${uuid}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['findings', slug] }),
+  });
+}
+
+/** Import a findings export (parsed JSON) into the engagement. */
+export function useImportFindings(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: unknown) =>
+      api.post<FindingsImportResult>(`/web/engagements/${slug}/findings/import`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['findings', slug] }),
   });
 }
@@ -188,7 +216,7 @@ export function useAttachEvidence(slug: string, uuid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (evidenceUuids: string[]) =>
-      api.post(`/web/operations/${slug}/findings/${uuid}/evidence`, { evidenceUuids }),
+      api.post(`/web/engagements/${slug}/findings/${uuid}/evidence`, { evidenceUuids }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['finding', slug, uuid] }),
   });
 }
@@ -197,8 +225,58 @@ export function useDetachEvidence(slug: string, uuid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (evidenceUuid: string) =>
-      api.del(`/web/operations/${slug}/findings/${uuid}/evidence/${evidenceUuid}`),
+      api.del(`/web/engagements/${slug}/findings/${uuid}/evidence/${evidenceUuid}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['finding', slug, uuid] }),
+  });
+}
+
+/** Reorder findings by their full ordered UUID list (optimistic). */
+export function useReorderFindings(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedUuids: string[]) =>
+      api.patch(`/web/engagements/${slug}/findings/reorder`, { orderedUuids }),
+    onMutate: async (orderedUuids) => {
+      await qc.cancelQueries({ queryKey: ['findings', slug] });
+      const prev = qc.getQueryData<Finding[]>(['findings', slug]);
+      if (prev) {
+        const byUuid = new Map(prev.map((f) => [f.uuid, f]));
+        const next = orderedUuids.map((u) => byUuid.get(u)).filter((f): f is Finding => Boolean(f));
+        qc.setQueryData(['findings', slug], next);
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['findings', slug], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['findings', slug] }),
+  });
+}
+
+type FindingWithEvidence = Finding & { evidence: Evidence[] };
+
+/** Reorder the evidence attached to a finding (optimistic). */
+export function useReorderEvidence(slug: string, uuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedUuids: string[]) =>
+      api.patch(`/web/engagements/${slug}/findings/${uuid}/evidence/reorder`, { orderedUuids }),
+    onMutate: async (orderedUuids) => {
+      await qc.cancelQueries({ queryKey: ['finding', slug, uuid] });
+      const prev = qc.getQueryData<FindingWithEvidence>(['finding', slug, uuid]);
+      if (prev) {
+        const byUuid = new Map(prev.evidence.map((e) => [e.uuid, e]));
+        const evidence = orderedUuids
+          .map((u) => byUuid.get(u))
+          .filter((e): e is Evidence => Boolean(e));
+        qc.setQueryData(['finding', slug, uuid], { ...prev, evidence });
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['finding', slug, uuid], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['finding', slug, uuid] }),
   });
 }
 
@@ -206,14 +284,14 @@ export function useDetachEvidence(slug: string, uuid: string) {
 export const useSavedQueries = (slug: string) =>
   useQuery({
     queryKey: ['queries', slug],
-    queryFn: () => api.get<SavedQuery[]>(`/web/operations/${slug}/queries`),
+    queryFn: () => api.get<SavedQuery[]>(`/web/engagements/${slug}/queries`),
   });
 
 export function useCreateSavedQuery(slug: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { name: string; query: string; type: 'evidence' | 'findings' }) =>
-      api.post<SavedQuery>(`/web/operations/${slug}/queries`, input),
+      api.post<SavedQuery>(`/web/engagements/${slug}/queries`, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['queries', slug] }),
   });
 }
@@ -221,7 +299,7 @@ export function useCreateSavedQuery(slug: string) {
 export function useDeleteSavedQuery(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.del(`/web/operations/${slug}/queries/${id}`),
+    mutationFn: (id: number) => api.del(`/web/engagements/${slug}/queries/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['queries', slug] }),
   });
 }
@@ -233,7 +311,10 @@ export interface AccountApiKey {
   createdAt: string;
 }
 export const useApiKeys = () =>
-  useQuery({ queryKey: ['api-keys'], queryFn: () => api.get<AccountApiKey[]>('/web/account/api-keys') });
+  useQuery({
+    queryKey: ['api-keys'],
+    queryFn: () => api.get<AccountApiKey[]>('/web/account/api-keys'),
+  });
 
 export function useCreateApiKey() {
   const qc = useQueryClient();
@@ -246,7 +327,8 @@ export function useCreateApiKey() {
 export function useRevokeApiKey() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (accessKey: string) => api.del(`/web/account/api-keys/${encodeURIComponent(accessKey)}`),
+    mutationFn: (accessKey: string) =>
+      api.del(`/web/account/api-keys/${encodeURIComponent(accessKey)}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['api-keys'] }),
   });
 }

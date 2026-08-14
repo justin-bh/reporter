@@ -26,10 +26,7 @@ exports.default = async function afterPack(context) {
   // have identical non-binary SHAs, so signing the intermediates breaks the
   // merge. Skip them and sign only the final (merged / single-arch) output.
   if (context.appOutDir.includes('-temp')) return;
-  const appPath = path.join(
-    context.appOutDir,
-    `${context.packager.appInfo.productFilename}.app`,
-  );
+  const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const identity = process.env.REPORTER_SIGN_IDENTITY || '-';
   const label = identity === '-' ? 'ad-hoc' : `identity "${identity}"`;
   console.log(`afterPack: signing ${appPath} with ${label}`);

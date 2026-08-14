@@ -55,7 +55,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/login',
-    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: app.config.LOGIN_RATE_LIMIT_MAX, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { email, password } = loginSchema.parse(req.body);
       const identity = await app.db.authIdentity.findFirst({
@@ -63,8 +63,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         include: { user: true },
       });
 
-      const ok =
-        identity?.passwordHash && (await verifyPassword(identity.passwordHash, password));
+      const ok = identity?.passwordHash && (await verifyPassword(identity.passwordHash, password));
       if (!identity || !ok || identity.user.disabled || identity.user.deletedAt) {
         throw new HttpError(401, 'Invalid email or password');
       }

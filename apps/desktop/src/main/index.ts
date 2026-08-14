@@ -2,14 +2,15 @@ import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { clipboard, shell } from 'electron';
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron';
-import type { AboutInfo, CaptureDraft, OperationLite, SettingsPatch, TagLite } from '../shared/types.js';
+import type {
+  AboutInfo,
+  CaptureDraft,
+  EngagementLite,
+  SettingsPatch,
+  TagLite,
+} from '../shared/types.js';
 import { CH } from '../shared/channels.js';
-import {
-  getCurrentOperation,
-  getHotkeys,
-  getSettings,
-  saveSettings,
-} from './settings.js';
+import { getCurrentEngagement, getHotkeys, getSettings, saveSettings } from './settings.js';
 import { addItem, listQueue, removeItem, updateItem } from './queue.js';
 import { makeClient } from './reporter-client.js';
 import { drainQueue } from './uploader.js';
@@ -20,7 +21,7 @@ import { checkForUpdates } from './updates.js';
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let pendingDraft: CaptureDraft | null = null;
-let cachedOperations: OperationLite[] = [];
+let cachedEngagements: EngagementLite[] = [];
 
 const isDev = Boolean(process.env['ELECTRON_RENDERER_URL']);
 
@@ -91,7 +92,10 @@ async function captureAndCompose(mode: CaptureMode): Promise<void> {
     pendingDraft = null;
     // Surface the error in the compose view so it is not silent.
     showView('settings');
-    mainWindow?.webContents.send('event:capture-error', err instanceof Error ? err.message : String(err));
+    mainWindow?.webContents.send(
+      'event:capture-error',
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }
 
@@ -121,26 +125,26 @@ function buildTray(): void {
     tray.setToolTip('reporter');
   }
 
-  const current = getCurrentOperation();
-  const opsSubmenu =
-    cachedOperations.length > 0
-      ? cachedOperations.map((op) => ({
-          label: op.name,
+  const current = getCurrentEngagement();
+  const engsSubmenu =
+    cachedEngagements.length > 0
+      ? cachedEngagements.map((eng) => ({
+          label: eng.name,
           type: 'radio' as const,
-          checked: op.slug === current,
+          checked: eng.slug === current,
           click: () => {
-            saveSettings({ currentOperationSlug: op.slug });
+            saveSettings({ currentEngagementSlug: eng.slug });
             buildTray();
           },
         }))
-      : [{ label: 'No operations loaded — open Settings', enabled: false }];
+      : [{ label: 'No engagements loaded — open Settings', enabled: false }];
 
   const menu = Menu.buildFromTemplate([
     { label: 'Capture area', click: () => captureAndCompose('area') },
     { label: 'Capture window', click: () => captureAndCompose('window') },
     { label: 'Add code block from clipboard', click: composeCodeblockFromClipboard },
     { type: 'separator' },
-    { label: 'Operation', submenu: opsSubmenu },
+    { label: 'Engagement', submenu: engsSubmenu },
     { type: 'separator' },
     { label: 'History', click: () => showView('history') },
     { label: 'Settings', click: () => showView('settings') },
@@ -161,12 +165,12 @@ function buildTray(): void {
 // Global shortcuts (best-effort; not available under Wayland)
 // ---------------------------------------------------------------------------
 
-async function warmOperations(): Promise<void> {
+async function warmEngagements(): Promise<void> {
   const client = makeClient();
   if (!client) return;
   try {
-    const ops = await client.listOperations();
-    cachedOperations = ops.map((o) => ({ slug: o.slug, name: o.name }));
+    const engs = await client.listEngagements();
+    cachedEngagements = engs.map((o) => ({ slug: o.slug, name: o.name }));
     buildTray();
   } catch {
     // Offline or not yet configured — the tray shows the fallback entry.
@@ -209,13 +213,13 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle(CH.listOperations, async (): Promise<OperationLite[]> => {
+  ipcMain.handle(CH.listEngagements, async (): Promise<EngagementLite[]> => {
     const client = makeClient();
     if (!client) return [];
-    const ops = await client.listOperations();
-    cachedOperations = ops.map((o) => ({ slug: o.slug, name: o.name }));
+    const engs = await client.listEngagements();
+    cachedEngagements = engs.map((o) => ({ slug: o.slug, name: o.name }));
     buildTray();
-    return cachedOperations;
+    return cachedEngagements;
   });
 
   ipcMain.handle(CH.listTags, async (_e, slug: string): Promise<TagLite[]> => {
@@ -225,8 +229,8 @@ function registerIpc(): void {
     return tags.map((t) => ({ id: t.id, name: t.name, colorName: t.colorName }));
   });
 
-  ipcMain.handle(CH.setOperation, (_e, slug: string | null) => {
-    saveSettings({ currentOperationSlug: slug });
+  ipcMain.handle(CH.setEngagement, (_e, slug: string | null) => {
+    saveSettings({ currentEngagementSlug: slug });
     buildTray();
     return getSettings();
   });
@@ -239,7 +243,7 @@ function registerIpc(): void {
     async (
       _e,
       payload: {
-        operationSlug: string;
+        engagementSlug: string;
         description: string;
         tagIds: number[];
         contentType: 'image' | 'codeblock' | 'none';
@@ -249,7 +253,7 @@ function registerIpc(): void {
       },
     ) => {
       addItem({
-        operationSlug: payload.operationSlug,
+        engagementSlug: payload.engagementSlug,
         contentType: payload.contentType,
         filePath: payload.filePath,
         content: payload.content,
@@ -340,8 +344,8 @@ if (!gotLock) {
     // Handle a capture flag on first launch.
     if (process.argv.includes('--capture-area')) captureAndCompose('area');
 
-    // Warm the operations cache (populates the tray submenu) and drain the queue.
-    void warmOperations();
+    // Warm the engagements cache (populates the tray submenu) and drain the queue.
+    void warmEngagements();
     void drain();
     setInterval(() => void drain(), 30_000);
     console.log('[reporter] desktop ready — tray active, window hidden');

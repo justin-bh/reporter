@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Button, EmptyState, Field, Input, Select, TagPicker, Textarea, useToast } from '@reporter/ui';
-import type { CaptureDraft, OperationLite, TagLite } from '../../../shared/types.js';
+import {
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  Select,
+  TagPicker,
+  Textarea,
+  useToast,
+} from '@reporter/ui';
+import type { CaptureDraft, EngagementLite, TagLite } from '../../../shared/types.js';
 
 export function ComposeView({ onDone }: { onDone: () => void }) {
   const toast = useToast();
   const [draft, setDraft] = useState<CaptureDraft | null | undefined>(undefined);
-  const [operations, setOperations] = useState<OperationLite[]>([]);
-  const [operationSlug, setOperationSlug] = useState('');
+  const [engagements, setEngagements] = useState<EngagementLite[]>([]);
+  const [engagementSlug, setEngagementSlug] = useState('');
   const [tags, setTags] = useState<TagLite[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [description, setDescription] = useState('');
@@ -16,26 +25,29 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     (async () => {
-      const [d, settings, ops] = await Promise.all([
+      const [d, settings, engs] = await Promise.all([
         window.reporter.getDraft(),
         window.reporter.getSettings(),
-        window.reporter.listOperations().catch(() => [] as OperationLite[]),
+        window.reporter.listEngagements().catch(() => [] as EngagementLite[]),
       ]);
       setDraft(d);
       setContent(d?.content ?? '');
-      setOperations(ops);
-      setOperationSlug(settings.currentOperationSlug ?? ops[0]?.slug ?? '');
+      setEngagements(engs);
+      setEngagementSlug(settings.currentEngagementSlug ?? engs[0]?.slug ?? '');
     })();
   }, []);
 
   useEffect(() => {
-    if (!operationSlug) {
+    if (!engagementSlug) {
       setTags([]);
       return;
     }
-    window.reporter.listTags(operationSlug).then(setTags).catch(() => setTags([]));
+    window.reporter
+      .listTags(engagementSlug)
+      .then(setTags)
+      .catch(() => setTags([]));
     setTagIds([]);
-  }, [operationSlug]);
+  }, [engagementSlug]);
 
   if (draft === undefined) return <p className="text-sm text-muted">Loading…</p>;
 
@@ -44,20 +56,24 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
       <EmptyState
         title="Nothing to compose"
         description="Capture a screenshot or add a code block from the tray, then describe it here."
-        action={<Button size="sm" onClick={() => window.reporter.captureArea()}>Capture area</Button>}
+        action={
+          <Button size="sm" onClick={() => window.reporter.captureArea()}>
+            Capture area
+          </Button>
+        }
       />
     );
   }
 
   async function submit() {
-    if (!operationSlug) {
-      toast.error('Choose an operation first');
+    if (!engagementSlug) {
+      toast.error('Choose an engagement first');
       return;
     }
     setSubmitting(true);
     try {
       await window.reporter.submitDraft({
-        operationSlug,
+        engagementSlug,
         description,
         tagIds,
         contentType: draft!.contentType,
@@ -84,47 +100,73 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
         />
       )}
 
-      <Field label="Operation" htmlFor="op">
-        <Select id="op" value={operationSlug} onChange={(e) => setOperationSlug(e.target.value)}>
+      <Field label="Engagement" htmlFor="eng">
+        <Select id="eng" value={engagementSlug} onChange={(e) => setEngagementSlug(e.target.value)}>
           <option value="">— choose —</option>
-          {operations.map((op) => (
-            <option key={op.slug} value={op.slug}>
-              {op.name}
+          {engagements.map((eng) => (
+            <option key={eng.slug} value={eng.slug}>
+              {eng.name}
             </option>
           ))}
         </Select>
       </Field>
 
       <Field label="Description" htmlFor="desc">
-        <Input id="desc" value={description} onChange={(e) => setDescription(e.target.value)} autoFocus />
+        <Input
+          id="desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          autoFocus
+        />
       </Field>
 
       {draft.contentType === 'codeblock' && (
         <>
           <Field label="Language" htmlFor="lang" hint="Optional">
-            <Input id="lang" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="bash" />
+            <Input
+              id="lang"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              placeholder="bash"
+            />
           </Field>
           <Field label="Content" htmlFor="content">
-            <Textarea id="content" rows={6} value={content} onChange={(e) => setContent(e.target.value)} className="font-mono" />
+            <Textarea
+              id="content"
+              rows={6}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="font-mono"
+            />
           </Field>
         </>
       )}
 
       {draft.contentType === 'none' && (
         <Field label="Note" htmlFor="note">
-          <Textarea id="note" rows={5} value={content} onChange={(e) => setContent(e.target.value)} />
+          <Textarea
+            id="note"
+            rows={5}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
         </Field>
       )}
 
       <Field label="Tags">
-        <TagPicker tags={tags} selectedIds={tagIds} onChange={setTagIds} emptyHint="No tags in this operation." />
+        <TagPicker
+          tags={tags}
+          selectedIds={tagIds}
+          onChange={setTagIds}
+          emptyHint="No tags in this engagement."
+        />
       </Field>
 
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onDone}>
           Cancel
         </Button>
-        <Button size="sm" onClick={submit} loading={submitting} disabled={!operationSlug}>
+        <Button size="sm" onClick={submit} loading={submitting} disabled={!engagementSlug}>
           Add evidence
         </Button>
       </div>

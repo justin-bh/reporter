@@ -17,7 +17,7 @@ You build reporter's client apps: the Electron desktop capture app (`apps/deskto
 ## Terminal recorder (`apps/term`)
 
 - **Record** with `node-pty`: spawn `$SHELL` at TTY size, raw-mode passthrough, stream **asciicast v2** NDJSON to disk (`[t,"o",data]`, resize `[t,"r","WxH"]`). Stream to disk so crashes lose nothing.
-- **Post-session** (@clack/prompts): rename / description / tag multiselect / operation pick → Upload | Save | Discard. Failed uploads retryable via `reporter-term upload <file>`.
+- **Post-session** (@clack/prompts): rename / description / tag multiselect / engagement pick → Upload | Save | Discard. Failed uploads retryable via `reporter-term upload <file>`.
 - **Windows:** ConPTY via node-pty works; no SIGWINCH (use stdout `resize`); declare tier-2 (possible VT artifacts).
 - **Theme:** use `src/theme.ts` (brand ANSI mapping) — never raw ANSI codes inline. Match GUI glossary and tone.
 

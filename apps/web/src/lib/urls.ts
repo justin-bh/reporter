@@ -1,5 +1,5 @@
 export const evidenceContentUrl = (slug: string, uuid: string) =>
-  `/web/operations/${slug}/evidence/${uuid}/content`;
+  `/web/engagements/${slug}/evidence/${uuid}/content`;
 
 export const evidenceThumbUrl = (slug: string, uuid: string) =>
-  `/web/operations/${slug}/evidence/${uuid}/thumbnail`;
+  `/web/engagements/${slug}/evidence/${uuid}/thumbnail`;

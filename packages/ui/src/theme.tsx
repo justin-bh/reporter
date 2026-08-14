@@ -49,7 +49,11 @@ export interface ThemeProviderProps {
   persist?: boolean;
 }
 
-export function ThemeProvider({ children, defaultMode = 'system', persist = true }: ThemeProviderProps) {
+export function ThemeProvider({
+  children,
+  defaultMode = 'system',
+  persist = true,
+}: ThemeProviderProps) {
   const [mode, setModeState] = useState<ThemeMode>(() => {
     if (persist && typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;

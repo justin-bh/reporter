@@ -17,6 +17,9 @@ const envSchema = z.object({
     .min(16, 'SESSION_SECRET must be at least 16 characters')
     .default('dev-insecure-session-secret-change-me'),
 
+  // Max login attempts per client per minute (throttles credential stuffing).
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+
   // Blob storage
   BLOB_STORE: z.enum(['local', 's3']).default('local'),
   BLOB_DIR: z.string().default('./.data/blobs'),
@@ -27,7 +30,11 @@ const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
 
-  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(100 * 1024 * 1024),
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100 * 1024 * 1024),
 
   // First-admin bootstrap (used only when the users table is empty)
   ADMIN_EMAIL: z.string().email().optional(),
@@ -51,7 +58,9 @@ export type ServerConfig = ReturnType<typeof loadConfig>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
     throw new Error(`Invalid server configuration:\n${issues}`);
   }
   const c = parsed.data;

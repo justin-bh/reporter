@@ -12,7 +12,9 @@ export async function bootstrapAdmin(app: FastifyInstance): Promise<void> {
 
   const { ADMIN_EMAIL, ADMIN_PASSWORD } = app.config;
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
-    app.log.warn('No users and no ADMIN_EMAIL/ADMIN_PASSWORD set — visit /setup to create the first admin.');
+    app.log.warn(
+      'No users and no ADMIN_EMAIL/ADMIN_PASSWORD set — visit /setup to create the first admin.',
+    );
     return;
   }
 

@@ -10,13 +10,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum OperationStatus {
+enum EngagementStatus {
   active
   complete
   archived
 }
 
-enum OperationRole {
+enum EngagementRole {
   admin
   write
   read
@@ -31,6 +31,15 @@ enum AuthScheme {
 enum SavedQueryType {
   evidence
   findings
+}
+
+/** Qualitative finding severity, matching the CVSS v3.1 severity rating scale. */
+enum Severity {
+  none
+  low
+  medium
+  high
+  critical
 }
 
 model User {
@@ -51,8 +60,8 @@ model User {
   recovery     RecoveryCode[]
   apiKeys      ApiKey[]
   sessions     Session[]
-  roles        UserOperationRole[]
-  prefs        UserOperationPref[]
+  roles        UserEngagementRole[]
+  prefs        UserEngagementPref[]
   evidence     Evidence[]
 
   @@map("users")
@@ -133,62 +142,62 @@ model Session {
   @@map("sessions")
 }
 
-model Operation {
+model Engagement {
   id        Int             @id @default(autoincrement())
   slug      String          @unique
   name      String
-  status    OperationStatus @default(active)
+  status    EngagementStatus @default(active)
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 
-  roles       UserOperationRole[]
-  prefs       UserOperationPref[]
+  roles       UserEngagementRole[]
+  prefs       UserEngagementPref[]
   evidence    Evidence[]
   findings    Finding[]
   tags        Tag[]
   savedQueries SavedQuery[]
 
-  @@map("operations")
+  @@map("engagements")
 }
 
-model UserOperationRole {
+model UserEngagementRole {
   id          Int           @id @default(autoincrement())
   userId      Int           @map("user_id")
-  operationId Int           @map("operation_id")
-  role        OperationRole
+  engagementId Int           @map("engagement_id")
+  role        EngagementRole
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, operationId])
-  @@index([operationId])
-  @@map("user_operation_roles")
+  @@unique([userId, engagementId])
+  @@index([engagementId])
+  @@map("user_engagement_roles")
 }
 
-model UserOperationPref {
+model UserEngagementPref {
   id          Int     @id @default(autoincrement())
   userId      Int     @map("user_id")
-  operationId Int     @map("operation_id")
+  engagementId Int     @map("engagement_id")
   isFavorite  Boolean @default(false) @map("is_favorite")
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, operationId])
-  @@map("user_operation_prefs")
+  @@unique([userId, engagementId])
+  @@map("user_engagement_prefs")
 }
 
 model Tag {
   id          Int    @id @default(autoincrement())
-  operationId Int    @map("operation_id")
+  engagementId Int    @map("engagement_id")
   name        String
   colorName   String @map("color_name")
 
-  operation Operation     @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  engagement Engagement     @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   evidence  EvidenceTag[]
 
-  @@unique([operationId, name])
-  @@index([operationId])
+  @@unique([engagementId, name])
+  @@index([engagementId])
   @@map("tags")
 }
 
@@ -203,7 +212,7 @@ model DefaultTag {
 model Evidence {
   id             Int      @id @default(autoincrement())
   uuid           String   @unique @default(uuid())
-  operationId    Int      @map("operation_id")
+  engagementId    Int      @map("engagement_id")
   operatorId     Int      @map("operator_id")
   description    String   @default("")
   contentType    String   @map("content_type")
@@ -214,13 +223,13 @@ model Evidence {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  operation Operation          @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  engagement Engagement          @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   operator  User               @relation(fields: [operatorId], references: [id])
   tags      EvidenceTag[]
   findings  EvidenceFinding[]
   metadata  EvidenceMetadata[]
 
-  @@index([operationId, occurredAt])
+  @@index([engagementId, occurredAt])
   @@map("evidence")
 }
 
@@ -248,22 +257,26 @@ model FindingCategory {
 }
 
 model Finding {
-  id            Int      @id @default(autoincrement())
-  uuid          String   @unique @default(uuid())
-  operationId   Int      @map("operation_id")
-  categoryId    Int?     @map("category_id")
+  id            Int       @id @default(autoincrement())
+  uuid          String    @unique @default(uuid())
+  engagementId  Int       @map("engagement_id")
+  categoryId    Int?      @map("category_id")
   title         String
-  description   String   @default("")
-  readyToReport Boolean  @default(false) @map("ready_to_report")
-  ticketLink    String?  @map("ticket_link")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  description   String    @default("")
+  severity      Severity?
+  cvssVector    String?   @map("cvss_vector")
+  cvssScore     Float?    @map("cvss_score")
+  position      Int       @default(0)
+  readyToReport Boolean   @default(false) @map("ready_to_report")
+  ticketLink    String?   @map("ticket_link")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  operation Operation         @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  engagement Engagement         @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   category  FindingCategory?  @relation(fields: [categoryId], references: [id])
   evidence  EvidenceFinding[]
 
-  @@index([operationId])
+  @@index([engagementId, position])
   @@map("findings")
 }
 
@@ -282,6 +295,7 @@ model EvidenceTag {
 model EvidenceFinding {
   evidenceId Int @map("evidence_id")
   findingId  Int @map("finding_id")
+  position   Int @default(0)
 
   evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
   finding  Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)
@@ -293,13 +307,13 @@ model EvidenceFinding {
 
 model SavedQuery {
   id          Int            @id @default(autoincrement())
-  operationId Int            @map("operation_id")
+  engagementId Int            @map("engagement_id")
   name        String
   query       String
   type        SavedQueryType
 
-  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 
-  @@unique([operationId, name, type])
+  @@unique([engagementId, name, type])
   @@map("saved_queries")
 }

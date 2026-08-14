@@ -13,7 +13,7 @@ You build and maintain `apps/server`, the reporter backend (Fastify 5 + Prisma 6
 - **Two auth planes, kept separate:**
   - `/web/*` → session cookie (httpOnly, SameSite=Lax, raw token, sha256 stored). CSRF via required `X-Requested-With` header on mutations. Rate-limit login.
   - `/api/*` → HMAC. The signing algorithm is defined once in `@reporter/api-client/src/sign.ts`; verify with the identical algorithm in `plugins/hmac-auth.ts`. Capture the raw body buffer for `/api/*` before parsing.
-  - Authorization: `requireOperationRole(role)` checks `user_operation_roles`; site admins bypass. Apply per route.
+  - Authorization: `requireEngagementRole(role)` checks `user_engagement_roles`; site admins bypass. Apply per route.
 - **Blob storage is abstracted** (`blobstore/types.ts` `ContentStore`): `LocalStore` and `S3Store`, selected by `BLOB_STORE` env. Never write blobs to the DB.
 - **Config is env-only**, parsed once with zod in `config.ts`, fail-fast on boot.
 - **`buildApp()` in `app.ts`** must construct the whole app with no side effects so tests can use `fastify.inject`. `index.ts` only reads config and calls `listen`.

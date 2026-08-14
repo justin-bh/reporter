@@ -87,16 +87,24 @@ function UsersTab() {
                     label=""
                     aria-label={`Toggle admin for ${u.firstName} ${u.lastName}`}
                     checked={u.admin}
-                    onChange={(e) => updateUser.mutate({ slug: u.slug, patch: { admin: e.target.checked } })}
+                    onChange={(e) =>
+                      updateUser.mutate({ slug: u.slug, patch: { admin: e.target.checked } })
+                    }
                   />
                 </Td>
                 <Td>
                   <button
-                    onClick={() => updateUser.mutate({ slug: u.slug, patch: { disabled: !u.disabled } })}
+                    onClick={() =>
+                      updateUser.mutate({ slug: u.slug, patch: { disabled: !u.disabled } })
+                    }
                     className="text-sm"
                     aria-label={`${u.disabled ? 'Enable' : 'Disable'} ${u.firstName} ${u.lastName}`}
                   >
-                    {u.disabled ? <Badge tone="danger">disabled</Badge> : <Badge tone="success">active</Badge>}
+                    {u.disabled ? (
+                      <Badge tone="danger">disabled</Badge>
+                    ) : (
+                      <Badge tone="success">active</Badge>
+                    )}
                   </button>
                 </Td>
               </Tr>
@@ -112,7 +120,14 @@ function UsersTab() {
 function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const create = useCreateUser();
   const toast = useToast();
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', admin: false, headless: false });
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    admin: false,
+    headless: false,
+  });
   const set = (k: keyof typeof form) => (v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   async function submit() {
@@ -126,7 +141,14 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
         headless: form.headless,
       });
       toast.success('User created');
-      setForm({ firstName: '', lastName: '', email: '', password: '', admin: false, headless: false });
+      setForm({
+        firstName: '',
+        lastName: '',
+        email: '',
+        password: '',
+        admin: false,
+        headless: false,
+      });
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create user');
@@ -152,23 +174,52 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="First name" htmlFor="u-fn">
-            <Input id="u-fn" value={form.firstName} onChange={(e) => set('firstName')(e.target.value)} />
+            <Input
+              id="u-fn"
+              value={form.firstName}
+              onChange={(e) => set('firstName')(e.target.value)}
+            />
           </Field>
           <Field label="Last name" htmlFor="u-ln">
-            <Input id="u-ln" value={form.lastName} onChange={(e) => set('lastName')(e.target.value)} />
+            <Input
+              id="u-ln"
+              value={form.lastName}
+              onChange={(e) => set('lastName')(e.target.value)}
+            />
           </Field>
         </div>
         <Field label="Email" htmlFor="u-email">
-          <Input id="u-email" type="email" value={form.email} onChange={(e) => set('email')(e.target.value)} />
+          <Input
+            id="u-email"
+            type="email"
+            value={form.email}
+            onChange={(e) => set('email')(e.target.value)}
+          />
         </Field>
         {!form.headless && (
-          <Field label="Temporary password" htmlFor="u-pw" hint="The user resets it on first login.">
-            <Input id="u-pw" value={form.password} onChange={(e) => set('password')(e.target.value)} />
+          <Field
+            label="Temporary password"
+            htmlFor="u-pw"
+            hint="The user resets it on first login."
+          >
+            <Input
+              id="u-pw"
+              value={form.password}
+              onChange={(e) => set('password')(e.target.value)}
+            />
           </Field>
         )}
         <div className="flex gap-6">
-          <Checkbox label="Administrator" checked={form.admin} onChange={(e) => set('admin')(e.target.checked)} />
-          <Checkbox label="Headless (API only)" checked={form.headless} onChange={(e) => set('headless')(e.target.checked)} />
+          <Checkbox
+            label="Administrator"
+            checked={form.admin}
+            onChange={(e) => set('admin')(e.target.checked)}
+          />
+          <Checkbox
+            label="Headless (API only)"
+            checked={form.headless}
+            onChange={(e) => set('headless')(e.target.checked)}
+          />
         </div>
       </div>
     </Modal>
@@ -191,7 +242,8 @@ function DefaultTagsTab() {
   });
   const [name, setName] = useState('');
   const add = useMutation({
-    mutationFn: () => api.post('/web/admin/default-tags', { name, colorName: defaultTagColorFor(name) }),
+    mutationFn: () =>
+      api.post('/web/admin/default-tags', { name, colorName: defaultTagColorFor(name) }),
     onSuccess: () => {
       setName('');
       qc.invalidateQueries({ queryKey: ['default-tags'] });
@@ -206,7 +258,7 @@ function DefaultTagsTab() {
   async function removeTag(id: number, tagName: string) {
     const ok = await confirm({
       title: 'Delete default tag',
-      message: `Delete the default tag “${tagName}”? Existing operations keep their copies.`,
+      message: `Delete the default tag “${tagName}”? Existing engagements keep their copies.`,
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -215,7 +267,7 @@ function DefaultTagsTab() {
 
   return (
     <Card className="max-w-xl space-y-4 p-4">
-      <p className="text-sm text-muted">These tags are copied into every new operation.</p>
+      <p className="text-sm text-muted">These tags are copied into every new engagement.</p>
       {isLoading ? (
         <Spinner />
       ) : isError ? (
@@ -225,7 +277,12 @@ function DefaultTagsTab() {
       ) : (
         <div className="flex flex-wrap gap-2">
           {data.map((t) => (
-            <TagChip key={t.id} name={t.name} colorName={t.colorName} onRemove={() => removeTag(t.id, t.name)} />
+            <TagChip
+              key={t.id}
+              name={t.name}
+              colorName={t.colorName}
+              onRemove={() => removeTag(t.id, t.name)}
+            />
           ))}
         </div>
       )}
@@ -288,7 +345,10 @@ function CategoriesTab() {
       ) : (
         <ul className="flex flex-col gap-1">
           {data.map((c) => (
-            <li key={c.id} className="flex items-center justify-between rounded-input border border-border px-3 py-2 text-sm">
+            <li
+              key={c.id}
+              className="flex items-center justify-between rounded-input border border-border px-3 py-2 text-sm"
+            >
               {c.category}
               <button
                 onClick={() => removeCategory(c.id, c.category)}

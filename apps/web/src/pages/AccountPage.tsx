@@ -110,10 +110,21 @@ function SecurityTab() {
     <Card className="max-w-md space-y-4 p-4">
       <h3 className="text-sm font-semibold text-text">Change password</h3>
       <Field label="Current password" htmlFor="cp">
-        <Input id="cp" type="password" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} />
+        <Input
+          id="cp"
+          type="password"
+          value={currentPassword}
+          onChange={(e) => setCurrent(e.target.value)}
+        />
       </Field>
       <Field label="New password" htmlFor="np" hint="At least 8 characters.">
-        <Input id="np" type="password" value={newPassword} onChange={(e) => setNew(e.target.value)} minLength={8} />
+        <Input
+          id="np"
+          type="password"
+          value={newPassword}
+          onChange={(e) => setNew(e.target.value)}
+          minLength={8}
+        />
       </Field>
       <Button onClick={change} loading={busy} disabled={!currentPassword || newPassword.length < 8}>
         Change password
@@ -155,8 +166,8 @@ function ApiKeysTab() {
       <Card className="space-y-2 p-4">
         <h3 className="text-sm font-semibold text-text">Client API keys</h3>
         <p className="text-sm text-muted">
-          Use these in the desktop app and <code className="font-mono">reporter-term</code> to submit evidence.
-          The secret is shown only once, at creation.
+          Use these in the desktop app and <code className="font-mono">reporter-term</code> to
+          submit evidence. The secret is shown only once, at creation.
         </p>
       </Card>
 
@@ -205,9 +216,7 @@ function ApiKeysTab() {
         title="Your new API key"
         footer={<Button onClick={() => setSecret(null)}>Done</Button>}
       >
-        <p className="mb-3 text-sm text-warning">
-          Copy the secret now — it won't be shown again.
-        </p>
+        <p className="mb-3 text-sm text-warning">Copy the secret now — it won't be shown again.</p>
         <div className="space-y-2 font-mono text-xs">
           <CopyRow label="Access key" value={secret?.accessKey ?? ''} />
           <CopyRow label="Secret key" value={secret?.secretKey ?? ''} />

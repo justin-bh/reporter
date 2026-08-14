@@ -10,6 +10,9 @@ ENV PATH=$PNPM_HOME:$PATH
 # builder needs a toolchain. Electron's binary is never used in this image.
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 ENV PYTHON=/usr/bin/python3
+# The server renders PDFs with system Chromium (installed in the runtime stage),
+# so skip Puppeteer's bundled-Chromium download during the image build.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -32,9 +35,14 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BLOB_DIR=/data/blobs
+# Chromium powers the findings PDF export; Puppeteer uses it via this path.
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Prisma's query engine dynamically links libssl; bookworm-slim omits it.
+# chromium + fonts are needed to render the findings report PDF.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && apt-get install -y --no-install-recommends \
+      openssl ca-certificates \
+      chromium fonts-liberation fonts-unifont \
  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 

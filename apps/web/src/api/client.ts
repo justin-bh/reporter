@@ -7,7 +7,11 @@ export class ApiError extends Error {
     readonly status: number,
     readonly body: unknown,
   ) {
-    super(typeof body === 'object' && body && 'error' in body ? String((body as any).error) : `HTTP ${status}`);
+    super(
+      typeof body === 'object' && body && 'error' in body
+        ? String((body as any).error)
+        : `HTTP ${status}`,
+    );
     this.name = 'ApiError';
   }
 }
@@ -40,6 +44,7 @@ export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
+  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
 
   /** Upload multipart form data (evidence). Browser sets the boundary. */

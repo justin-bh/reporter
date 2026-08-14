@@ -1,8 +1,8 @@
 -- CreateEnum
-CREATE TYPE "OperationStatus" AS ENUM ('active', 'complete', 'archived');
+CREATE TYPE "EngagementStatus" AS ENUM ('active', 'complete', 'archived');
 
 -- CreateEnum
-CREATE TYPE "OperationRole" AS ENUM ('admin', 'write', 'read');
+CREATE TYPE "EngagementRole" AS ENUM ('admin', 'write', 'read');
 
 -- CreateEnum
 CREATE TYPE "AuthScheme" AS ENUM ('local', 'oidc', 'recovery');
@@ -92,41 +92,41 @@ CREATE TABLE "sessions" (
 );
 
 -- CreateTable
-CREATE TABLE "operations" (
+CREATE TABLE "engagements" (
     "id" SERIAL NOT NULL,
     "slug" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "status" "OperationStatus" NOT NULL DEFAULT 'active',
+    "status" "EngagementStatus" NOT NULL DEFAULT 'active',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "operations_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "engagements_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "user_operation_roles" (
+CREATE TABLE "user_engagement_roles" (
     "id" SERIAL NOT NULL,
     "user_id" INTEGER NOT NULL,
-    "operation_id" INTEGER NOT NULL,
-    "role" "OperationRole" NOT NULL,
+    "engagement_id" INTEGER NOT NULL,
+    "role" "EngagementRole" NOT NULL,
 
-    CONSTRAINT "user_operation_roles_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "user_engagement_roles_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "user_operation_prefs" (
+CREATE TABLE "user_engagement_prefs" (
     "id" SERIAL NOT NULL,
     "user_id" INTEGER NOT NULL,
-    "operation_id" INTEGER NOT NULL,
+    "engagement_id" INTEGER NOT NULL,
     "is_favorite" BOOLEAN NOT NULL DEFAULT false,
 
-    CONSTRAINT "user_operation_prefs_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "user_engagement_prefs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "tags" (
     "id" SERIAL NOT NULL,
-    "operation_id" INTEGER NOT NULL,
+    "engagement_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "color_name" TEXT NOT NULL,
 
@@ -146,7 +146,7 @@ CREATE TABLE "default_tags" (
 CREATE TABLE "evidence" (
     "id" SERIAL NOT NULL,
     "uuid" TEXT NOT NULL,
-    "operation_id" INTEGER NOT NULL,
+    "engagement_id" INTEGER NOT NULL,
     "operator_id" INTEGER NOT NULL,
     "description" TEXT NOT NULL DEFAULT '',
     "content_type" TEXT NOT NULL,
@@ -184,7 +184,7 @@ CREATE TABLE "finding_categories" (
 CREATE TABLE "findings" (
     "id" SERIAL NOT NULL,
     "uuid" TEXT NOT NULL,
-    "operation_id" INTEGER NOT NULL,
+    "engagement_id" INTEGER NOT NULL,
     "category_id" INTEGER,
     "title" TEXT NOT NULL,
     "description" TEXT NOT NULL DEFAULT '',
@@ -215,7 +215,7 @@ CREATE TABLE "evidence_findings" (
 -- CreateTable
 CREATE TABLE "saved_queries" (
     "id" SERIAL NOT NULL,
-    "operation_id" INTEGER NOT NULL,
+    "engagement_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "query" TEXT NOT NULL,
     "type" "SavedQueryType" NOT NULL,
@@ -257,22 +257,22 @@ CREATE INDEX "sessions_user_id_idx" ON "sessions"("user_id");
 CREATE INDEX "sessions_expires_at_idx" ON "sessions"("expires_at");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "operations_slug_key" ON "operations"("slug");
+CREATE UNIQUE INDEX "engagements_slug_key" ON "engagements"("slug");
 
 -- CreateIndex
-CREATE INDEX "user_operation_roles_operation_id_idx" ON "user_operation_roles"("operation_id");
+CREATE INDEX "user_engagement_roles_engagement_id_idx" ON "user_engagement_roles"("engagement_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_operation_roles_user_id_operation_id_key" ON "user_operation_roles"("user_id", "operation_id");
+CREATE UNIQUE INDEX "user_engagement_roles_user_id_engagement_id_key" ON "user_engagement_roles"("user_id", "engagement_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_operation_prefs_user_id_operation_id_key" ON "user_operation_prefs"("user_id", "operation_id");
+CREATE UNIQUE INDEX "user_engagement_prefs_user_id_engagement_id_key" ON "user_engagement_prefs"("user_id", "engagement_id");
 
 -- CreateIndex
-CREATE INDEX "tags_operation_id_idx" ON "tags"("operation_id");
+CREATE INDEX "tags_engagement_id_idx" ON "tags"("engagement_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "tags_operation_id_name_key" ON "tags"("operation_id", "name");
+CREATE UNIQUE INDEX "tags_engagement_id_name_key" ON "tags"("engagement_id", "name");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "default_tags_name_key" ON "default_tags"("name");
@@ -281,7 +281,7 @@ CREATE UNIQUE INDEX "default_tags_name_key" ON "default_tags"("name");
 CREATE UNIQUE INDEX "evidence_uuid_key" ON "evidence"("uuid");
 
 -- CreateIndex
-CREATE INDEX "evidence_operation_id_occurred_at_idx" ON "evidence"("operation_id", "occurred_at");
+CREATE INDEX "evidence_engagement_id_occurred_at_idx" ON "evidence"("engagement_id", "occurred_at");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "evidence_metadata_evidence_id_source_key" ON "evidence_metadata"("evidence_id", "source");
@@ -293,7 +293,7 @@ CREATE UNIQUE INDEX "finding_categories_category_key" ON "finding_categories"("c
 CREATE UNIQUE INDEX "findings_uuid_key" ON "findings"("uuid");
 
 -- CreateIndex
-CREATE INDEX "findings_operation_id_idx" ON "findings"("operation_id");
+CREATE INDEX "findings_engagement_id_idx" ON "findings"("engagement_id");
 
 -- CreateIndex
 CREATE INDEX "evidence_tags_tag_id_idx" ON "evidence_tags"("tag_id");
@@ -302,7 +302,7 @@ CREATE INDEX "evidence_tags_tag_id_idx" ON "evidence_tags"("tag_id");
 CREATE INDEX "evidence_findings_finding_id_idx" ON "evidence_findings"("finding_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "saved_queries_operation_id_name_type_key" ON "saved_queries"("operation_id", "name", "type");
+CREATE UNIQUE INDEX "saved_queries_engagement_id_name_type_key" ON "saved_queries"("engagement_id", "name", "type");
 
 -- AddForeignKey
 ALTER TABLE "auth_identities" ADD CONSTRAINT "auth_identities_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -320,22 +320,22 @@ ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_user_id_fkey" FOREIGN KEY ("user
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user_operation_roles" ADD CONSTRAINT "user_operation_roles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_engagement_roles" ADD CONSTRAINT "user_engagement_roles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user_operation_roles" ADD CONSTRAINT "user_operation_roles_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "operations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_engagement_roles" ADD CONSTRAINT "user_engagement_roles_engagement_id_fkey" FOREIGN KEY ("engagement_id") REFERENCES "engagements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user_operation_prefs" ADD CONSTRAINT "user_operation_prefs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_engagement_prefs" ADD CONSTRAINT "user_engagement_prefs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user_operation_prefs" ADD CONSTRAINT "user_operation_prefs_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "operations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_engagement_prefs" ADD CONSTRAINT "user_engagement_prefs_engagement_id_fkey" FOREIGN KEY ("engagement_id") REFERENCES "engagements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "tags" ADD CONSTRAINT "tags_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "operations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "tags" ADD CONSTRAINT "tags_engagement_id_fkey" FOREIGN KEY ("engagement_id") REFERENCES "engagements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "evidence" ADD CONSTRAINT "evidence_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "operations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "evidence" ADD CONSTRAINT "evidence_engagement_id_fkey" FOREIGN KEY ("engagement_id") REFERENCES "engagements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "evidence" ADD CONSTRAINT "evidence_operator_id_fkey" FOREIGN KEY ("operator_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -344,7 +344,7 @@ ALTER TABLE "evidence" ADD CONSTRAINT "evidence_operator_id_fkey" FOREIGN KEY ("
 ALTER TABLE "evidence_metadata" ADD CONSTRAINT "evidence_metadata_evidence_id_fkey" FOREIGN KEY ("evidence_id") REFERENCES "evidence"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "findings" ADD CONSTRAINT "findings_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "operations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "findings" ADD CONSTRAINT "findings_engagement_id_fkey" FOREIGN KEY ("engagement_id") REFERENCES "engagements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "findings" ADD CONSTRAINT "findings_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "finding_categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -362,4 +362,4 @@ ALTER TABLE "evidence_findings" ADD CONSTRAINT "evidence_findings_evidence_id_fk
 ALTER TABLE "evidence_findings" ADD CONSTRAINT "evidence_findings_finding_id_fkey" FOREIGN KEY ("finding_id") REFERENCES "findings"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "saved_queries" ADD CONSTRAINT "saved_queries_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "operations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "saved_queries" ADD CONSTRAINT "saved_queries_engagement_id_fkey" FOREIGN KEY ("engagement_id") REFERENCES "engagements"("id") ON DELETE CASCADE ON UPDATE CASCADE;

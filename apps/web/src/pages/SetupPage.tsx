@@ -33,7 +33,13 @@ export function SetupPage() {
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="First name" htmlFor="firstName">
-              <Input id="firstName" value={form.firstName} onChange={set('firstName')} required autoFocus />
+              <Input
+                id="firstName"
+                value={form.firstName}
+                onChange={set('firstName')}
+                required
+                autoFocus
+              />
             </Field>
             <Field label="Last name" htmlFor="lastName">
               <Input id="lastName" value={form.lastName} onChange={set('lastName')} required />

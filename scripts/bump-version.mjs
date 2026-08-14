@@ -112,7 +112,10 @@ if (doCommit) {
   // Stage only the files we rewrote — never `git add -A` (would sweep in
   // unrelated modified/untracked files, tagging them into the release commit).
   execFileSync('git', ['add', '--', ...changed], { cwd: root, stdio: 'inherit' });
-  execFileSync('git', ['commit', '-m', `chore(release): v${next}`], { cwd: root, stdio: 'inherit' });
+  execFileSync('git', ['commit', '-m', `chore(release): v${next}`], {
+    cwd: root,
+    stdio: 'inherit',
+  });
   execFileSync('git', ['tag', `v${next}`], { cwd: root, stdio: 'inherit' });
   console.log(`\n✔ Committed and tagged v${next}.`);
   console.log(`  Push with: git push && git push origin v${next}`);

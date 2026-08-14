@@ -1,6 +1,6 @@
 ---
 name: verify-api
-description: Smoke-test the reporter client HMAC API end-to-end — generate/obtain an API key pair and run scripted @reporter/api-client calls (check connection, list operations, create evidence) against the running server, asserting the results. Use to prove the client API works.
+description: Smoke-test the reporter client HMAC API end-to-end — generate/obtain an API key pair and run scripted @reporter/api-client calls (check connection, list engagements, create evidence) against the running server, asserting the results. Use to prove the client API works.
 ---
 
 # verify-api
@@ -24,7 +24,7 @@ node scripts/verify-api.mjs
 `scripts/verify-api.mjs` imports the built `@reporter/api-client` and:
 
 1. `checkConnection()` → expects `{ ok: true }` and prints the authenticated user.
-2. `listOperations()` → expects the seeded demo operation to be present.
+2. `listEngagements()` → expects the seeded demo engagement to be present.
 3. `createEvidence(op, { contentType: 'image', description: 'verify-api smoke test', occurredAt }, pngBuffer)` using a tiny generated PNG → expects a new evidence UUID back.
 4. Re-lists evidence (or fetches by UUID) → asserts the item exists with the right description and a thumbnail.
 

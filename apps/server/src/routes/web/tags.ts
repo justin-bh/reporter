@@ -1,18 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTagInput } from '@reporter/shared';
-import { HttpError, requireAuth, requireOperationRole } from '../../auth/guards.js';
+import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import { serializeTag } from '../../services/serializers.js';
 
 export async function tagRoutes(app: FastifyInstance): Promise<void> {
   app.get(
-    '/operations/:slug/tags',
-    { preHandler: [requireAuth, requireOperationRole('read')] },
+    '/engagements/:slug/tags',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
     async (req) => {
       const { slug } = req.params as { slug: string };
-      const op = await app.db.operation.findUniqueOrThrow({ where: { slug } });
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const tags = await app.db.tag.findMany({
-        where: { operationId: op.id },
+        where: { engagementId: eng.id },
         orderBy: { name: 'asc' },
       });
       return tags.map(serializeTag);
@@ -20,18 +20,18 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post(
-    '/operations/:slug/tags',
-    { preHandler: [requireAuth, requireOperationRole('write')] },
+    '/engagements/:slug/tags',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
       const input = createTagInput.parse(req.body);
-      const op = await app.db.operation.findUniqueOrThrow({ where: { slug } });
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const existing = await app.db.tag.findUnique({
-        where: { operationId_name: { operationId: op.id, name: input.name } },
+        where: { engagementId_name: { engagementId: eng.id, name: input.name } },
       });
       if (existing) throw new HttpError(409, 'A tag with that name already exists');
       const tag = await app.db.tag.create({
-        data: { operationId: op.id, name: input.name, colorName: input.colorName },
+        data: { engagementId: eng.id, name: input.name, colorName: input.colorName },
       });
       reply.status(201);
       return serializeTag(tag);
@@ -39,15 +39,15 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.put(
-    '/operations/:slug/tags/:id',
-    { preHandler: [requireAuth, requireOperationRole('write')] },
+    '/engagements/:slug/tags/:id',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
     async (req) => {
       const { slug, id } = req.params as { slug: string; id: string };
       const body = z
         .object({ name: z.string().min(1).max(64).optional(), colorName: z.string().optional() })
         .parse(req.body);
-      const op = await app.db.operation.findUniqueOrThrow({ where: { slug } });
-      const tag = await app.db.tag.findFirst({ where: { id: Number(id), operationId: op.id } });
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const tag = await app.db.tag.findFirst({ where: { id: Number(id), engagementId: eng.id } });
       if (!tag) throw new HttpError(404, 'Tag not found');
       const updated = await app.db.tag.update({ where: { id: tag.id }, data: body });
       return serializeTag(updated);
@@ -55,12 +55,12 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.delete(
-    '/operations/:slug/tags/:id',
-    { preHandler: [requireAuth, requireOperationRole('write')] },
+    '/engagements/:slug/tags/:id',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
     async (req) => {
       const { slug, id } = req.params as { slug: string; id: string };
-      const op = await app.db.operation.findUniqueOrThrow({ where: { slug } });
-      const tag = await app.db.tag.findFirst({ where: { id: Number(id), operationId: op.id } });
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const tag = await app.db.tag.findFirst({ where: { id: Number(id), engagementId: eng.id } });
       if (!tag) throw new HttpError(404, 'Tag not found');
       await app.db.tag.delete({ where: { id: tag.id } });
       return { ok: true };

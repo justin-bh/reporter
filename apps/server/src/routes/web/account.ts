@@ -50,7 +50,10 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     const identity = await app.db.authIdentity.findFirst({
       where: { userId: req.authedUser!.id, scheme: 'local' },
     });
-    if (!identity?.passwordHash || !(await verifyPassword(identity.passwordHash, currentPassword))) {
+    if (
+      !identity?.passwordHash ||
+      !(await verifyPassword(identity.passwordHash, currentPassword))
+    ) {
       throw new HttpError(400, 'Current password is incorrect');
     }
     await app.db.authIdentity.update({

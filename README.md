@@ -2,9 +2,9 @@
 
 # reporter
 
-**Evidence collection & reporting for security operations.**
+**Evidence collection & reporting for security engagements.**
 
-Capture screenshots, terminal recordings, and notes during an engagement; organize them into operations, tag them, group them into findings, and report — all from a server you run yourself.
+Capture screenshots, terminal recordings, and notes; organize them into engagements, tag them, group them into findings, and report — all from a server you run yourself.
 
 </div>
 
@@ -12,10 +12,10 @@ Capture screenshots, terminal recordings, and notes during an engagement; organi
 
 ## What's in the box
 
-| Component | What it does | Runs on |
-|-----------|--------------|---------|
-| **Server** (`apps/server`) | Central evidence store + web reporting UI. | Ubuntu (Docker) |
-| **Desktop app** (`apps/desktop`) | Tray app: hotkey screenshots + code blocks, queued and submitted. | macOS · Windows · Linux |
+| Component                           | What it does                                                         | Runs on                 |
+| ----------------------------------- | -------------------------------------------------------------------- | ----------------------- |
+| **Server** (`apps/server`)          | Central evidence store + web reporting UI.                           | Ubuntu (Docker)         |
+| **Desktop app** (`apps/desktop`)    | Tray app: hotkey screenshots + code blocks, queued and submitted.    | macOS · Windows · Linux |
 | **Terminal recorder** (`apps/term`) | `reporter-term` records shell sessions and uploads them as evidence. | macOS · Windows · Linux |
 
 ```
@@ -35,10 +35,10 @@ Capture screenshots, terminal recordings, and notes during an engagement; organi
 
 ## Concepts
 
-- **Operation** — an engagement that scopes everything. Users join with a role (admin/write/read).
+- **Engagement** — an engagement that scopes everything. Users join with a role (admin/write/read).
 - **Evidence** — a timestamped artifact: screenshot, terminal recording, HTTP request, code block, event, or note.
 - **Finding** — a reportable grouping of evidence.
-- **Tag** — a colored label on evidence, scoped to an operation.
+- **Tag** — a colored label on evidence, scoped to an engagement.
 - **API key** — an access-key/secret-key pair a client app uses to submit evidence.
 
 ## Quickstart (server, on Ubuntu)

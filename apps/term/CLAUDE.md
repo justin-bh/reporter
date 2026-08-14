@@ -6,7 +6,7 @@
 
 1. `reporter-term` with no config → first-run wizard (server URL, access/secret key, `checkConnection()`, shell, output dir).
 2. Record: spawn `$SHELL` in a PTY at TTY size, raw-mode passthrough, stream **asciicast v2** NDJSON to disk (`[t,"o",data]`; resize `[t,"r","WxH"]`).
-3. On exit (`exit`/Ctrl-D): @clack menu → rename / description / tag multiselect / operation pick → Upload | Save | Discard.
+3. On exit (`exit`/Ctrl-D): @clack menu → rename / description / tag multiselect / engagement pick → Upload | Save | Discard.
 4. `reporter-term upload <file.cast>` retries a saved recording.
 
 ## Rules

@@ -46,13 +46,13 @@ cp .env.example .env
 
 Edit `.env` and set at minimum:
 
-| Variable | Set to |
-|----------|--------|
-| `SESSION_SECRET` | a long random string — generate with `openssl rand -hex 32` |
-| `DB_PASSWORD` | a strong database password |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | the first admin login (or leave blank to use the web `/setup` screen) |
-| `APP_URL` | `http://<server-ip>` (the URL clients/browsers use — no port, with the default `HTTP_PORT=80`) |
-| `HTTP_PORT` | leave at `80` for a port-less URL; set to e.g. `8080` only if port 80 is already in use on the server |
+| Variable                         | Set to                                                                                                |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `SESSION_SECRET`                 | a long random string — generate with `openssl rand -hex 32`                                           |
+| `DB_PASSWORD`                    | a strong database password                                                                            |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | the first admin login (or leave blank to use the web `/setup` screen)                                 |
+| `APP_URL`                        | `http://<server-ip>` (the URL clients/browsers use — no port, with the default `HTTP_PORT=80`)        |
+| `HTTP_PORT`                      | leave at `80` for a port-less URL; set to e.g. `8080` only if port 80 is already in use on the server |
 
 Quick generation:
 
@@ -92,12 +92,12 @@ sudo ufw allow 80/tcp
 The default is plain HTTP for a trusted LAN. For HTTPS, front it with [Caddy](https://caddyserver.com) (automatic certificates). Add to `docker-compose.yml`:
 
 ```yaml
-  caddy:
-    image: caddy:2
-    ports: ['80:80', '443:443']
-    command: caddy reverse-proxy --from reporter.example.com --to app:8080
-    depends_on: [app]
-    restart: unless-stopped
+caddy:
+  image: caddy:2
+  ports: ['80:80', '443:443']
+  command: caddy reverse-proxy --from reporter.example.com --to app:8080
+  depends_on: [app]
+  restart: unless-stopped
 ```
 
 Then set `APP_URL=https://reporter.example.com` in `.env` (this makes session cookies `Secure`) and `docker compose up -d`.
@@ -108,11 +108,11 @@ Then set `APP_URL=https://reporter.example.com` in `.env` (this makes session co
 
 Same tray app on all three OSes. Prebuilt artifacts land in `apps/desktop/release/`:
 
-| OS | Artifact | Notes |
-|----|----------|-------|
-| macOS | `reporter-<version>-universal.dmg` | Universal — runs on Apple Silicon **and** Intel. Ad-hoc signed. |
-| Windows | `reporter-<version>-win-x64-portable.zip` | Portable — unzip and run `reporter.exe`. (For a real `.exe` installer, see [CI builds](#getting-real-installers-ci) — Wine on Apple Silicon can't build it.) |
-| Linux | `reporter-<version>-x86_64.AppImage`, `reporter-<version>-amd64.deb` | AppImage: `chmod +x` and run. deb: `sudo apt install ./…deb`. |
+| OS      | Artifact                                                             | Notes                                                                                                                                                        |
+| ------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| macOS   | `reporter-<version>-universal.dmg`                                   | Universal — runs on Apple Silicon **and** Intel. Ad-hoc signed.                                                                                              |
+| Windows | `reporter-<version>-win-x64-portable.zip`                            | Portable — unzip and run `reporter.exe`. (For a real `.exe` installer, see [CI builds](#getting-real-installers-ci) — Wine on Apple Silicon can't build it.) |
+| Linux   | `reporter-<version>-x86_64.AppImage`, `reporter-<version>-amd64.deb` | AppImage: `chmod +x` and run. deb: `sudo apt install ./…deb`.                                                                                                |
 
 ### Building the artifacts yourself
 
@@ -166,7 +166,7 @@ The app runs in the system tray. On **Wayland**, global hotkeys don't fire — u
 
 1. Click the menu-bar icon → **Settings**.
 2. Enter the **Server URL** (`http://<server-ip>`) and your **Access key** + **Secret key** — see [Getting API keys](#getting-api-keys).
-3. Click **Test connection**; on success it loads your operations. Pick a **Current operation**.
+3. Click **Test connection**; on success it loads your engagements. Pick a **Current engagement**.
 
 ### Grant capture permission (macOS)
 
@@ -181,7 +181,7 @@ On macOS the first screenshot capture triggers a **Screen Recording** permission
 
 ## Part C — Terminal recorder
 
-`reporter-term` records shell sessions as asciicast and uploads them as evidence. Works on **macOS, Linux, and Windows** — the *same* tarball installs on all three (node-pty pulls the right binary per platform).
+`reporter-term` records shell sessions as asciicast and uploads them as evidence. Works on **macOS, Linux, and Windows** — the _same_ tarball installs on all three (node-pty pulls the right binary per platform).
 
 ### Build the tarball (once)
 
@@ -215,7 +215,7 @@ reporter-term setup     # server URL + API keys (interactive); or just run `repo
 reporter-term           # records your shell — work as normal, then type `exit` or Ctrl-D
 ```
 
-After the session ends, choose **Upload** (pick operation, description, tags), **Keep locally**, or **Discard**. Other commands: `reporter-term upload <file.cast>`, `reporter-term config`.
+After the session ends, choose **Upload** (pick engagement, description, tags), **Keep locally**, or **Discard**. Other commands: `reporter-term upload <file.cast>`, `reporter-term config`.
 
 ---
 
@@ -232,6 +232,7 @@ Both clients authenticate with an **access key + secret key** pair:
 ## Updating
 
 **Server:**
+
 ```bash
 cd reporter
 git pull                       # or copy the new version over
@@ -256,12 +257,12 @@ Restore into a fresh stack: load the SQL with `psql`, and untar the blobs back i
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| `docker compose` build fails on `node-pty` | The provided Dockerfile installs the build toolchain; ensure you're using the repo's `Dockerfile` unchanged. |
-| App container restarts, logs `PrismaClientInitializationError` | The runtime needs `openssl` (already in the Dockerfile). Rebuild with `docker compose up -d --build`. |
-| `needsSetup: true` unexpectedly | The users table is empty — set `ADMIN_*` in `.env` and recreate the app container, or use the web `/setup` screen. |
-| Desktop app "can't be opened" (unidentified developer) | Right-click the app → **Open** (unsigned build). |
-| Desktop screenshots do nothing on macOS | Grant **Screen Recording** permission and relaunch. |
-| Global hotkeys don't fire (Linux/Wayland) | Use the tray menu, or bind a shortcut to `reporter-desktop --capture-area`. |
-| `reporter-term` install pulls wrong deps | Use `pnpm --filter @reporter/term run pack` (with `run`), then install the tarball it prints. |
+| Symptom                                                        | Fix                                                                                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `docker compose` build fails on `node-pty`                     | The provided Dockerfile installs the build toolchain; ensure you're using the repo's `Dockerfile` unchanged.       |
+| App container restarts, logs `PrismaClientInitializationError` | The runtime needs `openssl` (already in the Dockerfile). Rebuild with `docker compose up -d --build`.              |
+| `needsSetup: true` unexpectedly                                | The users table is empty — set `ADMIN_*` in `.env` and recreate the app container, or use the web `/setup` screen. |
+| Desktop app "can't be opened" (unidentified developer)         | Right-click the app → **Open** (unsigned build).                                                                   |
+| Desktop screenshots do nothing on macOS                        | Grant **Screen Recording** permission and relaunch.                                                                |
+| Global hotkeys don't fire (Linux/Wayland)                      | Use the tray menu, or bind a shortcut to `reporter-desktop --capture-area`.                                        |
+| `reporter-term` install pulls wrong deps                       | Use `pnpm --filter @reporter/term run pack` (with `run`), then install the tarball it prints.                      |

@@ -11,7 +11,12 @@ export interface ErrorStateProps {
 }
 
 /** A non-dead-end error panel: says what failed and offers a way forward. */
-export function ErrorState({ title = "Something went wrong", description, onRetry, className }: ErrorStateProps) {
+export function ErrorState({
+  title = 'Something went wrong',
+  description,
+  onRetry,
+  className,
+}: ErrorStateProps) {
   return (
     <div
       className={cn(

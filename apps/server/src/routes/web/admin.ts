@@ -59,7 +59,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (user.id === req.authedUser!.id) throw new HttpError(400, 'You cannot delete yourself');
     // Soft delete + revoke sessions/keys.
     await app.db.$transaction([
-      app.db.user.update({ where: { id: user.id }, data: { deletedAt: new Date(), disabled: true } }),
+      app.db.user.update({
+        where: { id: user.id },
+        data: { deletedAt: new Date(), disabled: true },
+      }),
       app.db.session.deleteMany({ where: { userId: user.id } }),
       app.db.apiKey.deleteMany({ where: { userId: user.id } }),
     ]);
@@ -104,7 +107,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // --- Finding categories ---
   app.get('/admin/finding-categories', { preHandler: adminGuard }, async () => {
-    return app.db.findingCategory.findMany({ where: { deletedAt: null }, orderBy: { category: 'asc' } });
+    return app.db.findingCategory.findMany({
+      where: { deletedAt: null },
+      orderBy: { category: 'asc' },
+    });
   });
 
   app.post('/admin/finding-categories', { preHandler: adminGuard }, async (req, reply) => {

@@ -9,6 +9,21 @@ export function formatDateTime(iso: string): string {
   });
 }
 
+/** Local wall-clock time, e.g. "2:14 PM". */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/** Long weekday + full date, e.g. "Thursday, August 14, 2026". */
+export function formatDayHeading(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 export function formatRelative(iso: string): string {
   const then = new Date(iso).getTime();
   const secs = Math.round((Date.now() - then) / 1000);

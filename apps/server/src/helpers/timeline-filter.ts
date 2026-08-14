@@ -3,14 +3,14 @@ import type { ParsedQuery } from '@reporter/shared';
 
 /**
  * Translate a parsed evidence-timeline query into a Prisma `where` filter,
- * scoped to one operation. Prisma builds parameterized SQL from this — no string
+ * scoped to one engagement. Prisma builds parameterized SQL from this — no string
  * concatenation. Multiple tags/text terms are ANDed; multiple date ranges ORed.
  */
 export function buildEvidenceWhere(
   q: ParsedQuery,
-  operationId: number,
+  engagementId: number,
 ): Prisma.EvidenceWhereInput {
-  const and: Prisma.EvidenceWhereInput[] = [{ operationId }];
+  const and: Prisma.EvidenceWhereInput[] = [{ engagementId }];
 
   for (const term of q.text) {
     and.push({ description: { contains: term, mode: 'insensitive' } });
@@ -18,7 +18,7 @@ export function buildEvidenceWhere(
 
   // Every requested tag must be present on the evidence.
   for (const tagName of q.tags) {
-    and.push({ tags: { some: { tag: { name: tagName, operationId } } } });
+    and.push({ tags: { some: { tag: { name: tagName, engagementId } } } });
   }
 
   if (q.operators.length > 0) {

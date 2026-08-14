@@ -10,14 +10,14 @@ src/
   app.ts              buildApp(): registers plugins + routes, no side effects (tests use fastify.inject)
   config.ts           zod-parsed env, fail-fast
   plugins/            prisma, session-auth, hmac-auth, blob-store, static
-  routes/web/*        auth, operations, evidence, findings, tags, queries, admin, account
-  routes/api/*        client-api (checkconnection, operations, evidence, tags)
-  services/*          evidence, findings, operations, auth/{local,oidc,webauthn}
+  routes/web/*        auth, engagements, evidence, findings, tags, queries, admin, account
+  routes/api/*        client-api (checkconnection, engagements, evidence, tags)
+  services/*          evidence, findings, engagements, auth/{local,oidc,webauthn}
   blobstore/          types.ts (ContentStore), local.ts, s3.ts
   helpers/            timeline-query-to-sql.ts, pagination.ts, slug.ts
 prisma/
   schema.prisma       source of truth for the data model
-  seed.ts             dev/demo seed (admin, operator, tags, demo operation + evidence)
+  seed.ts             dev/demo seed (admin, operator, tags, demo engagement + evidence)
 ```
 
 ## Rules

@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError } from '../../auth/guards.js';
 import { authRoutes } from './auth.js';
-import { operationRoutes } from './operations.js';
+import { engagementRoutes } from './engagements.js';
 import { evidenceRoutes } from './evidence.js';
 import { findingRoutes } from './findings.js';
+import { reportRoutes } from './report.js';
 import { tagRoutes } from './tags.js';
 import { queryRoutes } from './queries.js';
 import { adminRoutes } from './admin.js';
@@ -21,9 +22,10 @@ export async function registerWebRoutes(app: FastifyInstance): Promise<void> {
   });
 
   await app.register(authRoutes);
-  await app.register(operationRoutes);
+  await app.register(engagementRoutes);
   await app.register(evidenceRoutes);
   await app.register(findingRoutes);
+  await app.register(reportRoutes);
   await app.register(tagRoutes);
   await app.register(queryRoutes);
   await app.register(adminRoutes);

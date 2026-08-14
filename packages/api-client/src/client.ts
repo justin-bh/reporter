@@ -1,10 +1,10 @@
 import type {
   CheckConnectionResult,
   CreateEvidenceInput,
-  CreateOperationInput,
+  CreateEngagementInput,
   CreateTagInput,
   Evidence,
-  Operation,
+  Engagement,
   Tag,
 } from '@reporter/shared';
 import { buildAuthHeaders } from './sign.js';
@@ -73,29 +73,36 @@ export class ReporterClient {
     return this.request<CheckConnectionResult>('GET', '/api/checkconnection');
   }
 
-  /** List the operations this API key's user can access. */
-  listOperations(): Promise<Operation[]> {
-    return this.request<Operation[]>('GET', '/api/operations');
+  /** List the engagements this API key's user can access. */
+  listEngagements(): Promise<Engagement[]> {
+    return this.request<Engagement[]>('GET', '/api/engagements');
   }
 
-  createOperation(input: CreateOperationInput): Promise<Operation> {
+  createEngagement(input: CreateEngagementInput): Promise<Engagement> {
     const body = Buffer.from(JSON.stringify(input), 'utf8');
-    return this.request<Operation>('POST', '/api/operations', {
+    return this.request<Engagement>('POST', '/api/engagements', {
       body,
       contentType: 'application/json',
     });
   }
 
-  listTags(operationSlug: string): Promise<Tag[]> {
-    return this.request<Tag[]>('GET', `/api/operations/${encodeURIComponent(operationSlug)}/tags`);
+  listTags(engagementSlug: string): Promise<Tag[]> {
+    return this.request<Tag[]>(
+      'GET',
+      `/api/engagements/${encodeURIComponent(engagementSlug)}/tags`,
+    );
   }
 
-  createTag(operationSlug: string, input: CreateTagInput): Promise<Tag> {
+  createTag(engagementSlug: string, input: CreateTagInput): Promise<Tag> {
     const body = Buffer.from(JSON.stringify(input), 'utf8');
-    return this.request<Tag>('POST', `/api/operations/${encodeURIComponent(operationSlug)}/tags`, {
-      body,
-      contentType: 'application/json',
-    });
+    return this.request<Tag>(
+      'POST',
+      `/api/engagements/${encodeURIComponent(engagementSlug)}/tags`,
+      {
+        body,
+        contentType: 'application/json',
+      },
+    );
   }
 
   /**
@@ -103,7 +110,7 @@ export class ReporterClient {
    * `file` (when present) is the binary blob part (screenshot PNG, asciicast, …).
    */
   createEvidence(
-    operationSlug: string,
+    engagementSlug: string,
     metadata: CreateEvidenceInput,
     file?: { filename: string; contentType: string; data: Buffer },
   ): Promise<Evidence> {
@@ -113,7 +120,7 @@ export class ReporterClient {
     const { body, contentType } = buildMultipart({ notes: JSON.stringify(metadata) }, files);
     return this.request<Evidence>(
       'POST',
-      `/api/operations/${encodeURIComponent(operationSlug)}/evidence`,
+      `/api/engagements/${encodeURIComponent(engagementSlug)}/evidence`,
       { body, contentType },
     );
   }

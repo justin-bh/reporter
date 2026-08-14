@@ -5,13 +5,13 @@ React 19 + Vite 7 SPA. Built output is served by the server at `/`. Talks to `/w
 ## Rules
 
 - Compose from `@reporter/ui`; never hard-code colors/spacing. Follow `DESIGN.md`.
-- Data via TanStack Query v5; one `fetch` wrapper adds `X-Requested-With` and parses JSON errors. Invalidate by operation slug after mutations.
+- Data via TanStack Query v5; one `fetch` wrapper adds `X-Requested-With` and parses JSON errors. Invalidate by engagement slug after mutations.
 - Types from `@reporter/shared`. Routing: react-router v7 library mode.
 - Every view has loading + empty (with next action) + error states, in light and dark.
 
 ## Pages (target)
 
-`/login` (+TOTP), `/setup`, `/login/recovery/:code` · `/operations` · `/operations/:slug/evidence` (timeline + create-evidence + renderers) · `/operations/:slug/findings[/:uuid]` · `.../tags` · `.../queries` · `.../settings` · `/admin/{users,tags,findings}` · `/account/{profile,security,api-keys}`.
+`/login` (+TOTP), `/setup`, `/login/recovery/:code` · `/engagements` · `/engagements/:slug/evidence` (timeline + create-evidence + renderers) · `/engagements/:slug/findings[/:uuid]` · `.../tags` · `.../queries` · `.../settings` · `/admin/{users,tags,findings}` · `/account/{profile,security,api-keys}`.
 
 ## Evidence renderers
 

@@ -11,9 +11,7 @@ export function listQueue(): QueueItem[] {
   return store.get('items');
 }
 
-export function addItem(
-  partial: Omit<QueueItem, 'id' | 'status' | 'createdAt'>,
-): QueueItem {
+export function addItem(partial: Omit<QueueItem, 'id' | 'status' | 'createdAt'>): QueueItem {
   const item: QueueItem = {
     ...partial,
     id: randomUUID(),

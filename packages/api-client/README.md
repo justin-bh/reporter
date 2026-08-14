@@ -10,7 +10,7 @@ The string to sign is built from four request components, with the SHA-256 of th
 
 ```
 stringToSign = METHOD + "\n"
-             + pathWithQuery + "\n"          e.g. /api/operations/acme/evidence?page=1
+             + pathWithQuery + "\n"          e.g. /api/engagements/acme/evidence?page=1
              + dateRFC1123GMT + "\n"         e.g. Wed, 13 Aug 2026 20:01:00 GMT
              ⧺ SHA-256(rawBody)              32 raw digest bytes (empty body → hash of 0 bytes)
 
@@ -37,8 +37,8 @@ const client = new ReporterClient({
   secretKey: process.env.REPORTER_SECRET_KEY!, // base64, as issued
 });
 
-await client.checkConnection();               // { ok: true, user, serverVersion }
-const ops = await client.listOperations();
+await client.checkConnection(); // { ok: true, user, serverVersion }
+const ops = await client.listEngagements();
 
 await client.createEvidence(
   'acme-assessment',
@@ -53,12 +53,12 @@ await client.createEvidence(
 import { buildAuthHeaders } from '@reporter/api-client';
 
 const body = Buffer.from(JSON.stringify(payload));
-const headers = buildAuthHeaders('POST', '/api/operations', body, accessKey, secretKeyBase64);
+const headers = buildAuthHeaders('POST', '/api/engagements', body, accessKey, secretKeyBase64);
 // → { Authorization, Date }
 ```
 
 ## API surface
 
-- `ReporterClient` — `checkConnection`, `listOperations`, `createOperation`, `listTags`, `createTag`, `createEvidence`.
+- `ReporterClient` — `checkConnection`, `listEngagements`, `createEngagement`, `listTags`, `createTag`, `createEvidence`.
 - `computeSignature`, `verifySignature`, `buildAuthHeaders`, `parseAuthorization`, `isDateWithinSkew`, `MAX_CLOCK_SKEW_MS`.
 - `buildMultipart` — in-memory `multipart/form-data` builder (so the exact bytes can be signed).

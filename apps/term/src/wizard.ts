@@ -1,10 +1,5 @@
 import * as p from '@clack/prompts';
-import {
-  defaultOutputDir,
-  defaultShell,
-  saveConfig,
-  type TermConfig,
-} from './config.js';
+import { defaultOutputDir, defaultShell, saveConfig, type TermConfig } from './config.js';
 import { makeClient } from './client.js';
 import { banner, sym } from './theme.js';
 
@@ -60,7 +55,10 @@ export async function runWizard(existing?: TermConfig | null): Promise<TermConfi
     spin.stop(`${sym.ok} Connected as ${res.user.email}`);
   } catch (err) {
     spin.stop(`${sym.err} Connection failed: ${err instanceof Error ? err.message : String(err)}`);
-    const proceed = await p.confirm({ message: 'Save these settings anyway?', initialValue: false });
+    const proceed = await p.confirm({
+      message: 'Save these settings anyway?',
+      initialValue: false,
+    });
     if (p.isCancel(proceed) || !proceed) return cancelled();
   }
 

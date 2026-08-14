@@ -1,6 +1,6 @@
 import { Badge, TagChip } from '@reporter/ui';
 import { EVIDENCE_TYPE_LABELS, type Evidence } from '@reporter/shared';
-import { formatDateTime } from '../../lib/format.js';
+import { formatDateTime, formatDayHeading, formatRelative, formatTime } from '../../lib/format.js';
 
 /** Shared evidence chrome: type, operator, timestamp, and tags. */
 export function EvidenceMeta({ evidence }: { evidence: Evidence }) {
@@ -11,7 +11,10 @@ export function EvidenceMeta({ evidence }: { evidence: Evidence }) {
         {evidence.operator.firstName} {evidence.operator.lastName}
       </span>
       <span>·</span>
-      <time dateTime={evidence.occurredAt}>{formatDateTime(evidence.occurredAt)}</time>
+      <time dateTime={evidence.occurredAt} title={formatDateTime(evidence.occurredAt)}>
+        {formatDayHeading(evidence.occurredAt)} at {formatTime(evidence.occurredAt)}
+      </time>
+      <span>({formatRelative(evidence.occurredAt)})</span>
       {evidence.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {evidence.tags.map((t) => (

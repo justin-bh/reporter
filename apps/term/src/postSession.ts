@@ -5,25 +5,25 @@ import { makeClient } from './client.js';
 import { uploadCast } from './upload.js';
 import { c, sym } from './theme.js';
 
-/** Ask the operator to choose an operation from the server. */
-async function chooseOperation(config: TermConfig): Promise<string | null> {
+/** Ask the operator to choose an engagement from the server. */
+async function chooseEngagement(config: TermConfig): Promise<string | null> {
   const spin = p.spinner();
-  spin.start('Loading operations');
-  let ops;
+  spin.start('Loading engagements');
+  let engs;
   try {
-    ops = await makeClient(config).listOperations();
-    spin.stop(`${ops.length} operation(s)`);
+    engs = await makeClient(config).listEngagements();
+    spin.stop(`${engs.length} engagement(s)`);
   } catch (err) {
-    spin.stop(`${sym.err} Couldn't load operations: ${err instanceof Error ? err.message : err}`);
+    spin.stop(`${sym.err} Couldn't load engagements: ${err instanceof Error ? err.message : err}`);
     return null;
   }
-  if (ops.length === 0) {
-    p.log.warn('No operations available for this API key.');
+  if (engs.length === 0) {
+    p.log.warn('No engagements available for this API key.');
     return null;
   }
   const slug = await p.select({
-    message: 'Operation',
-    options: ops.map((o) => ({ value: o.slug, label: o.name })),
+    message: 'Engagement',
+    options: engs.map((o) => ({ value: o.slug, label: o.name })),
   });
   if (p.isCancel(slug)) return null;
   return String(slug);
@@ -31,8 +31,8 @@ async function chooseOperation(config: TermConfig): Promise<string | null> {
 
 /** Collect description + tags and upload the recording. */
 export async function promptAndUpload(config: TermConfig, castPath: string): Promise<boolean> {
-  const operationSlug = await chooseOperation(config);
-  if (!operationSlug) return false;
+  const engagementSlug = await chooseEngagement(config);
+  if (!engagementSlug) return false;
 
   const description = await p.text({
     message: 'Description',
@@ -42,7 +42,7 @@ export async function promptAndUpload(config: TermConfig, castPath: string): Pro
 
   let tagIds: number[] = [];
   try {
-    const tags = await makeClient(config).listTags(operationSlug);
+    const tags = await makeClient(config).listTags(engagementSlug);
     if (tags.length > 0) {
       const picked = await p.multiselect({
         message: 'Tags (space to select, enter to confirm)',
@@ -59,7 +59,7 @@ export async function promptAndUpload(config: TermConfig, castPath: string): Pro
   spin.start('Uploading recording');
   try {
     const uuid = await uploadCast(config, castPath, {
-      operationSlug,
+      engagementSlug,
       description: String(description ?? ''),
       tagIds,
     });
