@@ -6,7 +6,7 @@ Electron tray app for screenshot / codeblock capture. electron-vite (main/preloa
 
 - **main**: tray, global shortcuts, capture, `better-sqlite3` queue, uploader, settings/secrets.
 - **preload**: a typed `contextBridge` IPC surface only. `contextIsolation` on, `nodeIntegration` off.
-- **renderer**: React (History, pre-submit editor, Settings).
+- **renderer**: React (History, pre-submit editor, Settings, About).
 
 ## Capture per OS
 
@@ -23,7 +23,13 @@ Electron tray app for screenshot / codeblock capture. electron-vite (main/preloa
 
 - **main** (ESM, `out/main/index.js`): tray, global shortcuts, capture, queue, uploader, IPC. Bundled by electron-vite.
 - **preload** (`out/preload/index.mjs`, `sandbox:false`): `contextBridge` exposes `window.reporter` (typed in `src/preload/index.ts` → `ReporterBridge`). IPC channel names live in `src/shared/channels.ts`.
-- **renderer** (React + `@reporter/ui`): `HistoryView`, `SettingsView`, `ComposeView`, switched by `App.tsx` on `onNavigate`/`onDraftReady` events.
+- **renderer** (React + `@reporter/ui`): `HistoryView`, `SettingsView`, `ComposeView`, `AboutView`, switched by `App.tsx` on `onNavigate`/`onDraftReady` events.
+
+## Version & About
+
+- **Single source of truth** for the app version is `apps/desktop/package.json` `version` (what electron-builder stamps into installers). Bump it repo-wide with `pnpm run version:bump` — never hand-edit (see root `CLAUDE.md` → *Versioning & releases*).
+- **Build metadata is injected** by `electron.vite.config.ts` `define` into the *main* bundle only: `__APP_VERSION__`, `__APP_HOMEPAGE__`, `__GIT_COMMIT__`, `__BUILD_DATE__` (declared in `src/env.d.ts`, read via `src/main/build-info.ts`). CI can override `GIT_COMMIT` / `BUILD_DATE` env vars for reproducible builds.
+- **About view** (`src/renderer/src/views/AboutView.tsx`): tray → *About reporter* or window nav → **About**. Shows version, commit, build date, Electron/Chromium/Node/V8, platform, server URL. IPC: `about:get` → `AboutInfo`. `update:check` hits the GitHub *releases/latest* API for the repo in `homepage` and compares SemVer (never throws; unset/unreachable feed degrades gracefully). Links open via `shell:open-external` (https-only). `app.setAboutPanelOptions` keeps the OS-native panel in sync.
 
 ## Gotchas (flag to users)
 

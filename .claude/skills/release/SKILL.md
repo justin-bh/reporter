@@ -9,6 +9,12 @@ Produce every shippable reporter artifact and report where each landed.
 
 ## Steps
 
+0. **Set the release version (all workspaces share one number):**
+   ```bash
+   pnpm run version:bump <major|minor|patch>   # or an explicit X.Y.Z
+   ```
+   This rewrites every workspace `package.json`, the `reporter-term` `.version()` literal, and opens a dated `CHANGELOG.md` section. Review the diff and flesh out the changelog. Add `--commit` to also commit and create the `vX.Y.Z` tag — pushing that tag triggers `.github/workflows/release.yml` (the reliable way to build the Windows `.exe` and universal macOS builds on native runners). The desktop **About** view and `reporter-term --version` will report this number; the git commit + build date are stamped into the desktop bundle automatically.
+
 1. **Clean build of packages + web + server:**
    ```bash
    pnpm install --frozen-lockfile
