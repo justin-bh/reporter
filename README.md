@@ -51,7 +51,7 @@ cp .env.example .env      # set SESSION_SECRET, DB_PASSWORD, and ADMIN_EMAIL/ADM
 docker compose up -d      # builds the image, starts postgres + app; migrations run automatically
 ```
 
-Open `http://<server-ip>:8080` and sign in with the admin credentials from `.env` (or complete the one-time **/setup** screen if you left them blank).
+Open `http://<server-ip>` and sign in with the admin credentials from `.env` (or complete the one-time **/setup** screen if you left them blank). (The app publishes on port 80 by default — set `HTTP_PORT` in `.env` if port 80 is already taken.)
 
 Then, in the web UI, open **Account → API keys**, generate a pair, and plug it into the clients:
 

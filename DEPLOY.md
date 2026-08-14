@@ -7,7 +7,7 @@ This guide covers deploying the **server** on an Ubuntu machine and installing t
 - Part C — [Terminal recorder](#part-c--terminal-recorder)
 - [Getting API keys](#getting-api-keys) · [Updating](#updating) · [Backups](#backups) · [Troubleshooting](#troubleshooting)
 
-The only thing your teammates' machines need to reach is the server's URL (e.g. `http://192.168.1.50:8080`). Everything else is local to each machine.
+The only thing your teammates' machines need to reach is the server's URL (e.g. `http://192.168.1.50`). Everything else is local to each machine.
 
 ---
 
@@ -51,7 +51,8 @@ Edit `.env` and set at minimum:
 | `SESSION_SECRET` | a long random string — generate with `openssl rand -hex 32` |
 | `DB_PASSWORD` | a strong database password |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | the first admin login (or leave blank to use the web `/setup` screen) |
-| `APP_URL` | `http://<server-ip>:8080` (the URL clients/browsers will use) |
+| `APP_URL` | `http://<server-ip>` (the URL clients/browsers use — no port, with the default `HTTP_PORT=80`) |
+| `HTTP_PORT` | leave at `80` for a port-less URL; set to e.g. `8080` only if port 80 is already in use on the server |
 
 Quick generation:
 
@@ -72,17 +73,19 @@ Check it:
 
 ```bash
 docker compose ps
-curl -s http://localhost:8080/web/flags        # {"appName":"reporter","needsSetup":false,...}
+curl -s http://localhost/web/flags             # {"appName":"reporter","needsSetup":false,...}
 docker compose logs -f app                      # watch boot / migrations
 ```
 
-Open `http://<server-ip>:8080` in a browser and sign in. (If you left the admin vars blank, the first visit shows a one-time **Create admin** screen.)
+Open `http://<server-ip>` in a browser and sign in. (If you left the admin vars blank, the first visit shows a one-time **Create admin** screen.)
 
 ### 5. Open the firewall (if `ufw` is enabled)
 
 ```bash
-sudo ufw allow 8080/tcp
+sudo ufw allow 80/tcp
 ```
+
+(Use the matching port if you changed `HTTP_PORT`.)
 
 ### 6. (Optional) HTTPS with a reverse proxy
 
@@ -162,7 +165,7 @@ The app runs in the system tray. On **Wayland**, global hotkeys don't fire — u
 ### Configure (all platforms)
 
 1. Click the menu-bar icon → **Settings**.
-2. Enter the **Server URL** (`http://<server-ip>:8080`) and your **Access key** + **Secret key** — see [Getting API keys](#getting-api-keys).
+2. Enter the **Server URL** (`http://<server-ip>`) and your **Access key** + **Secret key** — see [Getting API keys](#getting-api-keys).
 3. Click **Test connection**; on success it loads your operations. Pick a **Current operation**.
 
 ### Grant capture permission (macOS)
@@ -220,7 +223,7 @@ After the session ends, choose **Upload** (pick operation, description, tags), *
 
 Both clients authenticate with an **access key + secret key** pair:
 
-1. Sign in to the web UI (`http://<server-ip>:8080`).
+1. Sign in to the web UI (`http://<server-ip>`).
 2. Go to **Account → API keys → New key**.
 3. Copy the **access key** and **secret key** (the secret is shown once). Paste them into the desktop app's Settings or `reporter-term setup`.
 
