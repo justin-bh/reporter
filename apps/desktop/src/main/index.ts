@@ -104,8 +104,16 @@ function composeCodeblockFromClipboard(): void {
 // Tray
 // ---------------------------------------------------------------------------
 
+function trayIconPath(): string {
+  // In a packaged app the icon is shipped via extraResources (resourcesPath);
+  // in dev it sits in the source build/ folder.
+  return app.isPackaged
+    ? join(process.resourcesPath, 'tray.png')
+    : join(import.meta.dirname, '../../build/tray.png');
+}
+
 function buildTray(): void {
-  const icon = nativeImage.createFromPath(join(import.meta.dirname, '../../build/tray.png'));
+  const icon = nativeImage.createFromPath(trayIconPath());
   if (!tray) {
     tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
     tray.setToolTip('reporter');

@@ -1,5 +1,8 @@
 appId: local.reporter.desktop
 productName: reporter
+# Pinned so electron-builder can resolve the version under pnpm's hoisted layout.
+electronVersion: 33.4.11
+npmRebuild: false
 directories:
   output: release
   buildResources: build
@@ -8,6 +11,12 @@ files:
   - package.json
 # Native modules would be unpacked here; reporter-desktop currently uses none.
 asarUnpack: []
+# Ship the tray icon into the app's resources dir (build/ is not bundled otherwise).
+extraResources:
+  - from: build/tray.png
+    to: tray.png
+  - from: build/tray@2x.png
+    to: tray@2x.png
 mac:
   category: public.app-category.developer-tools
   target:

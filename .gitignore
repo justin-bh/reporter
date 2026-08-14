@@ -24,6 +24,10 @@ blobs/
 apps/desktop/release/
 apps/desktop/dist-electron/
 
+# Terminal recorder packaging
+apps/term/pkg/
+apps/term/*.tgz
+
 # Editor / OS
 .DS_Store
 .idea/

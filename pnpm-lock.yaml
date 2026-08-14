@@ -67,7 +67,7 @@ importers:
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12))
       electron:
-        specifier: ^33.2.1
+        specifier: 33.4.11
         version: 33.4.11
       electron-builder:
         specifier: ^25.1.8

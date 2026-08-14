@@ -11,8 +11,9 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "node build.mjs",
+    "pack": "node build.mjs && node scripts/make-tarball.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist pkg *.tgz"
   },
   "dependencies": {
     "@clack/prompts": "^0.9.1",

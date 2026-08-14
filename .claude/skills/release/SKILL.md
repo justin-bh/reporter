@@ -25,15 +25,15 @@ Produce every shippable reporter artifact and report where each landed.
 3. **Desktop installers** (build on/for each target OS; cross-building is limited):
    ```bash
    pnpm --filter @reporter/desktop build
-   pnpm --filter @reporter/desktop exec electron-builder --publish never
+   cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --publish never
    ```
-   Targets: dmg + zip (macOS arm64/x64), nsis (Windows), AppImage + deb (Linux). Output in `apps/desktop/release/`.
+   Targets: dmg + zip (macOS arm64/x64), nsis (Windows), AppImage + deb (Linux). Output in `apps/desktop/release/`. `CSC_IDENTITY_AUTO_DISCOVERY=false` skips code-signing for local/unsigned builds. The Electron version is pinned in `electron-builder.yml` (`electronVersion`) so it resolves under pnpm's hoisted layout.
 
 4. **Terminal recorder npm tarball:**
    ```bash
-   pnpm --filter @reporter/term build
-   pnpm --filter @reporter/term pack
+   pnpm --filter @reporter/term run pack
    ```
+   NOTE: use `run pack` (not `pnpm pack`, which is a built-in that ignores the script and mis-handles the workspace deps). Produces `apps/term/reporter-term-<version>.tgz`, installable with `npm install -g ./apps/term/reporter-term-<version>.tgz`.
 
 ## Report
 
