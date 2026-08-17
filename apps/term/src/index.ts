@@ -74,4 +74,9 @@ program
     p.outro('Done.');
   });
 
-program.parseAsync(process.argv);
+program.parseAsync(process.argv).catch((err) => {
+  // Print a clean, actionable message (e.g. the spawn-helper guidance from
+  // record.ts) instead of dumping a raw stack trace.
+  console.error(`\n${sym.err} ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+});

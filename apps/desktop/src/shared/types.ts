@@ -11,6 +11,8 @@ export interface DesktopSettings {
   hotkeys: { captureArea: string; captureWindow: string };
   /** True when the OS secret store is weak (Linux basic_text) — surfaced as a warning. */
   weakSecretStorage: boolean;
+  /** False when global hotkeys can't work (Linux/Wayland) — surfaced as a warning. */
+  globalShortcutsAvailable: boolean;
 }
 
 /** A patch to settings from the renderer. `secret` is write-only. */
