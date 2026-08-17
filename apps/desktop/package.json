@@ -17,6 +17,7 @@
   "dependencies": {
     "@reporter/api-client": "workspace:*",
     "@reporter/shared": "workspace:*",
+    "dbus-next": "0.10.2",
     "electron-store": "^10.0.0"
   },
   "devDependencies": {

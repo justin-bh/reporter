@@ -25,6 +25,17 @@ let cachedEngagements: EngagementLite[] = [];
 
 const isDev = Boolean(process.env['ELECTRON_RENDERER_URL']);
 
+// On Linux the Chromium GPU process frequently fails to initialize on the
+// headless / VM / RDP boxes common for red-team ops — "Exiting GPU process due
+// to errors during initialization" (viz_main_impl.cc) — which can leave the
+// capture window blank. reporter is a small tray + form UI that gains nothing
+// from GPU acceleration, so disable it on Linux for reliable software rendering.
+// Set REPORTER_ENABLE_GPU=1 to opt back in on a machine with a working GPU.
+if (process.platform === 'linux' && !process.env['REPORTER_ENABLE_GPU']) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+}
+
 // ---------------------------------------------------------------------------
 // Window
 // ---------------------------------------------------------------------------
@@ -79,9 +90,21 @@ async function drain(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function captureAndCompose(mode: CaptureMode): Promise<void> {
+  // Hide our own window first so it can't occlude the target region (or, for
+  // window mode, be the window that gets captured), then give the compositor a
+  // moment to drop it before the screenshot tool grabs the screen.
+  const wasVisible = mainWindow?.isVisible() ?? false;
   try {
+    if (mainWindow?.isVisible()) {
+      mainWindow.hide();
+      await new Promise((r) => setTimeout(r, 250));
+    }
     const filePath = await captureScreenshot(mode);
-    if (!filePath) return; // cancelled
+    if (!filePath) {
+      // The user cancelled — restore the window they launched capture from.
+      if (wasVisible) showView('history');
+      return;
+    }
     const preview = await readFile(filePath)
       .then((b) => `data:image/png;base64,${b.toString('base64')}`)
       .catch(() => undefined);
@@ -90,8 +113,10 @@ async function captureAndCompose(mode: CaptureMode): Promise<void> {
     mainWindow?.webContents.send(CH.draftReady);
   } catch (err) {
     pendingDraft = null;
-    // Surface the error in the compose view so it is not silent.
-    showView('settings');
+    // Never fail silently: log it and surface the reason as a toast. showView
+    // also re-reveals the window (hidden above) so the toast is actually seen.
+    console.error('[reporter] capture failed:', err);
+    showView('history');
     mainWindow?.webContents.send(
       'event:capture-error',
       err instanceof Error ? err.message : String(err),

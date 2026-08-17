@@ -70,6 +70,52 @@ with `pnpm run version:bump <major|minor|patch>`.
 - The login rate limit is now tunable via `LOGIN_RATE_LIMIT_MAX` (default `10`
   per minute).
 
+### Fixed
+
+- **Desktop capture now works on modern GNOME/Wayland (and fails loudly, never
+  silently).** On Wayland — the default on Ubuntu 24.04+ — capturing an area
+  brought up the selection overlay but then produced **no comment window** and
+  sometimes an **all-black screenshot**. Root cause: `gnome-screenshot` lost
+  access to GNOME Shell's screenshot API in GNOME 49 (Ubuntu 25.10 / 26.04) and no
+  longer writes a file on Wayland, and the app treated the missing file as a silent
+  "cancelled". Capture now goes through the **XDG desktop portal**
+  (`org.freedesktop.portal.Screenshot`, interactive) on Wayland, which shows the
+  desktop's native area/window/screen picker, captures real compositor output (no
+  more black frames), and returns the cropped image — working across GNOME, KDE,
+  and wlroots. It falls back to CLI tools (`gnome-screenshot`, `spectacle`,
+  `grim`+`slurp`, `maim`, `scrot`, `import`) on X11 or when no portal is available,
+  and now **surfaces a clear error toast** (with the tool's message) instead of
+  doing nothing when capture genuinely fails. The reporter window is also hidden
+  before capture so it can't occlude the shot or be captured itself. The `.deb`
+  now **depends on `xdg-desktop-portal`** (plus `gnome-screenshot` for X11).
+- **Global hotkeys under Wayland are now explained.** Electron global shortcuts
+  don't fire on Wayland; Settings now says so and points to the tray menu or
+  binding a system shortcut to `reporter --capture-area` / `--capture-window`.
+- **Desktop app now runs on Linux VMs / headless boxes.** On Linux the Chromium
+  GPU process often fails to initialize on machines without a real GPU (`Exiting
+  GPU process due to errors during initialization`), which could leave the capture
+  window blank. GPU acceleration is now disabled on Linux (the tray + form UI
+  doesn't need it); set `REPORTER_ENABLE_GPU=1` to force it back on.
+- **Desktop Linux executable is now `reporter`** (was `@reporterdesktop`, derived
+  from the scoped package name) — fixes the `reporter` launch command, the `.deb`
+  `/usr/bin/reporter` symlink, and the `.desktop` icon lookup.
+- **Desktop `.deb` no longer needs a manual `chmod 4755` on Ubuntu 23.10+/24.04+
+  /26.04.** A custom `postinst` always makes `chrome-sandbox` SUID root; the stock
+  one skipped it because its user-namespace probe runs as root (who can always use
+  userns) while the unprivileged user is blocked by AppArmor, so Chromium's
+  sandbox aborted at launch. (AppImage can't set SUID; run it with userns enabled
+  or `--no-sandbox`.)
+- **`reporter-term` no longer crashes with `Error: posix_spawnp failed.` on a
+  fresh `npm i -g`.** node-pty starts a session by `posix_spawn`-ing its prebuilt
+  `spawn-helper` binary; some installs land that binary without its executable
+  bit, so the very first recording aborts before the shell starts. The recorder
+  now restores `+x` on `spawn-helper` (macOS/Linux) right before spawning, so
+  recording works regardless of how node-pty was unpacked. No-op on Windows
+  (ConPTY has no helper). When it *can't* self-heal — e.g. a `sudo npm install`
+  left the files owned by root — it no longer dumps a raw stack trace but prints
+  an actionable message telling you to `chmod +x` the helper (with `sudo` when
+  it's root-owned) or reinstall without sudo.
+
 ## [0.1.0] - 2026-08-14
 
 ### Added

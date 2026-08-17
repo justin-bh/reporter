@@ -42,6 +42,13 @@ function encryptionAvailable(): boolean {
   }
 }
 
+/** True on a Linux Wayland session, where Electron global shortcuts don't fire. */
+export function isWaylandSession(): boolean {
+  if (platform !== 'linux') return false;
+  const t = (process.env['XDG_SESSION_TYPE'] ?? '').toLowerCase();
+  return t === 'wayland' || Boolean(process.env['WAYLAND_DISPLAY']);
+}
+
 /** Detect a weak secret-storage backend (Linux without a keyring). */
 export function weakSecretStorage(): boolean {
   try {
@@ -64,6 +71,7 @@ export function getSettings(): DesktopSettings {
     captureCommand: store.get('captureCommand'),
     hotkeys: store.get('hotkeys'),
     weakSecretStorage: weakSecretStorage(),
+    globalShortcutsAvailable: !isWaylandSession(),
   };
 }
 

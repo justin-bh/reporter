@@ -1,5 +1,9 @@
 appId: local.reporter.desktop
 productName: reporter
+# Without this the Linux/Windows executable is named after the scoped package
+# (`@reporter/desktop` → `@reporterdesktop`), which is ugly and breaks the
+# `reporter` launch command and the .desktop Icon lookup. Force a clean name.
+executableName: reporter
 # Pinned so electron-builder can resolve the version under pnpm's hoisted layout.
 electronVersion: 33.4.11
 npmRebuild: false
@@ -37,3 +41,30 @@ linux:
     - deb
   category: Development
   maintainer: reporter <noreply@reporter.local>
+deb:
+  # Custom postinst that ALWAYS makes chrome-sandbox SUID root. The stock
+  # electron-builder postinst only does so when the kernel lacks user namespaces,
+  # but it runs as root (who can always create userns), so on Ubuntu 23.10+ it
+  # leaves chrome-sandbox non-SUID while the unprivileged user is blocked from
+  # userns by AppArmor — Chromium then can't sandbox and aborts on launch.
+  afterInstall: build/linux/after-install.sh
+  # `depends` REPLACES electron-builder's default list, so it must repeat the
+  # standard Electron runtime libs. The capture additions:
+  #   - xdg-desktop-portal — the desktop-agnostic Screenshot portal capture.ts
+  #     uses first on Wayland (gnome-screenshot lost Shell screenshot access in
+  #     GNOME 49 / Ubuntu 25.10+ and no longer works there). The DE ships the
+  #     matching backend (…-gnome / …-kde) as part of the desktop.
+  #   - gnome-screenshot — still the proven backend on X11, and the CLI fallback.
+  # capture.ts also auto-detects spectacle/grim+slurp/maim/scrot/import.
+  depends:
+    - xdg-desktop-portal
+    - gnome-screenshot
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0

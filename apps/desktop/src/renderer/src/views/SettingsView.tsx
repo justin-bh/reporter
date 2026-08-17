@@ -153,10 +153,17 @@ export function SettingsView() {
             className="font-mono"
           />
         </Field>
-        <p className="text-xs text-muted">
-          Global hotkeys default to ⌘/Ctrl+Shift+7 (area) and +8 (window). On Wayland, use the tray
-          menu.
-        </p>
+        {settings && !settings.globalShortcutsAvailable ? (
+          <p className="text-xs text-warning">
+            ⚠ Global hotkeys don't work under Wayland. Use the tray menu, or bind a system shortcut
+            (Settings → Keyboard) to <code>reporter --capture-area</code> or{' '}
+            <code>reporter --capture-window</code>.
+          </p>
+        ) : (
+          <p className="text-xs text-muted">
+            Global hotkeys default to ⌘/Ctrl+Shift+7 (area) and +8 (window).
+          </p>
+        )}
       </section>
     </div>
   );
