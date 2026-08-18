@@ -100,9 +100,13 @@ export async function buildApp(
 
   // Serve the built web SPA if present (Phase 2+). Falls back to index.html for
   // client-side routes. In dev, the Vite server serves the UI instead.
+  // `wildcard: true` serves files dynamically at request time (missing files fall
+  // through to the SPA handler below) instead of globbing the directory once at
+  // boot — so rebuilding the SPA with new hashed asset filenames is picked up
+  // without needing to restart the server.
   const webDist = resolveWebDist();
   if (webDist) {
-    await app.register(fastifyStatic, { root: webDist, wildcard: false });
+    await app.register(fastifyStatic, { root: webDist, wildcard: true });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api') || req.url.startsWith('/web')) {
         return reply.status(404).send({ error: 'Not found' });
