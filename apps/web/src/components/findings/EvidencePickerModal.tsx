@@ -184,8 +184,8 @@ export function EvidencePickerModal({
         </div>
 
         {/* Two-pane body */}
-        <div className="grid min-h-[22rem] gap-3 md:grid-cols-[1fr_1fr]">
-          <div className="max-h-[26rem] overflow-auto rounded-card border border-border">
+        <div className="grid min-h-[22rem] gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="max-h-[26rem] min-w-0 overflow-auto rounded-card border border-border">
             {isLoading ? (
               <div className="flex h-40 items-center justify-center">
                 <Spinner size={22} />
@@ -334,7 +334,7 @@ function PreviewPane({ slug, ev }: { slug: string; ev: Evidence | null }) {
     );
   }
   return (
-    <div className="max-h-[26rem] overflow-auto rounded-card border border-border bg-surface p-3">
+    <div className="max-h-[26rem] min-w-0 overflow-auto rounded-card border border-border bg-surface p-3">
       <p className="truncate text-sm font-medium text-text">
         {ev.description || (
           <span className="text-muted">{EVIDENCE_TYPE_LABELS[ev.contentType]}</span>

@@ -20,6 +20,7 @@ import {
 } from '@reporter/ui';
 import type { Engagement } from '@reporter/shared';
 import { slugify } from '../lib/slugify.js';
+import { formatDate, fromDateInput } from '../lib/format.js';
 import { useCreateEngagement, useEngagements, useToggleFavorite } from '../api/hooks.js';
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
@@ -164,6 +165,14 @@ function EngagementCard({ eng }: { eng: Engagement }) {
         <span>·</span>
         <span>{eng.numUsers ?? 0} members</span>
       </div>
+      <div className="text-xs text-muted">
+        Started {formatDate(eng.startedAt)}
+        {eng.actualEndAt
+          ? ` · ended ${formatDate(eng.actualEndAt)}`
+          : eng.projectedEndAt
+            ? ` · due ${formatDate(eng.projectedEndAt)}`
+            : ''}
+      </div>
     </Card>
   );
 }
@@ -217,16 +226,22 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
+  const [projectedEndAt, setProjectedEndAt] = useState('');
 
   const effectiveSlug = slugTouched ? slug : slugify(name);
 
   async function submit() {
     try {
-      await create.mutateAsync({ name, slug: effectiveSlug });
+      await create.mutateAsync({
+        name,
+        slug: effectiveSlug,
+        projectedEndAt: fromDateInput(projectedEndAt),
+      });
       toast.success('Engagement created');
       setName('');
       setSlug('');
       setSlugTouched(false);
+      setProjectedEndAt('');
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create engagement');
@@ -261,6 +276,18 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
               setSlugTouched(true);
               setSlug(slugify(e.target.value));
             }}
+          />
+        </Field>
+        <Field
+          label="Projected end date"
+          htmlFor="eng-projected-end"
+          hint="Optional target end date. The start date is set to today."
+        >
+          <Input
+            id="eng-projected-end"
+            type="date"
+            value={projectedEndAt}
+            onChange={(e) => setProjectedEndAt(e.target.value)}
           />
         </Field>
       </div>

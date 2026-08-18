@@ -7,7 +7,9 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 # The hoisted linker installs every workspace dep; node-pty (used only by the
 # terminal recorder) has no linux-arm64 prebuild and compiles from source, so the
-# builder needs a toolchain. Electron's binary is never used in this image.
+# builder needs a toolchain. The root pnpm override pins node-gyp ^11 — the
+# hoisted bin otherwise resolves to a transitive node-gyp 7, which crashes on
+# Node 22's frozen process.config. Electron's binary is never used in this image.
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 ENV PYTHON=/usr/bin/python3
 # The server renders PDFs with system Chromium (installed in the runtime stage),

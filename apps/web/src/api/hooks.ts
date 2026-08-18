@@ -49,8 +49,11 @@ export function useCreateEngagement() {
 export function useUpdateEngagement(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<Pick<Engagement, 'name' | 'status'>>) =>
-      api.put<Engagement>(`/web/engagements/${slug}`, patch),
+    mutationFn: (
+      patch: Partial<
+        Pick<Engagement, 'name' | 'status' | 'startedAt' | 'projectedEndAt' | 'actualEndAt'>
+      >,
+    ) => api.put<Engagement>(`/web/engagements/${slug}`, patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['engagements'] });
       qc.invalidateQueries({ queryKey: engKey(slug) });

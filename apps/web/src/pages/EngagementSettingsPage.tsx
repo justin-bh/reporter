@@ -23,6 +23,7 @@ import {
 import type { EngagementMember, EngagementRole, EngagementStatus } from '@reporter/shared';
 import { api } from '../api/client.js';
 import { useDeleteEngagement, useEngagement, useUpdateEngagement } from '../api/hooks.js';
+import { fromDateInput, toDateInputValue } from '../lib/format.js';
 import { TagManager } from '../components/engagement/TagManager.js';
 import { CategoryManager } from '../components/engagement/CategoryManager.js';
 
@@ -51,10 +52,17 @@ export function EngagementSettingsPage() {
 
   const [name, setName] = useState('');
   const [status, setStatus] = useState<EngagementStatus>('active');
+  // Date fields are held as "YYYY-MM-DD" strings for the native date inputs.
+  const [startedAt, setStartedAt] = useState('');
+  const [projectedEndAt, setProjectedEndAt] = useState('');
+  const [actualEndAt, setActualEndAt] = useState('');
   useEffect(() => {
     if (eng) {
       setName(eng.name);
       setStatus(eng.status);
+      setStartedAt(toDateInputValue(eng.startedAt));
+      setProjectedEndAt(toDateInputValue(eng.projectedEndAt));
+      setActualEndAt(toDateInputValue(eng.actualEndAt));
     }
   }, [eng]);
 
@@ -108,7 +116,16 @@ export function EngagementSettingsPage() {
 
   async function saveDetails() {
     try {
-      await update.mutateAsync({ name, status });
+      await update.mutateAsync({
+        name,
+        status,
+        // Start date is required; only send it when the field has a value.
+        startedAt: startedAt ? (fromDateInput(startedAt) ?? undefined) : undefined,
+        // Nullable dates: an empty field clears them. Note the server overrides
+        // actualEndAt when the status transitions (see the route handler).
+        projectedEndAt: fromDateInput(projectedEndAt),
+        actualEndAt: fromDateInput(actualEndAt),
+      });
       toast.success('Engagement updated');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Update failed');
@@ -155,6 +172,36 @@ export function EngagementSettingsPage() {
                 <option value="archived">Archived</option>
               </Select>
             </Field>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Start date" htmlFor="eng-start">
+                <Input
+                  id="eng-start"
+                  type="date"
+                  value={startedAt}
+                  onChange={(e) => setStartedAt(e.target.value)}
+                />
+              </Field>
+              <Field label="Projected end" htmlFor="eng-projected" hint="Target date (optional)">
+                <Input
+                  id="eng-projected"
+                  type="date"
+                  value={projectedEndAt}
+                  onChange={(e) => setProjectedEndAt(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Actual end"
+                htmlFor="eng-actual"
+                hint="Set automatically on complete/archive"
+              >
+                <Input
+                  id="eng-actual"
+                  type="date"
+                  value={actualEndAt}
+                  onChange={(e) => setActualEndAt(e.target.value)}
+                />
+              </Field>
+            </div>
             <Button onClick={saveDetails} loading={update.isPending}>
               Save
             </Button>

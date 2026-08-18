@@ -16,6 +16,15 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Engagement lifecycle dates.** Engagements now track a **start date** (set to
+  creation time, editable), a user-entered **projected end date**, and an
+  **actual end date** the server stamps automatically whenever an engagement moves
+  into _Complete_/_Archived_ (and clears on a return to _Active_); all three are
+  editable in **Settings → Details**, a projected end can be set when creating an
+  engagement, and the dates appear on the engagement header and cards. The desktop
+  app and `reporter-term` show each engagement's status in their engagement
+  pickers. The engagement API returns `startedAt`, `projectedEndAt`, and
+  `actualEndAt`.
 - **Delete an engagement.** Engagement (and site) admins can now delete an
   engagement from its **Settings → Danger zone**. Deletion is guarded by a
   type-the-slug confirmation and permanently removes the engagement and all of
@@ -110,15 +119,31 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Fixed
 
+- **No more sideways scrolling / cut-off content.** Wide evidence (long code
+  blocks, HTTP/HAR JSON, long note text) used to stretch the evidence detail page
+  past the viewport, pushing the metadata/edit sidebar off-screen and forcing a
+  horizontal scroll. Wide content now scrolls inside its own box while the page
+  layout stays put; the affected two-column grids and code viewers were fixed and
+  the app shell has a horizontal-overflow guard so no view can scroll sideways.
+- **Note and event evidence now show their full body.** Creating a note or event
+  with body text stored the text but the detail view only showed the short
+  description. The detail view now renders the description as a caption above the
+  full body; a description-only note shows its text directly.
+- **CI and release workflows install pnpm again.** `pnpm/action-setup@v4` began
+  failing when both the action's `version` input and package.json's
+  `packageManager` field are set (every CI run since Aug 14 died in setup, before
+  any code ran). The workflows now omit the redundant `version` input and let the
+  action read `packageManager`.
 - **`docker compose build` for the server image no longer fails compiling
   `node-pty`.** The desktop app's `dbus-next` dependency pulls in an optional
   `usocket`, which pinned `node-gyp@7.1.2` into the lockfile. That old node-gyp
   got hoisted and used to build `node-pty` (needed only by `reporter-term`)
   during the server image's `pnpm install`, and it can't compile against Node
-  22.2x (`gyp ERR! Cannot assign to read only property 'cflags'`). Added a pnpm
-  override pinning `node-gyp` to `9.4.1` (the version `@electron/rebuild`
-  already resolves), which collapses the toolchain to one Node-22-capable
-  node-gyp and drops the 7.1.2 subtree from the lockfile. Node stays at 22 and
+  22.2x (`gyp ERR! Cannot assign to read only property 'cflags'` — Node 22
+  froze `process.config`). Added a pnpm override pinning `node-gyp` to `^11`
+  (the current maintained major), which collapses the toolchain to one
+  Node-22-capable node-gyp, drops the 7.1.2 subtree from the lockfile, and
+  sheds the legacy transitives node-gyp 7/9 dragged in. Node stays at 22 and
   the terminal recorder still builds/loads `node-pty`.
 - **Sign out reliably returns to the login screen.** Signing out could leave the
   user on the app with a "Couldn't load your engagements" error instead of the

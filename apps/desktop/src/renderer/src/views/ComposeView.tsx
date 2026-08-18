@@ -9,12 +9,7 @@ import {
   Textarea,
   useToast,
 } from '@reporter/ui';
-import type {
-  CaptureDraft,
-  EngagementLite,
-  EvidenceLite,
-  TagLite,
-} from '../../../shared/types.js';
+import type { CaptureDraft, EngagementLite, EvidenceLite, TagLite } from '../../../shared/types.js';
 
 export function ComposeView({ onDone }: { onDone: () => void }) {
   const toast = useToast();
@@ -119,7 +114,7 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
           <option value="">— choose —</option>
           {engagements.map((eng) => (
             <option key={eng.slug} value={eng.slug}>
-              {eng.name}
+              {eng.name} — {eng.status}
             </option>
           ))}
         </Select>

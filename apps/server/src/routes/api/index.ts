@@ -53,6 +53,7 @@ export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
       data: {
         slug: input.slug,
         name: input.name,
+        projectedEndAt: input.projectedEndAt ? new Date(input.projectedEndAt) : undefined,
         roles: { create: { userId: user.id, role: 'admin' } },
         tags: { create: defaultTags.map((t) => ({ name: t.name, colorName: t.colorName })) },
       },

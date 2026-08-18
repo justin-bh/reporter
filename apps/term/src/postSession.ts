@@ -23,7 +23,7 @@ async function chooseEngagement(config: TermConfig): Promise<string | null> {
   }
   const slug = await p.select({
     message: 'Engagement',
-    options: engs.map((o) => ({ value: o.slug, label: o.name })),
+    options: engs.map((o) => ({ value: o.slug, label: o.name, hint: o.status })),
   });
   if (p.isCancel(slug)) return null;
   return String(slug);

@@ -127,7 +127,7 @@ export function SettingsView() {
             <option value="">— none —</option>
             {engagements.map((eng) => (
               <option key={eng.slug} value={eng.slug}>
-                {eng.name}
+                {eng.name} — {eng.status}
               </option>
             ))}
           </Select>

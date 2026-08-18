@@ -196,7 +196,7 @@ async function warmEngagements(): Promise<void> {
   if (!client) return;
   try {
     const engs = await client.listEngagements();
-    cachedEngagements = engs.map((o) => ({ slug: o.slug, name: o.name }));
+    cachedEngagements = engs.map((o) => ({ slug: o.slug, name: o.name, status: o.status }));
     buildTray();
   } catch {
     // Offline or not yet configured — the tray shows the fallback entry.
@@ -243,7 +243,7 @@ function registerIpc(): void {
     const client = makeClient();
     if (!client) return [];
     const engs = await client.listEngagements();
-    cachedEngagements = engs.map((o) => ({ slug: o.slug, name: o.name }));
+    cachedEngagements = engs.map((o) => ({ slug: o.slug, name: o.name, status: o.status }));
     buildTray();
     return cachedEngagements;
   });

@@ -4,8 +4,33 @@ import type { Evidence } from '@reporter/shared';
 import 'asciinema-player/dist/bundle/asciinema-player.css';
 import { evidenceContentUrl } from '../../lib/urls.js';
 
-/** Renders the right viewer for a piece of evidence based on its content type. */
+/**
+ * Renders the full detail for a piece of evidence: a caption (the operator's
+ * short description) plus the type-specific body. `min-w-0` lets wide bodies
+ * (code, HAR JSON) scroll inside their own box instead of stretching the page.
+ */
 export function EvidenceContent({ evidence, slug }: { evidence: Evidence; slug: string }) {
+  // Notes and events carry their long-form text as a content blob; a caption +
+  // body only makes sense once we know whether that blob exists, so they own
+  // their caption logic. Every other type shows the caption above its media.
+  if (evidence.contentType === 'event' || evidence.contentType === 'none') {
+    return <NoteEventViewer evidence={evidence} slug={slug} />;
+  }
+  return (
+    <div className="min-w-0 space-y-3">
+      {evidence.description && <Caption text={evidence.description} />}
+      <MediaBody evidence={evidence} slug={slug} />
+    </div>
+  );
+}
+
+/** The operator's short description, shown above the body. */
+function Caption({ text }: { text: string }) {
+  return <p className="break-words text-sm font-medium text-text">{text}</p>;
+}
+
+/** Type-specific body for everything except notes/events. */
+function MediaBody({ evidence, slug }: { evidence: Evidence; slug: string }) {
   switch (evidence.contentType) {
     case 'image':
       return <ImageViewer slug={slug} uuid={evidence.uuid} />;
@@ -15,12 +40,28 @@ export function EvidenceContent({ evidence, slug }: { evidence: Evidence; slug: 
       return <CodeblockViewer slug={slug} uuid={evidence.uuid} language={undefined} />;
     case 'http-request-cycle':
       return <HarViewer slug={slug} uuid={evidence.uuid} />;
-    case 'event':
-    case 'none':
-      return <NoteViewer text={evidence.description} />;
     default:
       return <p className="text-sm text-muted">No preview available.</p>;
   }
+}
+
+/**
+ * Notes and events. Their body text is stored as a blob (from the create form's
+ * "Content" field). When a body exists the description becomes a caption above
+ * it; a description-only note simply shows its text as the body, so nothing the
+ * operator typed is ever hidden.
+ */
+function NoteEventViewer({ evidence, slug }: { evidence: Evidence; slug: string }) {
+  return (
+    <div className="min-w-0 space-y-3">
+      {evidence.hasContent && evidence.description && <Caption text={evidence.description} />}
+      {evidence.hasContent ? (
+        <NoteBodyViewer slug={slug} uuid={evidence.uuid} />
+      ) : (
+        <NoteText text={evidence.description} />
+      )}
+    </div>
+  );
 }
 
 function ImageViewer({ slug, uuid }: { slug: string; uuid: string }) {
@@ -104,16 +145,24 @@ function CodeblockViewer({ slug, uuid }: { slug: string; uuid: string; language?
   if (loading) return <Spinner />;
   if (error) return <p className="text-sm text-danger">Couldn't load the code block.</p>;
   return (
-    <pre className="max-h-[60vh] overflow-auto rounded-card border border-border bg-surface-2 p-4 text-sm">
+    <pre className="max-h-[60vh] min-w-0 overflow-auto rounded-card border border-border bg-surface-2 p-4 text-sm">
       <code className="font-mono text-text">{text}</code>
     </pre>
   );
 }
 
-function NoteViewer({ text }: { text: string }) {
+/** Fetches and renders a note/event body blob. */
+function NoteBodyViewer({ slug, uuid }: { slug: string; uuid: string }) {
+  const { loading, text, error } = useTextContent(slug, uuid);
+  if (loading) return <Spinner />;
+  if (error) return <p className="text-sm text-danger">Couldn't load this note.</p>;
+  return <NoteText text={text} />;
+}
+
+function NoteText({ text }: { text: string }) {
   return (
-    <div className="whitespace-pre-wrap rounded-card border border-border bg-surface-2 p-4 text-sm text-text">
-      {text || <span className="text-muted">No note text.</span>}
+    <div className="min-w-0 whitespace-pre-wrap break-words rounded-card border border-border bg-surface-2 p-4 text-sm text-text">
+      {text || <span className="text-muted">No content.</span>}
     </div>
   );
 }
@@ -135,7 +184,7 @@ function HarViewer({ slug, uuid }: { slug: string; uuid: string }) {
     entries = parsed?.log?.entries ?? (Array.isArray(parsed) ? parsed : [parsed]);
   } catch {
     return (
-      <pre className="overflow-auto rounded-card border border-border bg-surface-2 p-4 text-sm">
+      <pre className="min-w-0 overflow-auto rounded-card border border-border bg-surface-2 p-4 text-sm">
         <code className="font-mono">{text}</code>
       </pre>
     );
@@ -143,7 +192,7 @@ function HarViewer({ slug, uuid }: { slug: string; uuid: string }) {
 
   const active = entries[selected];
   return (
-    <div className="grid gap-3 md:grid-cols-[240px_1fr]">
+    <div className="grid min-w-0 gap-3 md:grid-cols-[240px_minmax(0,1fr)]">
       <div className="max-h-[50vh] overflow-auto rounded-card border border-border">
         {entries.map((e, i) => (
           <button
@@ -158,7 +207,7 @@ function HarViewer({ slug, uuid }: { slug: string; uuid: string }) {
           </button>
         ))}
       </div>
-      <pre className="max-h-[50vh] overflow-auto rounded-card border border-border bg-surface-2 p-4 text-xs">
+      <pre className="max-h-[50vh] min-w-0 overflow-auto rounded-card border border-border bg-surface-2 p-4 text-xs">
         <code className="font-mono">
           {active ? JSON.stringify(active, null, 2) : 'No entry selected'}
         </code>

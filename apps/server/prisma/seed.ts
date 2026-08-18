@@ -77,6 +77,8 @@ async function main() {
     data: {
       slug: 'acme-assessment',
       name: 'Acme Corp — External Assessment',
+      // startedAt defaults to now(); give the demo a projected end ~3 weeks out.
+      projectedEndAt: new Date(Date.now() + 21 * 86_400_000),
       tags: { create: DEFAULT_TAGS.map((t) => ({ name: t.name, colorName: t.colorName })) },
       roles: {
         create: [
@@ -93,7 +95,7 @@ async function main() {
   const now = Date.now();
   const at = (minsAgo: number) => new Date(now - minsAgo * 60_000);
 
-  // A note.
+  // A note whose whole text lives in the description (no body blob).
   const note = await db.evidence.create({
     data: {
       engagementId: eng.id,
@@ -104,9 +106,44 @@ async function main() {
     },
   });
 
-  // A code block (stored as a text blob).
+  // A note with a short caption (description) AND a long-form body (blob) — shows
+  // the caption-on-top, body-below layout for notes.
+  const noteBody =
+    'Client granted an eight-hour testing window (09:00–17:00 UTC). Out of scope: the ' +
+    'billing subdomain and any destructive testing.\n\nEscalation contact: soc@acme.example.com.';
+  await db.evidence.create({
+    data: {
+      engagementId: eng.id,
+      operatorId: operator.id,
+      contentType: 'none',
+      description: 'Rules of engagement',
+      fullBlobKey: await putBlob(Buffer.from(noteBody, 'utf8')),
+      occurredAt: at(238),
+    },
+  });
+
+  // An event with a body — a timestamped marker plus supporting detail.
+  const eventBody =
+    'Initial foothold obtained on web01 (203.0.113.10) at 11:42 UTC via the reflected XSS → ' +
+    'session hijack chain. Confirmed shell as www-data.';
+  await db.evidence.create({
+    data: {
+      engagementId: eng.id,
+      operatorId: operator.id,
+      contentType: 'event',
+      description: 'Foothold on web01',
+      fullBlobKey: await putBlob(Buffer.from(eventBody, 'utf8')),
+      occurredAt: at(150),
+      tags: { create: [{ tagId: tagByName.get('foothold')!.id }] },
+    },
+  });
+
+  // A code block (stored as a text blob). Includes a deliberately long, unbroken
+  // line so the detail view's code viewer scrolls inside its own box instead of
+  // stretching the page sideways.
   const codeBody =
-    'nmap -sV -Pn -oA acme 203.0.113.0/24\n# 22/tcp open ssh OpenSSH 8.2\n# 443/tcp open https nginx';
+    'nmap -sV -Pn -oA acme 203.0.113.0/24\n# 22/tcp open ssh OpenSSH 8.2\n# 443/tcp open https nginx\n' +
+    'curl -sk "https://acme.example.com/api/v2/search?q=%27%20OR%201=1--&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6ImFkbWluIiwiaWF0IjoxNTE2MjM5MDIyfQ&redirect=https://acme.example.com/dashboard/reports/export?format=pdf&range=all-time"';
   const codeblock = await db.evidence.create({
     data: {
       engagementId: eng.id,

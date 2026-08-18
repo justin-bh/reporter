@@ -86,8 +86,8 @@ export function EvidenceDetailPage() {
         </div>
       )}
 
-      <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-3">
+      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-3">
           <EvidenceContent evidence={evidence} slug={slug} />
 
           {!isComment && (

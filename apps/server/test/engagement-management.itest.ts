@@ -150,3 +150,66 @@ describe('delete engagement', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe('engagement lifecycle dates', () => {
+  function put(cookie: string, payload: Record<string, unknown>) {
+    return app
+      .inject({
+        method: 'PUT',
+        url: '/web/engagements/op1',
+        headers: { ...WEB_HEADERS, cookie },
+        payload,
+      })
+      .then((r) => r.json());
+  }
+
+  it('defaults startedAt on create and accepts a projected end date', async () => {
+    await setup();
+    const admin = await loginCookie(app, 'admin@test.local', 'password123');
+    const projected = '2026-12-31T00:00:00.000Z';
+    const created = await app
+      .inject({
+        method: 'POST',
+        url: '/web/engagements',
+        headers: { ...WEB_HEADERS, cookie: admin },
+        payload: { slug: 'dated', name: 'Dated', projectedEndAt: projected },
+      })
+      .then((r) => r.json());
+    expect(typeof created.startedAt).toBe('string');
+    expect(created.projectedEndAt).toBe(projected);
+    expect(created.actualEndAt).toBeNull();
+  });
+
+  it('stamps actualEndAt when leaving active and clears it on return', async () => {
+    await setup();
+    const engAdmin = await loginCookie(app, 'reader@test.local', 'password123');
+
+    const completed = await put(engAdmin, { status: 'complete' });
+    expect(completed.status).toBe('complete');
+    expect(completed.actualEndAt).not.toBeNull();
+
+    const reactivated = await put(engAdmin, { status: 'active' });
+    expect(reactivated.status).toBe('active');
+    expect(reactivated.actualEndAt).toBeNull();
+  });
+
+  it('sets and clears the projected end date', async () => {
+    await setup();
+    const engAdmin = await loginCookie(app, 'reader@test.local', 'password123');
+    const projected = '2027-01-15T00:00:00.000Z';
+
+    const set = await put(engAdmin, { projectedEndAt: projected });
+    expect(set.projectedEndAt).toBe(projected);
+
+    const cleared = await put(engAdmin, { projectedEndAt: null });
+    expect(cleared.projectedEndAt).toBeNull();
+  });
+
+  it('honors a manual actualEndAt when the status does not change', async () => {
+    await setup();
+    const engAdmin = await loginCookie(app, 'reader@test.local', 'password123');
+    const manual = '2026-11-01T00:00:00.000Z';
+    const updated = await put(engAdmin, { actualEndAt: manual });
+    expect(updated.actualEndAt).toBe(manual);
+  });
+});
