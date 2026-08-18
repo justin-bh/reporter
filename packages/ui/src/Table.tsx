@@ -34,8 +34,59 @@ export function Tr({ className, children, ...rest }: HTMLAttributes<HTMLTableRow
 
 export function Th({ className, children, ...rest }: ThHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <th className={cn('px-3 py-2 font-medium', className)} {...rest}>
+    <th scope="col" className={cn('px-3 py-2 font-medium', className)} {...rest}>
       {children}
+    </th>
+  );
+}
+
+export type SortDirection = 'asc' | 'desc';
+
+export interface SortableThProps extends ThHTMLAttributes<HTMLTableCellElement> {
+  /** Direction when this column is the active sort; omit when inactive. */
+  direction?: SortDirection;
+  onSort: () => void;
+  /** Use `right` for numeric columns so label + indicator stay right-aligned. */
+  align?: 'left' | 'right';
+}
+
+/**
+ * A sortable column header. The whole cell is a button (keyboard reachable,
+ * global focus ring) and `aria-sort` reflects the active direction. Inherits
+ * the Thead uppercase/muted look; the active column reads as full-text color.
+ */
+export function SortableTh({
+  direction,
+  onSort,
+  align = 'left',
+  className,
+  children,
+  ...rest
+}: SortableThProps) {
+  return (
+    <th
+      scope="col"
+      aria-sort={
+        direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : undefined
+      }
+      className={cn('p-0 font-medium', className)}
+      {...rest}
+    >
+      <button
+        type="button"
+        onClick={onSort}
+        className={cn(
+          'flex w-full items-center gap-1 px-3 py-2 font-medium uppercase tracking-wide transition-colors hover:text-text',
+          align === 'right' && 'justify-end',
+          direction ? 'text-text' : 'text-muted',
+        )}
+      >
+        {children}
+        {/* Invisible placeholder keeps the column width stable when inactive. */}
+        <span aria-hidden="true" className={cn(!direction && 'invisible')}>
+          {direction === 'desc' ? '▼' : '▲'}
+        </span>
+      </button>
     </th>
   );
 }

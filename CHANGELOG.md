@@ -16,6 +16,14 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Engagements list: filtering, favorites pinning & sortable table.** The
+  engagements page gains a filter bar (free-text match on name/slug plus a
+  status filter) that applies to both the card and table views, with a
+  clear-filters empty state when nothing matches. Starred engagements are always
+  pinned to the top of both views, and the table's Name / Status / Evidence /
+  Findings / Members columns are click-to-sort (text columns start ascending,
+  numeric columns start with the largest counts). New `SortableTh` primitive in
+  `@reporter/ui` for accessible sortable table headers.
 - **Engagement lifecycle dates.** Engagements now track a **start date** (set to
   creation time, editable), a user-entered **projected end date**, and an
   **actual end date** the server stamps automatically whenever an engagement moves
