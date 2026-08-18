@@ -8,24 +8,6 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
-### Fixed
-
-- **No more sideways scrolling / cut-off content.** Wide evidence (long code
-  blocks, HTTP/HAR JSON, long note text) used to stretch the evidence detail page
-  past the viewport, pushing the metadata/edit sidebar off-screen and forcing a
-  horizontal scroll. Wide content now scrolls inside its own box while the page
-  layout stays put; the affected two-column grids and code viewers were fixed and
-  the app shell has a horizontal-overflow guard so no view can scroll sideways.
-- **Note and event evidence now show their full body.** Creating a note or event
-  with body text stored the text but the detail view only showed the short
-  description. The detail view now renders the description as a caption above the
-  full body; a description-only note shows its text directly.
-- **Server Docker image builds again on current Node 22.** A transitive
-  `node-gyp` 7 won the hoisted bin and crashed compiling `node-pty` inside the
-  image (`Cannot assign to read only property 'cflags'` — Node 22 froze
-  `process.config`). A root pnpm override now pins `node-gyp` ^11 for the whole
-  workspace.
-
 ### Removed
 
 - **Finding "Ticket Link" field.** Removed the finding ticket-link field
@@ -137,6 +119,27 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Fixed
 
+- **No more sideways scrolling / cut-off content.** Wide evidence (long code
+  blocks, HTTP/HAR JSON, long note text) used to stretch the evidence detail page
+  past the viewport, pushing the metadata/edit sidebar off-screen and forcing a
+  horizontal scroll. Wide content now scrolls inside its own box while the page
+  layout stays put; the affected two-column grids and code viewers were fixed and
+  the app shell has a horizontal-overflow guard so no view can scroll sideways.
+- **Note and event evidence now show their full body.** Creating a note or event
+  with body text stored the text but the detail view only showed the short
+  description. The detail view now renders the description as a caption above the
+  full body; a description-only note shows its text directly.
+- **`docker compose build` for the server image no longer fails compiling
+  `node-pty`.** The desktop app's `dbus-next` dependency pulls in an optional
+  `usocket`, which pinned `node-gyp@7.1.2` into the lockfile. That old node-gyp
+  got hoisted and used to build `node-pty` (needed only by `reporter-term`)
+  during the server image's `pnpm install`, and it can't compile against Node
+  22.2x (`gyp ERR! Cannot assign to read only property 'cflags'` — Node 22
+  froze `process.config`). Added a pnpm override pinning `node-gyp` to `^11`
+  (the current maintained major), which collapses the toolchain to one
+  Node-22-capable node-gyp, drops the 7.1.2 subtree from the lockfile, and
+  sheds the legacy transitives node-gyp 7/9 dragged in. Node stays at 22 and
+  the terminal recorder still builds/loads `node-pty`.
 - **Sign out reliably returns to the login screen.** Signing out could leave the
   user on the app with a "Couldn't load your engagements" error instead of the
   login page, because protected queries refetched (and 401'd) before the auth
