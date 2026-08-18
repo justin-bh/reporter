@@ -1,30 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
   Button,
   Card,
   Checkbox,
   Field,
   Input,
-  Modal,
   Select,
   SeverityBadge,
   Spinner,
@@ -32,23 +13,18 @@ import {
   useConfirm,
   useToast,
 } from '@reporter/ui';
+import { SEVERITIES, SEVERITY_LABELS, type Severity } from '@reporter/shared';
 import {
-  EVIDENCE_TYPE_LABELS,
-  SEVERITIES,
-  SEVERITY_LABELS,
-  type Evidence,
-  type Severity,
-} from '@reporter/shared';
-import {
-  useAttachEvidence,
+  useCreateFindingCategory,
   useDeleteFinding,
-  useDetachEvidence,
   useFinding,
-  useReorderEvidence,
-  useTimeline,
+  useFindingCategories,
   useUpdateFinding,
 } from '../api/hooks.js';
 import { CvssCalculator, type CvssResult } from '../components/findings/CvssCalculator.js';
+import { AttackPathSection } from '../components/findings/AttackPathSection.js';
+import { AttachedEvidenceSection } from '../components/findings/AttachedEvidenceSection.js';
+import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.js';
 
 export function FindingDetailPage() {
   const { slug = '', uuid = '' } = useParams();
@@ -58,15 +34,19 @@ export function FindingDetailPage() {
   const { data: finding, isLoading } = useFinding(slug, uuid);
   const update = useUpdateFinding(slug, uuid);
   const del = useDeleteFinding(slug);
-  const reorderEvidence = useReorderEvidence(slug, uuid);
-  const [attaching, setAttaching] = useState(false);
+  const { data: categories } = useFindingCategories(slug);
+  const createCategory = useCreateFindingCategory(slug);
+  // Which bucket the picker attaches into, or null when closed.
+  const [pickerTarget, setPickerTarget] = useState<null | 'path' | 'attached'>(null);
   const [calc, setCalc] = useState(false);
+  // Inline "new category" affordance next to the category Select.
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
 
   const [form, setForm] = useState({
     title: '',
     description: '',
     category: '',
-    ticketLink: '',
     readyToReport: false,
     severity: '' as Severity | '',
     cvssVector: null as string | null,
@@ -84,7 +64,6 @@ export function FindingDetailPage() {
         title: finding.title,
         description: finding.description,
         category: finding.category ?? '',
-        ticketLink: finding.ticketLink ?? '',
         readyToReport: finding.readyToReport,
         severity: finding.severity ?? '',
         cvssVector: finding.cvssVector,
@@ -93,13 +72,13 @@ export function FindingDetailPage() {
     }
   }, [finding]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
   if (isLoading) return <Spinner size={26} />;
   if (!finding) return <p className="text-danger">Finding not found.</p>;
+
+  // Server pre-sorts: Attack Path (inPath=true) first, then Attached, each by position.
+  const pathItems = finding.evidence.filter((e) => e.inPath);
+  const attachedItems = finding.evidence.filter((e) => !e.inPath);
+  const attachedUuids = finding.evidence.map((e) => e.uuid);
 
   async function save() {
     try {
@@ -107,7 +86,6 @@ export function FindingDetailPage() {
         title: form.title,
         description: form.description,
         category: form.category || null,
-        ticketLink: form.ticketLink || null,
         readyToReport: form.readyToReport,
       };
       if (form.cvssVector) {
@@ -140,6 +118,20 @@ export function FindingDetailPage() {
     setCalc(false);
   }
 
+  async function addCategory() {
+    const category = newCategory.trim();
+    if (!category) return;
+    try {
+      await createCategory.mutateAsync({ category });
+      setForm((prev) => ({ ...prev, category }));
+      setNewCategory('');
+      setAddingCategory(false);
+      toast.success('Category created');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create category');
+    }
+  }
+
   async function removeFinding() {
     if (!finding) return;
     const ok = await confirm({
@@ -158,18 +150,8 @@ export function FindingDetailPage() {
     }
   }
 
-  function onEvidenceDragEnd(e: DragEndEvent) {
-    const { active, over } = e;
-    if (!over || active.id === over.id || !finding) return;
-    const ids = finding.evidence.map((ev) => ev.uuid);
-    const from = ids.indexOf(String(active.id));
-    const to = ids.indexOf(String(over.id));
-    if (from < 0 || to < 0) return;
-    reorderEvidence.mutate(arrayMove(ids, from, to));
-  }
-
   return (
-    <div>
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Link to={`/engagements/${slug}/findings`} className="text-sm text-muted hover:text-text">
           ← Back to findings
@@ -179,114 +161,150 @@ export function FindingDetailPage() {
         </Button>
       </div>
 
-      <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Card className="space-y-4 p-4">
-          <Field label="Title" htmlFor="ft">
-            <Input
-              id="ft"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Category" htmlFor="fc">
-              <Input
-                id="fc"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              />
-            </Field>
-            <Field label="Ticket link" htmlFor="fl">
-              <Input
-                id="fl"
-                value={form.ticketLink}
-                onChange={(e) => setForm({ ...form, ticketLink: e.target.value })}
-                placeholder="https://…"
-              />
-            </Field>
-          </div>
-
-          <Field label="Severity" htmlFor="fsev">
-            <div className="flex items-center gap-2">
-              <Select
-                id="fsev"
-                className="max-w-[10rem]"
-                value={form.severity}
-                onChange={(e) => pickSeverity(e.target.value as Severity | '')}
-              >
-                <option value="">Unrated</option>
-                {SEVERITIES.map((s) => (
-                  <option key={s} value={s}>
-                    {SEVERITY_LABELS[s]}
-                  </option>
-                ))}
-              </Select>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setCalc(true)}>
-                CVSS calculator
-              </Button>
-              {form.cvssVector && (
-                <SeverityBadge severity={form.severity || null} score={form.cvssScore} />
-              )}
-            </div>
-          </Field>
-          {form.cvssVector && (
-            <p className="-mt-2 text-xs text-muted">
-              <code>{form.cvssVector}</code>
-            </p>
-          )}
-
-          <Field label="Description" htmlFor="fd">
-            <Textarea
-              id="fd"
-              rows={6}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-          </Field>
-          <div className="flex items-center justify-between">
-            <Checkbox
-              label="Ready to report"
-              checked={form.readyToReport}
-              onChange={(e) => setForm({ ...form, readyToReport: e.target.checked })}
-            />
-            <Button onClick={save} loading={update.isPending}>
-              Save changes
-            </Button>
-          </div>
-        </Card>
-
-        <Card className="space-y-3 p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-text">
-              Evidence ({finding.evidence.length})
-            </h3>
-            <Button size="sm" variant="secondary" onClick={() => setAttaching(true)}>
-              Attach
-            </Button>
-          </div>
-          {finding.evidence.length === 0 ? (
-            <p className="text-sm text-muted">No evidence attached yet.</p>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-              onDragEnd={onEvidenceDragEnd}
+      {/* Finding details — top, roomy. */}
+      <Card className="space-y-4 p-4">
+        <Field label="Title" htmlFor="ft">
+          <Input
+            id="ft"
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
+        </Field>
+        <Field label="Category" htmlFor="fc">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              id="fc"
+              className="max-w-[16rem]"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
             >
-              <SortableContext
-                items={finding.evidence.map((e) => e.uuid)}
-                strategy={verticalListSortingStrategy}
+              <option value="">No category</option>
+              {/* Preserve a soft-deleted category still on this finding. */}
+              {form.category &&
+                !(categories ?? []).some((c) => c.category === form.category) && (
+                  <option value={form.category}>{form.category}</option>
+                )}
+              {(categories ?? []).map((c) => (
+                <option key={c.id} value={c.category}>
+                  {c.category}
+                </option>
+              ))}
+            </Select>
+            {addingCategory ? (
+              <span className="flex items-center gap-2">
+                <Input
+                  aria-label="New category name"
+                  className="max-w-[12rem]"
+                  autoFocus
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void addCategory();
+                    } else if (e.key === 'Escape') {
+                      setAddingCategory(false);
+                      setNewCategory('');
+                    }
+                  }}
+                  placeholder="Category name"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={addCategory}
+                  loading={createCategory.isPending}
+                  disabled={!newCategory.trim()}
+                >
+                  Add
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddingCategory(false);
+                    setNewCategory('');
+                  }}
+                >
+                  Cancel
+                </Button>
+              </span>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setAddingCategory(true)}
               >
-                <ul className="flex flex-col gap-2">
-                  {finding.evidence.map((ev) => (
-                    <SortableEvidenceItem key={ev.uuid} slug={slug} uuid={uuid} evidence={ev} />
-                  ))}
-                </ul>
-              </SortableContext>
-            </DndContext>
-          )}
-        </Card>
-      </div>
+                ＋ New
+              </Button>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Severity" htmlFor="fsev">
+          <div className="flex items-center gap-2">
+            <Select
+              id="fsev"
+              className="max-w-[10rem]"
+              value={form.severity}
+              onChange={(e) => pickSeverity(e.target.value as Severity | '')}
+            >
+              <option value="">Unrated</option>
+              {SEVERITIES.map((s) => (
+                <option key={s} value={s}>
+                  {SEVERITY_LABELS[s]}
+                </option>
+              ))}
+            </Select>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setCalc(true)}>
+              CVSS calculator
+            </Button>
+            {form.cvssVector && (
+              <SeverityBadge severity={form.severity || null} score={form.cvssScore} />
+            )}
+          </div>
+        </Field>
+        {form.cvssVector && (
+          <p className="-mt-2 text-xs text-muted">
+            <code>{form.cvssVector}</code>
+          </p>
+        )}
+
+        <Field label="Description" htmlFor="fd">
+          <Textarea
+            id="fd"
+            rows={6}
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+          />
+        </Field>
+        <div className="flex items-center justify-between">
+          <Checkbox
+            label="Ready to report"
+            checked={form.readyToReport}
+            onChange={(e) => setForm({ ...form, readyToReport: e.target.checked })}
+          />
+          <Button onClick={save} loading={update.isPending}>
+            Save changes
+          </Button>
+        </div>
+      </Card>
+
+      {/* Evidence — full width, two buckets below the details. */}
+      <AttackPathSection
+        slug={slug}
+        findingUuid={uuid}
+        items={pathItems}
+        onAddStep={() => setPickerTarget('path')}
+      />
+      <AttachedEvidenceSection
+        slug={slug}
+        findingUuid={uuid}
+        items={attachedItems}
+        onAttach={() => setPickerTarget('attached')}
+      />
 
       <CvssCalculator
         open={calc}
@@ -294,131 +312,14 @@ export function FindingDetailPage() {
         initialVector={form.cvssVector}
         onApply={applyCvss}
       />
-      <AttachEvidenceModal
+      <EvidencePickerModal
         slug={slug}
-        uuid={uuid}
-        attachedUuids={finding.evidence.map((e) => e.uuid)}
-        open={attaching}
-        onClose={() => setAttaching(false)}
+        findingUuid={uuid}
+        attachedUuids={attachedUuids}
+        targetInPath={pickerTarget === 'path'}
+        open={pickerTarget !== null}
+        onClose={() => setPickerTarget(null)}
       />
     </div>
-  );
-}
-
-function SortableEvidenceItem({
-  slug,
-  uuid,
-  evidence: ev,
-}: {
-  slug: string;
-  uuid: string;
-  evidence: Evidence;
-}) {
-  const detach = useDetachEvidence(slug, uuid);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: ev.uuid,
-  });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.6 : 1,
-  };
-
-  return (
-    <li ref={setNodeRef} style={style} className="flex items-center gap-2 text-sm">
-      <button
-        {...attributes}
-        {...listeners}
-        aria-label="Drag to reorder"
-        className="cursor-grab touch-none text-muted hover:text-text active:cursor-grabbing"
-      >
-        ⠿
-      </button>
-      <Link
-        to={`/engagements/${slug}/evidence/${ev.uuid}`}
-        className="min-w-0 flex-1 truncate text-text hover:text-accent"
-      >
-        {ev.description || EVIDENCE_TYPE_LABELS[ev.contentType]}
-      </Link>
-      <button
-        onClick={() => detach.mutate(ev.uuid)}
-        className="text-muted hover:text-danger"
-        aria-label="Detach"
-      >
-        ✕
-      </button>
-    </li>
-  );
-}
-
-function AttachEvidenceModal({
-  slug,
-  uuid,
-  attachedUuids,
-  open,
-  onClose,
-}: {
-  slug: string;
-  uuid: string;
-  attachedUuids: string[];
-  open: boolean;
-  onClose: () => void;
-}) {
-  const { data } = useTimeline(slug, '', 1);
-  const attach = useAttachEvidence(slug, uuid);
-  const toast = useToast();
-  const [selected, setSelected] = useState<string[]>([]);
-  const attachedSet = new Set(attachedUuids);
-
-  async function submit() {
-    if (selected.length === 0) return onClose();
-    try {
-      await attach.mutateAsync(selected);
-      toast.success(`Attached ${selected.length} evidence`);
-      setSelected([]);
-      onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Attach failed');
-    }
-  }
-
-  const candidates = (data?.items ?? []).filter((e) => !attachedSet.has(e.uuid));
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Attach evidence"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={submit} loading={attach.isPending} disabled={selected.length === 0}>
-            Attach {selected.length || ''}
-          </Button>
-        </>
-      }
-    >
-      {candidates.length === 0 ? (
-        <p className="text-sm text-muted">No more evidence to attach.</p>
-      ) : (
-        <ul className="flex max-h-80 flex-col gap-1 overflow-auto">
-          {candidates.map((e) => (
-            <li key={e.uuid}>
-              <Checkbox
-                label={`${e.description || EVIDENCE_TYPE_LABELS[e.contentType]}`}
-                checked={selected.includes(e.uuid)}
-                onChange={(ev) =>
-                  setSelected((s) =>
-                    ev.target.checked ? [...s, e.uuid] : s.filter((x) => x !== e.uuid),
-                  )
-                }
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </Modal>
   );
 }

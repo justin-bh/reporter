@@ -15,6 +15,7 @@ reporter spans three surfaces (web, desktop, terminal). They must feel like **on
 | -------------- | ---------------------------------------------------------------------------------- | ------------------------ |
 | **Engagement** | The top-level container that scopes all evidence, findings, and tags.              | operation, project, case |
 | **Evidence**   | A single timestamped artifact (screenshot, recording, note…).                      | item, artifact, capture  |
+| **Comment**    | A piece of evidence linked to another as a follow-up/update — a.k.a. _Linked Evidence_. | reply, annotation, thread |
 | **Finding**    | A reportable grouping of evidence.                                                 | issue, vuln, result      |
 | **Severity**   | A finding's risk rating on the CVSS v3.1 scale: None, Low, Medium, High, Critical. | priority, criticality    |
 | **Tag**        | A colored label on evidence, scoped to an engagement.                              | label, category          |

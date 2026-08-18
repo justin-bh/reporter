@@ -5,6 +5,7 @@ export const CH = {
   testConnection: 'connection:test',
   listEngagements: 'engagements:list',
   listTags: 'tags:list',
+  listEvidence: 'evidence:list',
   setEngagement: 'engagement:set',
   getQueue: 'queue:get',
   submitDraft: 'queue:submit',

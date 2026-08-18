@@ -1,5 +1,6 @@
 import type {
   Evidence as DbEvidence,
+  EvidenceFinding as DbEvidenceFinding,
   Finding as DbFinding,
   FindingCategory,
   Engagement as DbEngagement,
@@ -9,6 +10,7 @@ import type {
 } from '@prisma/client';
 import type {
   Evidence,
+  FindingEvidence,
   Finding,
   Engagement,
   EngagementRole,
@@ -36,6 +38,7 @@ export function serializeEngagement(
     favorite?: boolean;
     numUsers?: number;
     numEvidence?: number;
+    numFindings?: number;
   } = {},
 ): Engagement {
   return {
@@ -47,6 +50,7 @@ export function serializeEngagement(
     favorite: extras.favorite,
     numUsers: extras.numUsers,
     numEvidence: extras.numEvidence,
+    numFindings: extras.numFindings,
   };
 }
 
@@ -57,6 +61,10 @@ export function serializeTag(t: DbTag): Tag {
 type EvidenceWithRelations = DbEvidence & {
   operator: Pick<DbUser, 'slug' | 'firstName' | 'lastName'>;
   tags: { tag: DbTag }[];
+  /** Present when the include resolves the comment parent; used for parentEvidenceUuid. */
+  parent?: Pick<DbEvidence, 'uuid'> | null;
+  /** Present when the include counts comments (linked evidence) on this item. */
+  _count?: { comments: number };
 };
 
 export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: string): Evidence {
@@ -75,6 +83,23 @@ export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: stri
     tags: e.tags.map((et) => serializeTag(et.tag)),
     hasContent: Boolean(e.fullBlobKey),
     hasThumbnail: Boolean(e.thumbBlobKey),
+    parentEvidenceUuid: e.parent?.uuid ?? null,
+    commentCount: e._count?.comments ?? 0,
+  };
+}
+
+/**
+ * Serialize an evidence↔finding link: the base evidence shape plus the link's
+ * bucket fields (`caption`, `inPath`). Used to build a finding-detail response.
+ */
+export function serializeFindingEvidence(
+  ef: DbEvidenceFinding & { evidence: EvidenceWithRelations },
+  engagementSlug: string,
+): FindingEvidence {
+  return {
+    ...serializeEvidence(ef.evidence, engagementSlug),
+    caption: ef.caption,
+    inPath: ef.inPath,
   };
 }
 
@@ -94,7 +119,6 @@ export function serializeFinding(f: FindingWithRelations, engagementSlug: string
     cvssVector: f.cvssVector,
     cvssScore: f.cvssScore,
     readyToReport: f.readyToReport,
-    ticketLink: f.ticketLink,
     position: f.position,
     numEvidence: f._count?.evidence ?? 0,
     createdAt: f.createdAt.toISOString(),
@@ -109,4 +133,8 @@ export function serializeSavedQuery(q: DbSavedQuery): SavedQuery {
 export const evidenceInclude = {
   operator: { select: { slug: true, firstName: true, lastName: true } },
   tags: { include: { tag: true } },
+  // Comment-linking: the parent (for `parentEvidenceUuid`) and the count of
+  // comments pointing at this item (for `commentCount`).
+  parent: { select: { uuid: true } },
+  _count: { select: { comments: true } },
 } as const;

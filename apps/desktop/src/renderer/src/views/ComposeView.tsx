@@ -9,7 +9,12 @@ import {
   Textarea,
   useToast,
 } from '@reporter/ui';
-import type { CaptureDraft, EngagementLite, TagLite } from '../../../shared/types.js';
+import type {
+  CaptureDraft,
+  EngagementLite,
+  EvidenceLite,
+  TagLite,
+} from '../../../shared/types.js';
 
 export function ComposeView({ onDone }: { onDone: () => void }) {
   const toast = useToast();
@@ -18,6 +23,8 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
   const [engagementSlug, setEngagementSlug] = useState('');
   const [tags, setTags] = useState<TagLite[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
+  const [evidenceOptions, setEvidenceOptions] = useState<EvidenceLite[]>([]);
+  const [parentEvidenceUuid, setParentEvidenceUuid] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [language, setLanguage] = useState('');
@@ -40,13 +47,19 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     if (!engagementSlug) {
       setTags([]);
+      setEvidenceOptions([]);
       return;
     }
     window.reporter
       .listTags(engagementSlug)
       .then(setTags)
       .catch(() => setTags([]));
+    window.reporter
+      .listEvidence(engagementSlug)
+      .then(setEvidenceOptions)
+      .catch(() => setEvidenceOptions([]));
     setTagIds([]);
+    setParentEvidenceUuid('');
   }, [engagementSlug]);
 
   if (draft === undefined) return <p className="text-sm text-muted">Loading…</p>;
@@ -80,6 +93,7 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
         filePath: draft!.filePath,
         content: draft!.contentType === 'image' ? undefined : content,
         contentSubtype: draft!.contentType === 'codeblock' && language ? language : undefined,
+        parentEvidenceUuid: parentEvidenceUuid || undefined,
       });
       toast.success('Queued for upload');
       onDone();
@@ -161,6 +175,27 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
           emptyHint="No tags in this engagement."
         />
       </Field>
+
+      {evidenceOptions.length > 0 && (
+        <Field
+          label="Comment on"
+          htmlFor="comment-on"
+          hint="Optional — link this as a comment on recent evidence"
+        >
+          <Select
+            id="comment-on"
+            value={parentEvidenceUuid}
+            onChange={(e) => setParentEvidenceUuid(e.target.value)}
+          >
+            <option value="">— none —</option>
+            {evidenceOptions.map((ev) => (
+              <option key={ev.uuid} value={ev.uuid}>
+                {ev.description || `(${ev.contentType})`}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
 
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onDone}>

@@ -6,6 +6,7 @@ import type {
   AboutInfo,
   CaptureDraft,
   EngagementLite,
+  EvidenceLite,
   SettingsPatch,
   TagLite,
 } from '../shared/types.js';
@@ -254,6 +255,24 @@ function registerIpc(): void {
     return tags.map((t) => ({ id: t.id, name: t.name, colorName: t.colorName }));
   });
 
+  ipcMain.handle(CH.listEvidence, async (_e, slug: string): Promise<EvidenceLite[]> => {
+    const client = makeClient();
+    if (!client) return [];
+    // Fetch the largest page the server allows (newest first); the picker lists
+    // recent top-level evidence. Older items fall off — the web UI / reporter-term
+    // (--comment-on <uuid>) can still target any evidence by UUID.
+    const page = await client.listEvidence(slug, { pageSize: 250 });
+    // Only top-level evidence can host comments (linked evidence is one level deep).
+    return page.items
+      .filter((e) => e.parentEvidenceUuid === null)
+      .map((e) => ({
+        uuid: e.uuid,
+        description: e.description,
+        contentType: e.contentType,
+        occurredAt: e.occurredAt,
+      }));
+  });
+
   ipcMain.handle(CH.setEngagement, (_e, slug: string | null) => {
     saveSettings({ currentEngagementSlug: slug });
     buildTray();
@@ -275,6 +294,7 @@ function registerIpc(): void {
         filePath?: string;
         content?: string;
         contentSubtype?: string;
+        parentEvidenceUuid?: string;
       },
     ) => {
       addItem({
@@ -285,6 +305,7 @@ function registerIpc(): void {
         contentSubtype: payload.contentSubtype,
         description: payload.description,
         tagIds: payload.tagIds,
+        parentEvidenceUuid: payload.parentEvidenceUuid,
         occurredAt: new Date().toISOString(),
       });
       pendingDraft = null;

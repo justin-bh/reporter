@@ -219,17 +219,25 @@ model Evidence {
   contentSubtype String?  @map("content_subtype")
   fullBlobKey    String?  @map("full_blob_key")
   thumbBlobKey   String?  @map("thumb_blob_key")
+  // When set, this evidence is a comment (linked evidence) on another piece of
+  // evidence. Enforced one level deep in the service layer. SetNull so deleting
+  // a parent orphans its comments into top-level evidence rather than erroring;
+  // the web delete handler offers an explicit cascade instead.
+  parentEvidenceId Int?   @map("parent_evidence_id")
   occurredAt     DateTime @map("occurred_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   engagement Engagement          @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   operator  User               @relation(fields: [operatorId], references: [id])
+  parent    Evidence?          @relation("EvidenceComments", fields: [parentEvidenceId], references: [id], onDelete: SetNull)
+  comments  Evidence[]         @relation("EvidenceComments")
   tags      EvidenceTag[]
   findings  EvidenceFinding[]
   metadata  EvidenceMetadata[]
 
   @@index([engagementId, occurredAt])
+  @@index([parentEvidenceId])
   @@map("evidence")
 }
 
@@ -268,7 +276,6 @@ model Finding {
   cvssScore     Float?    @map("cvss_score")
   position      Int       @default(0)
   readyToReport Boolean   @default(false) @map("ready_to_report")
-  ticketLink    String?   @map("ticket_link")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -293,9 +300,11 @@ model EvidenceTag {
 }
 
 model EvidenceFinding {
-  evidenceId Int @map("evidence_id")
-  findingId  Int @map("finding_id")
-  position   Int @default(0)
+  evidenceId Int     @map("evidence_id")
+  findingId  Int     @map("finding_id")
+  position   Int     @default(0)
+  caption    String  @default("")
+  inPath     Boolean @default(false) @map("in_path")
 
   evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
   finding  Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)

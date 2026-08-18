@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { Command } from 'commander';
 import * as p from '@clack/prompts';
+import { uuidSchema } from '@reporter/shared';
 import { CONFIG_PATH, loadConfig, type TermConfig } from './config.js';
 import { runWizard } from './wizard.js';
 import { recordSession } from './record.js';
@@ -13,6 +14,17 @@ async function ensureConfig(): Promise<TermConfig | null> {
   if (cfg) return cfg;
   console.log(`${sym.warn} No configuration found — let's set up reporter-term.\n`);
   return runWizard();
+}
+
+/** Validate the optional --comment-on evidence UUID, exiting on a bad value. */
+function resolveCommentOn(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const parsed = uuidSchema.safeParse(value);
+  if (!parsed.success) {
+    console.error(`${sym.err} --comment-on must be a valid evidence UUID`);
+    process.exit(1);
+  }
+  return parsed.data;
 }
 
 function timestamp(): string {
@@ -28,15 +40,17 @@ program
 program
   .command('record', { isDefault: true })
   .description('Record a terminal session (default)')
-  .action(async () => {
+  .option('--comment-on <uuid>', 'File this recording as a comment on existing evidence (UUID)')
+  .action(async (opts: { commentOn?: string }) => {
     const config = await ensureConfig();
     if (!config) return;
+    const parentEvidenceUuid = resolveCommentOn(opts.commentOn);
     console.log(`\n${banner()}`);
     console.log(c.muted('Recording — type "exit" or press Ctrl-D to stop.\n'));
     const outputPath = join(config.outputDir, `${timestamp()}.cast`);
     const { castPath } = await recordSession({ shell: config.shell, outputPath });
     console.log();
-    await handleRecording(config, castPath);
+    await handleRecording(config, castPath, parentEvidenceUuid);
   });
 
 program
@@ -66,11 +80,13 @@ program
 program
   .command('upload <file>')
   .description('Upload a saved .cast recording')
-  .action(async (file: string) => {
+  .option('--comment-on <uuid>', 'File this recording as a comment on existing evidence (UUID)')
+  .action(async (file: string, opts: { commentOn?: string }) => {
     const config = await ensureConfig();
     if (!config) return;
+    const parentEvidenceUuid = resolveCommentOn(opts.commentOn);
     p.intro(banner());
-    await promptAndUpload(config, file);
+    await promptAndUpload(config, file, parentEvidenceUuid);
     p.outro('Done.');
   });
 

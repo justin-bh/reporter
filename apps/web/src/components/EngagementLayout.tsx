@@ -11,7 +11,6 @@ export function EngagementLayout() {
   const tabs = [
     { to: 'evidence', label: 'Evidence' },
     { to: 'findings', label: 'Findings' },
-    { to: 'tags', label: 'Tags' },
     { to: 'queries', label: 'Saved queries' },
     { to: 'settings', label: 'Settings' },
   ];
@@ -28,6 +27,11 @@ export function EngagementLayout() {
             <h1 className="text-2xl font-semibold text-text">{eng.name}</h1>
             <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
             <span className="text-sm text-muted">{eng.numEvidence ?? 0} evidence</span>
+            {(eng.numFindings ?? 0) > 0 && (
+              <span className="text-sm text-muted">
+                {eng.numFindings} {eng.numFindings === 1 ? 'finding' : 'findings'}
+              </span>
+            )}
           </div>
         )}
       </div>

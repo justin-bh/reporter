@@ -83,7 +83,6 @@ export async function importFindings(
       cvssVector: f.cvssVector,
       cvssScore: f.cvssScore,
       readyToReport: f.readyToReport,
-      ticketLink: f.ticketLink,
       position: f.position,
     };
 
@@ -102,6 +101,9 @@ export async function importFindings(
     }
 
     const keptEvidenceIds: number[] = [];
+    // Positions are per-bucket (Attack Path vs Attached Evidence), so track the
+    // next slot in each bucket independently rather than using the array index.
+    const bucketNext = { path: 0, attached: 0 };
     for (let i = 0; i < f.evidence.length; i++) {
       const ev = f.evidence[i]!;
       let evRow = await app.db.evidence.findUnique({
@@ -151,10 +153,12 @@ export async function importFindings(
         result.evidenceLinked++;
       }
 
+      const inPath = ev.inPath;
+      const position = inPath ? bucketNext.path++ : bucketNext.attached++;
       await app.db.evidenceFinding.upsert({
         where: { evidenceId_findingId: { evidenceId: evRow.id, findingId } },
-        create: { evidenceId: evRow.id, findingId, position: i },
-        update: { position: i },
+        create: { evidenceId: evRow.id, findingId, position, caption: ev.caption, inPath },
+        update: { position, caption: ev.caption, inPath },
       });
       keptEvidenceIds.push(evRow.id);
     }

@@ -39,6 +39,8 @@ export interface QueueItem {
   description: string;
   tagIds: number[];
   occurredAt: string;
+  /** When set, upload this capture as a comment on the given evidence. */
+  parentEvidenceUuid?: string;
   status: QueueStatus;
   serverUuid?: string;
   error?: string;
@@ -48,6 +50,14 @@ export interface QueueItem {
 export interface EngagementLite {
   slug: string;
   name: string;
+}
+
+/** A slim piece of existing evidence, for the "comment on" picker in Compose. */
+export interface EvidenceLite {
+  uuid: string;
+  description: string;
+  contentType: string;
+  occurredAt: string;
 }
 
 export interface TagLite {

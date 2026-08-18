@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { createEngagementInput, createTagInput } from '@reporter/shared';
+import { createEngagementInput, createTagInput, parseQuery } from '@reporter/shared';
 import { HttpError, requireApiAuth, requireEngagementRole } from '../../auth/guards.js';
-import { createEvidence } from '../../services/evidence.js';
+import { createEvidence, listEvidence } from '../../services/evidence.js';
 import { serializeEngagement, serializeTag } from '../../services/serializers.js';
+import { parsePagination } from '../../helpers/pagination.js';
 import { parseEvidenceRequest } from '../shared-evidence.js';
 import { VERSION } from '../../version.js';
 
@@ -84,6 +85,19 @@ export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
         data: { engagementId: eng.id, name: input.name, colorName: input.colorName },
       });
       return serializeTag(tag);
+    },
+  );
+
+  // List evidence (filter query + pagination), same shape as the web timeline.
+  // Lets clients (desktop) pick an existing piece of evidence to comment on.
+  app.get(
+    '/engagements/:slug/evidence',
+    { preHandler: requireEngagementRole('read') },
+    async (req) => {
+      const { slug } = req.params as { slug: string };
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const query = (req.query as { q?: string }).q ?? '';
+      return listEvidence(app, eng.id, slug, parseQuery(query), parsePagination(req.query as any));
     },
   );
 

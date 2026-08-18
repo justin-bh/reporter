@@ -187,6 +187,189 @@ describe('finding ordering', () => {
   });
 });
 
+describe('finding evidence buckets (attack path + attached evidence)', () => {
+  async function seedEvidence(n: number) {
+    const { users, cookie } = await setup();
+    const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug: 'op1' } });
+    const evidence = [];
+    for (let i = 0; i < n; i++) {
+      evidence.push(
+        await app.db.evidence.create({
+          data: {
+            engagementId: eng.id,
+            operatorId: users.writer.id,
+            contentType: 'none',
+            description: `ev${i}`,
+            occurredAt: new Date(),
+          },
+        }),
+      );
+    }
+    return { cookie, evidence };
+  }
+
+  const attach = (
+    cookie: string,
+    fUuid: string,
+    evidenceUuids: string[],
+    inPath?: boolean,
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: `/web/engagements/op1/findings/${fUuid}/evidence`,
+      headers: { ...WEB_HEADERS, cookie },
+      payload: inPath === undefined ? { evidenceUuids } : { evidenceUuids, inPath },
+    });
+
+  const getDetail = (cookie: string, fUuid: string) =>
+    app
+      .inject({
+        method: 'GET',
+        url: `/web/engagements/op1/findings/${fUuid}`,
+        headers: { cookie },
+      })
+      .then((r) => r.json());
+
+  it('defaults new evidence to the attached bucket (inPath=false) and exposes caption+inPath in detail', async () => {
+    const { cookie, evidence } = await seedEvidence(2);
+    const f = await createFinding(cookie, 'F');
+    await attach(cookie, f.uuid, [evidence[0]!.uuid, evidence[1]!.uuid]);
+
+    const detail = await getDetail(cookie, f.uuid);
+    expect(detail.evidence).toHaveLength(2);
+    for (const e of detail.evidence) {
+      expect(e).toHaveProperty('caption', '');
+      expect(e).toHaveProperty('inPath', false);
+    }
+  });
+
+  it('attaches into the attack-path bucket when inPath=true; detail lists attack path first', async () => {
+    const { cookie, evidence } = await seedEvidence(3);
+    const f = await createFinding(cookie, 'F');
+    // ev0 attached (default), ev1 + ev2 into the path.
+    await attach(cookie, f.uuid, [evidence[0]!.uuid], false);
+    await attach(cookie, f.uuid, [evidence[1]!.uuid, evidence[2]!.uuid], true);
+
+    const detail = await getDetail(cookie, f.uuid);
+    // Attack path (inPath=true) comes first, then attached, each in its own order.
+    expect(detail.evidence.map((e: { description: string }) => e.description)).toEqual([
+      'ev1',
+      'ev2',
+      'ev0',
+    ]);
+    expect(detail.evidence.map((e: { inPath: boolean }) => e.inPath)).toEqual([true, true, false]);
+
+    // Positions are per-bucket: the path bucket starts at 0.
+    const pathLinks = await app.db.evidenceFinding.findMany({
+      where: { finding: { uuid: f.uuid }, inPath: true },
+      orderBy: { position: 'asc' },
+    });
+    expect(pathLinks.map((l) => l.position)).toEqual([0, 1]);
+  });
+
+  it('PATCH sets a caption on an evidence link', async () => {
+    const { cookie, evidence } = await seedEvidence(1);
+    const f = await createFinding(cookie, 'F');
+    await attach(cookie, f.uuid, [evidence[0]!.uuid], true);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/web/engagements/op1/findings/${f.uuid}/evidence/${evidence[0]!.uuid}`,
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { caption: 'Gained a foothold via SSRF' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ caption: 'Gained a foothold via SSRF', inPath: true });
+
+    const detail = await getDetail(cookie, f.uuid);
+    expect(detail.evidence[0].caption).toBe('Gained a foothold via SSRF');
+  });
+
+  it('PATCH moves an evidence link between buckets, appending to the end of the target', async () => {
+    const { cookie, evidence } = await seedEvidence(3);
+    const f = await createFinding(cookie, 'F');
+    // Two already in the path (positions 0,1), one attached.
+    await attach(cookie, f.uuid, [evidence[0]!.uuid, evidence[1]!.uuid], true);
+    await attach(cookie, f.uuid, [evidence[2]!.uuid], false);
+
+    // Move ev2 into the path — it should land at position 2 (end of the path).
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/web/engagements/op1/findings/${f.uuid}/evidence/${evidence[2]!.uuid}`,
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { inPath: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ inPath: true });
+
+    const moved = await app.db.evidenceFinding.findFirstOrThrow({
+      where: { finding: { uuid: f.uuid }, evidence: { uuid: evidence[2]!.uuid } },
+    });
+    expect(moved.inPath).toBe(true);
+    expect(moved.position).toBe(2);
+
+    const detail = await getDetail(cookie, f.uuid);
+    // All three now in the path, ev2 last.
+    expect(detail.evidence.map((e: { description: string }) => e.description)).toEqual([
+      'ev0',
+      'ev1',
+      'ev2',
+    ]);
+  });
+
+  it('PATCH 404s for evidence not linked to the finding', async () => {
+    const { cookie, evidence } = await seedEvidence(1);
+    const f = await createFinding(cookie, 'F');
+    // evidence[0] exists but is not attached to f.
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/web/engagements/op1/findings/${f.uuid}/evidence/${evidence[0]!.uuid}`,
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { caption: 'nope' },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('reorders within a single bucket without requiring the whole finding set', async () => {
+    const { cookie, evidence } = await seedEvidence(4);
+    const f = await createFinding(cookie, 'F');
+    // Two in the path, two attached.
+    await attach(cookie, f.uuid, [evidence[0]!.uuid, evidence[1]!.uuid], true);
+    await attach(cookie, f.uuid, [evidence[2]!.uuid, evidence[3]!.uuid], false);
+
+    // Reorder ONLY the attached bucket (a partial set relative to all links).
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/web/engagements/op1/findings/${f.uuid}/evidence/reorder`,
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { orderedUuids: [evidence[3]!.uuid, evidence[2]!.uuid] },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const detail = await getDetail(cookie, f.uuid);
+    // Path bucket unchanged (ev0, ev1); attached bucket flipped (ev3, ev2).
+    expect(detail.evidence.map((e: { description: string }) => e.description)).toEqual([
+      'ev0',
+      'ev1',
+      'ev3',
+      'ev2',
+    ]);
+  });
+
+  it('rejects a reorder referencing evidence not attached to the finding', async () => {
+    const { cookie, evidence } = await seedEvidence(1);
+    const f = await createFinding(cookie, 'F');
+    await attach(cookie, f.uuid, [evidence[0]!.uuid], false);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/web/engagements/op1/findings/${f.uuid}/evidence/reorder`,
+      headers: { ...WEB_HEADERS, cookie },
+      payload: { orderedUuids: [evidence[0]!.uuid, '00000000-0000-0000-0000-000000000000'] },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe('finding delete', () => {
   it('deletes a finding but keeps its evidence', async () => {
     const { users, cookie } = await setup();
@@ -359,6 +542,78 @@ describe('findings import', () => {
     const again = (await post('/web/engagements/op1/findings/import', cookie2, exportBody)).json();
     expect(again).toMatchObject({ findingsCreated: 0, findingsUpdated: 1, evidenceLinked: 1 });
     expect((await get('/web/engagements/op1/findings', cookie2)).json()).toHaveLength(1);
+  });
+
+  it('round-trips attack-path buckets and captions through export → import', async () => {
+    const { users, cookie } = await setup();
+    const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug: 'op1' } });
+    const mk = (desc: string) =>
+      app.db.evidence.create({
+        data: {
+          engagementId: eng.id,
+          operatorId: users.writer.id,
+          contentType: 'none',
+          description: desc,
+          occurredAt: new Date(),
+        },
+      });
+    const step1 = await mk('step1');
+    const step2 = await mk('step2');
+    const supporting = await mk('supporting');
+    const f = await createFinding(cookie, 'Path finding');
+    await update(cookie, f.uuid, { readyToReport: true });
+    // Two path steps + one attached.
+    await post(`/web/engagements/op1/findings/${f.uuid}/evidence`, cookie, {
+      evidenceUuids: [step1.uuid, step2.uuid],
+      inPath: true,
+    });
+    await post(`/web/engagements/op1/findings/${f.uuid}/evidence`, cookie, {
+      evidenceUuids: [supporting.uuid],
+    });
+    // Caption the path steps.
+    const patch = (evUuid: string, caption: string) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/web/engagements/op1/findings/${f.uuid}/evidence/${evUuid}`,
+        headers: { ...WEB_HEADERS, cookie },
+        payload: { caption },
+      });
+    await patch(step1.uuid, 'Initial access');
+    await patch(step2.uuid, 'Privilege escalation');
+
+    const exportBody = (
+      await get('/web/engagements/op1/findings/export.json?includeAll=true', cookie)
+    ).json();
+    const exported = exportBody.findings[0].evidence;
+    // Export orders attack path first (with captions/inPath), then attached.
+    expect(exported).toMatchObject([
+      { uuid: step1.uuid, caption: 'Initial access', inPath: true },
+      { uuid: step2.uuid, caption: 'Privilege escalation', inPath: true },
+      { uuid: supporting.uuid, caption: '', inPath: false },
+    ]);
+
+    // Import into a clean engagement (reference-only; evidence recreated as none-type is skipped,
+    // so use the same-engagement re-import to assert link buckets/captions persist).
+    const summary = (await post('/web/engagements/op1/findings/import', cookie, exportBody)).json();
+    expect(summary.findingsUpdated).toBe(1);
+
+    const links = await app.db.evidenceFinding.findMany({
+      where: { finding: { uuid: f.uuid } },
+      include: { evidence: { select: { uuid: true, description: true } } },
+      orderBy: [{ inPath: 'desc' }, { position: 'asc' }],
+    });
+    expect(
+      links.map((l) => ({
+        description: l.evidence.description,
+        caption: l.caption,
+        inPath: l.inPath,
+        position: l.position,
+      })),
+    ).toEqual([
+      { description: 'step1', caption: 'Initial access', inPath: true, position: 0 },
+      { description: 'step2', caption: 'Privilege escalation', inPath: true, position: 1 },
+      { description: 'supporting', caption: '', inPath: false, position: 0 },
+    ]);
   });
 
   it('reference-only export skips evidence that has no local copy', async () => {

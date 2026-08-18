@@ -1,16 +1,17 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import {
+  attachEvidenceInput,
   createFindingInput,
   reorderInput,
   scoreVector,
+  updateFindingEvidenceInput,
   updateFindingInput,
 } from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import {
   evidenceInclude,
-  serializeEvidence,
   serializeFinding,
+  serializeFindingEvidence,
 } from '../../services/serializers.js';
 
 const findingInclude = {
@@ -85,14 +86,17 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         include: findingInclude,
       });
       if (!finding) throw new HttpError(404, 'Finding not found');
+      // Attack Path first (inPath=true), then Attached Evidence, each ordered by
+      // its own position. The client splits the flat list back into the two
+      // buckets by `inPath`.
       const links = await app.db.evidenceFinding.findMany({
         where: { findingId: finding.id },
         include: { evidence: { include: evidenceInclude } },
-        orderBy: [{ position: 'asc' }, { evidenceId: 'asc' }],
+        orderBy: [{ inPath: 'desc' }, { position: 'asc' }, { evidenceId: 'asc' }],
       });
       return {
         ...serializeFinding(finding, slug),
-        evidence: links.map((l) => serializeEvidence(l.evidence, slug)),
+        evidence: links.map((l) => serializeFindingEvidence(l, slug)),
       };
     },
   );
@@ -111,7 +115,6 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         title?: string;
         description?: string;
         readyToReport?: boolean;
-        ticketLink?: string | null;
         categoryId?: number | null;
         severity?: 'none' | 'low' | 'medium' | 'high' | 'critical' | null;
         cvssVector?: string | null;
@@ -120,7 +123,6 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         title: body.title ?? undefined,
         description: body.description ?? undefined,
         readyToReport: body.readyToReport ?? undefined,
-        ticketLink: body.ticketLink === undefined ? undefined : body.ticketLink,
         categoryId:
           body.category === undefined ? undefined : await categoryIdFor(app, body.category),
       };
@@ -170,39 +172,92 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Attach/detach evidence to a finding.
+  // Attach evidence to a finding, into the Attack Path or Attached Evidence bucket.
   app.post(
     '/engagements/:slug/findings/:uuid/evidence',
     { preHandler: [requireAuth, requireEngagementRole('write')] },
     async (req) => {
       const { slug, uuid } = req.params as { slug: string; uuid: string };
-      const { evidenceUuids } = z
-        .object({ evidenceUuids: z.array(z.string().uuid()).min(1) })
-        .parse(req.body);
+      const { evidenceUuids, inPath } = attachEvidenceInput.parse(req.body);
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const finding = await app.db.finding.findFirst({ where: { uuid, engagementId: eng.id } });
       if (!finding) throw new HttpError(404, 'Finding not found');
       const evidence = await app.db.evidence.findMany({
         where: { uuid: { in: evidenceUuids }, engagementId: eng.id },
-        select: { id: true },
+        select: { id: true, uuid: true },
       });
-      // Append newly-attached evidence after any already attached.
+      // Idempotent: skip evidence already linked (in either bucket). New links
+      // append to the end of the *target* bucket, so position is scoped per bucket.
       const existing = await app.db.evidenceFinding.findMany({
         where: { findingId: finding.id },
-        select: { evidenceId: true, position: true },
+        select: { evidenceId: true, position: true, inPath: true },
       });
       const attachedIds = new Set(existing.map((e) => e.evidenceId));
-      let nextPos = existing.reduce((m, e) => Math.max(m, e.position), -1) + 1;
-      const toAttach = evidence.filter((e) => !attachedIds.has(e.id));
+      let nextPos =
+        existing.filter((e) => e.inPath === inPath).reduce((m, e) => Math.max(m, e.position), -1) +
+        1;
+      // Assign positions in the caller's requested order (a `WHERE uuid IN (…)`
+      // query has no inherent order), so the bucket lands in the order the user
+      // listed the evidence.
+      const idByUuid = new Map(evidence.map((e) => [e.uuid, e.id]));
+      const toAttach = evidenceUuids
+        .map((u) => idByUuid.get(u))
+        .filter((id): id is number => id !== undefined && !attachedIds.has(id));
       await app.db.evidenceFinding.createMany({
-        data: toAttach.map((e) => ({
-          evidenceId: e.id,
+        data: toAttach.map((id) => ({
+          evidenceId: id,
           findingId: finding.id,
           position: nextPos++,
+          inPath,
         })),
         skipDuplicates: true,
       });
       return { ok: true, attached: toAttach.length };
+    },
+  );
+
+  // Update a single evidence↔finding link: set its Attack Path caption and/or
+  // move it between the Attack Path and Attached Evidence buckets.
+  app.patch(
+    '/engagements/:slug/findings/:uuid/evidence/:evidenceUuid',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
+    async (req) => {
+      const { slug, uuid, evidenceUuid } = req.params as {
+        slug: string;
+        uuid: string;
+        evidenceUuid: string;
+      };
+      const body = updateFindingEvidenceInput.parse(req.body);
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const finding = await app.db.finding.findFirst({ where: { uuid, engagementId: eng.id } });
+      const evidence = await app.db.evidence.findFirst({
+        where: { uuid: evidenceUuid, engagementId: eng.id },
+        select: { id: true },
+      });
+      if (!finding || !evidence) throw new HttpError(404, 'Not found');
+      const link = await app.db.evidenceFinding.findUnique({
+        where: { evidenceId_findingId: { evidenceId: evidence.id, findingId: finding.id } },
+      });
+      if (!link) throw new HttpError(404, 'Evidence is not attached to this finding');
+
+      const data: { caption?: string; inPath?: boolean; position?: number } = {};
+      if (body.caption !== undefined) data.caption = body.caption;
+      // Moving buckets: append to the end of the target bucket so positions stay
+      // dense per bucket. A no-op move (same bucket) leaves position untouched.
+      if (body.inPath !== undefined && body.inPath !== link.inPath) {
+        const count = await app.db.evidenceFinding.count({
+          where: { findingId: finding.id, inPath: body.inPath },
+        });
+        data.inPath = body.inPath;
+        data.position = count;
+      }
+
+      const updated = await app.db.evidenceFinding.update({
+        where: { evidenceId_findingId: { evidenceId: evidence.id, findingId: finding.id } },
+        data,
+        include: { evidence: { include: evidenceInclude } },
+      });
+      return serializeFindingEvidence(updated, slug);
     },
   );
 
@@ -233,7 +288,9 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Reorder the evidence attached to a single finding.
+  // Reorder one bucket of a finding's evidence. The body lists just that bucket's
+  // links in their new order (Attack Path or Attached Evidence) — not every link
+  // on the finding — so positions are reassigned by array index within the bucket.
   app.patch(
     '/engagements/:slug/findings/:uuid/evidence/reorder',
     { preHandler: [requireAuth, requireEngagementRole('write')] },
@@ -248,8 +305,10 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         include: { evidence: { select: { uuid: true } } },
       });
       const idByUuid = new Map(links.map((l) => [l.evidence.uuid, l.evidenceId]));
-      if (idByUuid.size !== orderedUuids.length || orderedUuids.some((u) => !idByUuid.has(u))) {
-        throw new HttpError(400, 'Order must list exactly the evidence attached to this finding');
+      // Every submitted uuid must be linked to this finding, but the submitted set
+      // need not be every link — it's a single bucket's ordering.
+      if (orderedUuids.some((u) => !idByUuid.has(u))) {
+        throw new HttpError(400, 'Order references evidence not attached to this finding');
       }
       await app.db.$transaction(
         orderedUuids.map((u, i) =>

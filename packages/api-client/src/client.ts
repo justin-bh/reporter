@@ -30,6 +30,14 @@ export class ReporterApiError extends Error {
   }
 }
 
+/** One page of evidence — matches the server's timeline list envelope. */
+export interface EvidencePage {
+  items: Evidence[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
  * Typed client for the reporter HMAC client API (`/api/*`). Used by the desktop
  * app and the terminal recorder. Signs every request with {@link buildAuthHeaders}.
@@ -106,8 +114,29 @@ export class ReporterClient {
   }
 
   /**
+   * List evidence in an engagement, newest first — optionally filtered by a
+   * timeline query string and paginated. Handy for picking a piece of evidence
+   * to attach a comment to.
+   */
+  listEvidence(
+    engagementSlug: string,
+    opts: { q?: string; page?: number; pageSize?: number } = {},
+  ): Promise<EvidencePage> {
+    const params = new URLSearchParams();
+    if (opts.q) params.set('q', opts.q);
+    if (opts.page) params.set('page', String(opts.page));
+    if (opts.pageSize) params.set('pageSize', String(opts.pageSize));
+    const qs = params.toString();
+    return this.request<EvidencePage>(
+      'GET',
+      `/api/engagements/${encodeURIComponent(engagementSlug)}/evidence${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  /**
    * Create a piece of evidence. `metadata` is sent as the JSON `notes` part;
    * `file` (when present) is the binary blob part (screenshot PNG, asciicast, …).
+   * Set `metadata.parentEvidenceUuid` to file it as a comment on existing evidence.
    */
   createEvidence(
     engagementSlug: string,

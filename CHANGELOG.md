@@ -8,8 +8,46 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Removed
+
+- **Finding "Ticket Link" field.** Removed the finding ticket-link field
+  everywhere (schema, API, export/import, and the PDF report). Old export files
+  that still carry a `ticketLink` key import cleanly — the key is ignored.
+
 ### Added
 
+- **Delete an engagement.** Engagement (and site) admins can now delete an
+  engagement from its **Settings → Danger zone**. Deletion is guarded by a
+  type-the-slug confirmation and permanently removes the engagement and all of
+  its evidence (blobs included), findings, tags, saved queries, and members. New
+  admin-only `DELETE /web/engagements/:slug`.
+- **Engagements list: card / table views and finding counts.** The engagements
+  page now toggles between the existing **card** view and a compact **table**
+  view (the choice is remembered per browser). Both views, and the engagement
+  header, show a finding count alongside the evidence count — shown only when the
+  engagement has at least one finding. The engagement API now returns
+  `numFindings`.
+- **Engagement-scoped finding categories.** Finding categories can now be listed
+  and managed from within an engagement (not just the admin console): any member
+  can list them to populate a dropdown, engagement writers can create/revive one,
+  and engagement admins can soft-delete one.
+- **Evidence comments (linked evidence).** Any piece of evidence can now carry
+  **comments** — themselves full evidence (screenshot, note, code block, HTTP
+  request, terminal recording, …) linked to a parent piece of evidence, for
+  tracking follow-ups/updates and cross-linking related captures. Add one from an
+  evidence's detail page (the same Add-evidence form), from `reporter-term` with
+  `--comment-on <uuid>`, or from the desktop compose form's **Comment on** picker.
+  Comments are real evidence: they appear on the timeline with a link indicator to
+  their parent, and a parent shows its comment count. Deleting evidence that has
+  comments asks whether to delete them too or keep them as top-level evidence.
+- **Findings: Attack Path & captioned evidence.** A finding's evidence is now
+  split into two persisted buckets — an ordered, numbered **Attack Path** (each
+  step carries an optional caption describing that step of the attack) and plain
+  **Attached Evidence**. Attach evidence into either bucket, move links between
+  buckets, and reorder within a bucket; positions are tracked per bucket. The
+  PDF report renders the Attack Path as numbered steps with captions and lists
+  Attached Evidence separately (the Attack Path section is omitted when empty),
+  and both the JSON export and import preserve each link's caption and bucket.
 - **Findings: severity, ordering, deletion, and report export.**
   - **CVSS v3.1 severity.** Findings carry a severity on the CVSS v3.1 scale
     (None → Critical). Rate one with the built-in **CVSS v3.1 calculator**
@@ -72,6 +110,12 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Fixed
 
+- **Sign out reliably returns to the login screen.** Signing out could leave the
+  user on the app with a "Couldn't load your engagements" error instead of the
+  login page, because protected queries refetched (and 401'd) before the auth
+  state cleared. Logout now pins the unauthenticated state synchronously so the
+  app redirects straight to `/login`, drops all cached data, and can no longer
+  reach protected pages — even if the logout request itself fails.
 - **Desktop capture now works on modern GNOME/Wayland (and fails loudly, never
   silently).** On Wayland — the default on Ubuntu 24.04+ — capturing an area
   brought up the selection overlay but then produced **no comment window** and

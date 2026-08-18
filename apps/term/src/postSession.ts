@@ -30,9 +30,16 @@ async function chooseEngagement(config: TermConfig): Promise<string | null> {
 }
 
 /** Collect description + tags and upload the recording. */
-export async function promptAndUpload(config: TermConfig, castPath: string): Promise<boolean> {
+export async function promptAndUpload(
+  config: TermConfig,
+  castPath: string,
+  parentEvidenceUuid?: string,
+): Promise<boolean> {
   const engagementSlug = await chooseEngagement(config);
   if (!engagementSlug) return false;
+  if (parentEvidenceUuid) {
+    p.log.info(`Filing as a comment on evidence ${c.muted(parentEvidenceUuid)}`);
+  }
 
   const description = await p.text({
     message: 'Description',
@@ -62,19 +69,27 @@ export async function promptAndUpload(config: TermConfig, castPath: string): Pro
       engagementSlug,
       description: String(description ?? ''),
       tagIds,
+      parentEvidenceUuid,
     });
     spin.stop(`${sym.ok} Uploaded as evidence ${c.muted(uuid)}`);
     return true;
   } catch (err) {
     spin.stop(`${sym.err} Upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Preserve the comment link in the retry hint so a copied command re-files it
+    // as a comment rather than silently creating new top-level evidence.
+    const commentFlag = parentEvidenceUuid ? ` --comment-on ${parentEvidenceUuid}` : '';
     p.log.info(`Your recording is saved at ${c.accent(castPath)} — retry with:`);
-    p.log.info(`  ${c.muted(`reporter-term upload "${castPath}"`)}`);
+    p.log.info(`  ${c.muted(`reporter-term upload "${castPath}"${commentFlag}`)}`);
     return false;
   }
 }
 
 /** Full post-recording flow: upload / save / discard. */
-export async function handleRecording(config: TermConfig, castPath: string): Promise<void> {
+export async function handleRecording(
+  config: TermConfig,
+  castPath: string,
+  parentEvidenceUuid?: string,
+): Promise<void> {
   const size = await stat(castPath)
     .then((s) => `${(s.size / 1024).toFixed(1)} KB`)
     .catch(() => 'unknown size');
@@ -95,7 +110,7 @@ export async function handleRecording(config: TermConfig, castPath: string): Pro
   }
 
   if (action === 'upload') {
-    const ok = await promptAndUpload(config, castPath);
+    const ok = await promptAndUpload(config, castPath, parentEvidenceUuid);
     if (ok) {
       const del = await p.confirm({ message: 'Delete the local copy?', initialValue: false });
       if (!p.isCancel(del) && del) await rm(castPath, { force: true });

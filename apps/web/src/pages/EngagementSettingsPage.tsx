@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -8,6 +8,7 @@ import {
   ErrorState,
   Field,
   Input,
+  Modal,
   Select,
   Spinner,
   Table,
@@ -21,7 +22,9 @@ import {
 } from '@reporter/ui';
 import type { EngagementMember, EngagementRole, EngagementStatus } from '@reporter/shared';
 import { api } from '../api/client.js';
-import { useEngagement, useUpdateEngagement } from '../api/hooks.js';
+import { useDeleteEngagement, useEngagement, useUpdateEngagement } from '../api/hooks.js';
+import { TagManager } from '../components/engagement/TagManager.js';
+import { CategoryManager } from '../components/engagement/CategoryManager.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,6 +40,14 @@ export function EngagementSettingsPage() {
     refetch: refetchEng,
   } = useEngagement(slug);
   const update = useUpdateEngagement(slug);
+  const remove = useDeleteEngagement(slug);
+  const navigate = useNavigate();
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  // Only engagement admins (and site admins, whom the server reports as admin
+  // here) may delete; the server enforces this too.
+  const canDelete = eng?.role === 'admin';
 
   const [name, setName] = useState('');
   const [status, setStatus] = useState<EngagementStatus>('active');
@@ -101,6 +112,22 @@ export function EngagementSettingsPage() {
       toast.success('Engagement updated');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Update failed');
+    }
+  }
+
+  function openDelete() {
+    setConfirmText('');
+    setDeleteOpen(true);
+  }
+
+  async function handleDelete() {
+    try {
+      await remove.mutateAsync();
+      setDeleteOpen(false);
+      toast.success('Engagement deleted');
+      navigate('/engagements', { replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete engagement');
     }
   }
 
@@ -216,6 +243,80 @@ export function EngagementSettingsPage() {
           </p>
         </form>
       </Card>
+
+      <Card className="space-y-4 p-4">
+        <h3 className="text-sm font-semibold text-text">Tags</h3>
+        <TagManager slug={slug} />
+      </Card>
+
+      <Card className="space-y-4 p-4">
+        <h3 className="text-sm font-semibold text-text">Finding categories</h3>
+        <CategoryManager slug={slug} />
+      </Card>
+
+      {canDelete && (
+        <Card className="space-y-4 border-danger/40 p-4 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-danger">Danger zone</h3>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-text">Delete this engagement</p>
+              <p className="text-sm text-muted">
+                Permanently removes the engagement and all of its evidence, findings, tags, saved
+                queries, and members. This cannot be undone.
+              </p>
+            </div>
+            <Button variant="danger" onClick={openDelete} className="shrink-0">
+              Delete engagement
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Delete engagement"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              loading={remove.isPending}
+              disabled={confirmText.trim() !== slug}
+            >
+              Delete engagement
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text">
+            This permanently deletes <span className="font-semibold">{eng?.name ?? slug}</span> and
+            everything in it — evidence, findings, tags, saved queries, and members. This action
+            cannot be undone.
+          </p>
+          <Field
+            label="Confirm"
+            htmlFor="del-confirm"
+            hint={
+              <>
+                Type <span className="font-mono text-text">{slug}</span> to enable deletion.
+              </>
+            }
+          >
+            <Input
+              id="del-confirm"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              autoComplete="off"
+              placeholder={slug}
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }
