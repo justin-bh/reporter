@@ -46,8 +46,8 @@ export function QueriesPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-      <div>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="min-w-0">
         <h2 className="mb-3 text-lg font-semibold text-text">Saved queries</h2>
         {isLoading ? (
           <Spinner />

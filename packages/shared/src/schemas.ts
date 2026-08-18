@@ -43,6 +43,16 @@ export const engagementSchema = z.object({
   favorite: z.boolean().optional(),
   role: engagementRoleSchema.optional(),
   createdAt: isoDateSchema,
+  /** When the engagement began (defaults to creation time; user-editable). */
+  startedAt: isoDateSchema,
+  /** Operator-entered target end date; null until set. */
+  projectedEndAt: isoDateSchema.nullable(),
+  /**
+   * When the engagement actually wrapped up. The server stamps this to "now" on
+   * any transition into `complete`/`archived` and clears it on a return to
+   * `active`; it can also be overridden manually. Null while still active.
+   */
+  actualEndAt: isoDateSchema.nullable(),
 });
 export type Engagement = z.infer<typeof engagementSchema>;
 
@@ -163,8 +173,25 @@ export type SavedQuery = z.infer<typeof savedQuerySchema>;
 export const createEngagementInput = z.object({
   slug: slugSchema,
   name: z.string().min(1).max(255),
+  /** Optional target end date, set at creation time. */
+  projectedEndAt: isoDateSchema.nullable().optional(),
 });
 export type CreateEngagementInput = z.infer<typeof createEngagementInput>;
+
+/**
+ * Partial update of an engagement's details. Dates are nullable so the client
+ * can clear them. Moving `status` into `complete`/`archived` makes the server
+ * stamp `actualEndAt`; a return to `active` clears it — unless `actualEndAt` is
+ * given explicitly in the same request, which always wins.
+ */
+export const updateEngagementInput = z.object({
+  name: z.string().min(1).max(255).optional(),
+  status: engagementStatusSchema.optional(),
+  startedAt: isoDateSchema.optional(),
+  projectedEndAt: isoDateSchema.nullable().optional(),
+  actualEndAt: isoDateSchema.nullable().optional(),
+});
+export type UpdateEngagementInput = z.infer<typeof updateEngagementInput>;
 
 export const createTagInput = z.object({
   name: z.string().min(1).max(64),

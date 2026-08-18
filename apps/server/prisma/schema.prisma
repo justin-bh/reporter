@@ -147,6 +147,12 @@ model Engagement {
   slug      String          @unique
   name      String
   status    EngagementStatus @default(active)
+  // Lifecycle dates. `startedAt` defaults to creation time but is editable.
+  // `projectedEndAt` is an operator-entered target. `actualEndAt` is stamped when
+  // the engagement leaves `active` (into complete/archived) and cleared on return.
+  startedAt      DateTime  @default(now()) @map("started_at")
+  projectedEndAt DateTime? @map("projected_end_at")
+  actualEndAt    DateTime? @map("actual_end_at")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 

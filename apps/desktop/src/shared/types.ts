@@ -1,5 +1,7 @@
 /** Types shared between the main process, preload bridge, and renderer. */
 
+import type { EngagementStatus } from '@reporter/shared';
+
 export interface DesktopSettings {
   serverUrl: string;
   accessKey: string;
@@ -50,6 +52,9 @@ export interface QueueItem {
 export interface EngagementLite {
   slug: string;
   name: string;
+  /** Lifecycle status, shown in the compose picker so you don't file into a
+   *  finished engagement. Dates live in the web UI, not here. */
+  status: EngagementStatus;
 }
 
 /** A slim piece of existing evidence, for the "comment on" picker in Compose. */

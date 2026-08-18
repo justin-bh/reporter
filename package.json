@@ -37,6 +37,9 @@
     "vitest": "^3.0.2"
   },
   "pnpm": {
+    "overrides": {
+      "node-gyp": "^11.0.0"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "prisma",

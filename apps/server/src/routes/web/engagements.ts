@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
   addEngagementMemberInput,
   createEngagementInput,
-  engagementStatusSchema,
+  updateEngagementInput,
 } from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import { serializeEngagement, serializeUser } from '../../services/serializers.js';
@@ -47,6 +48,8 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       data: {
         slug: input.slug,
         name: input.name,
+        // startedAt defaults to now(); a projected end is optional at creation.
+        projectedEndAt: input.projectedEndAt ? new Date(input.projectedEndAt) : undefined,
         roles: { create: { userId: user.id, role: 'admin' } },
         tags: { create: defaultTags.map((t) => ({ name: t.name, colorName: t.colorName })) },
       },
@@ -88,13 +91,28 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [requireAuth, requireEngagementRole('admin')] },
     async (req) => {
       const { slug } = req.params as { slug: string };
-      const body = z
-        .object({
-          name: z.string().min(1).max(255).optional(),
-          status: engagementStatusSchema.optional(),
-        })
-        .parse(req.body);
-      const eng = await app.db.engagement.update({ where: { slug }, data: body });
+      const body = updateEngagementInput.parse(req.body);
+      const current = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+
+      const data: Prisma.EngagementUpdateInput = {};
+      if (body.name !== undefined) data.name = body.name;
+      if (body.status !== undefined) data.status = body.status;
+      if (body.startedAt !== undefined) data.startedAt = new Date(body.startedAt);
+      if (body.projectedEndAt !== undefined)
+        data.projectedEndAt = body.projectedEndAt === null ? null : new Date(body.projectedEndAt);
+
+      // A status change drives the actual-end date: entering complete/archived
+      // stamps "now", returning to active clears it. This wins over any value in
+      // the body. With no status change, an explicit actualEndAt is honored so
+      // the date stays manually editable.
+      const statusChanged = body.status !== undefined && body.status !== current.status;
+      if (statusChanged) {
+        data.actualEndAt = body.status === 'active' ? null : new Date();
+      } else if (body.actualEndAt !== undefined) {
+        data.actualEndAt = body.actualEndAt === null ? null : new Date(body.actualEndAt);
+      }
+
+      const eng = await app.db.engagement.update({ where: { slug }, data });
       return serializeEngagement(eng);
     },
   );

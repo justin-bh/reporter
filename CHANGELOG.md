@@ -8,6 +8,24 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **No more sideways scrolling / cut-off content.** Wide evidence (long code
+  blocks, HTTP/HAR JSON, long note text) used to stretch the evidence detail page
+  past the viewport, pushing the metadata/edit sidebar off-screen and forcing a
+  horizontal scroll. Wide content now scrolls inside its own box while the page
+  layout stays put; the affected two-column grids and code viewers were fixed and
+  the app shell has a horizontal-overflow guard so no view can scroll sideways.
+- **Note and event evidence now show their full body.** Creating a note or event
+  with body text stored the text but the detail view only showed the short
+  description. The detail view now renders the description as a caption above the
+  full body; a description-only note shows its text directly.
+- **Server Docker image builds again on current Node 22.** A transitive
+  `node-gyp` 7 won the hoisted bin and crashed compiling `node-pty` inside the
+  image (`Cannot assign to read only property 'cflags'` — Node 22 froze
+  `process.config`). A root pnpm override now pins `node-gyp` ^11 for the whole
+  workspace.
+
 ### Removed
 
 - **Finding "Ticket Link" field.** Removed the finding ticket-link field
@@ -16,6 +34,15 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Engagement lifecycle dates.** Engagements now track a **start date** (set to
+  creation time, editable), a user-entered **projected end date**, and an
+  **actual end date** the server stamps automatically whenever an engagement moves
+  into _Complete_/_Archived_ (and clears on a return to _Active_); all three are
+  editable in **Settings → Details**, a projected end can be set when creating an
+  engagement, and the dates appear on the engagement header and cards. The desktop
+  app and `reporter-term` show each engagement's status in their engagement
+  pickers. The engagement API returns `startedAt`, `projectedEndAt`, and
+  `actualEndAt`.
 - **Delete an engagement.** Engagement (and site) admins can now delete an
   engagement from its **Settings → Danger zone**. Deletion is guarded by a
   type-the-slug confirmation and permanently removes the engagement and all of

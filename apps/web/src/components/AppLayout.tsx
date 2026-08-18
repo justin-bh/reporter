@@ -22,7 +22,12 @@ export function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-bg text-text">
+    // `overflow-x-clip` is a safety net against any stray horizontal overflow so
+    // the page never gains a sideways scrollbar. It pairs with the default
+    // vertical `visible` without creating a scroll container (unlike
+    // `overflow-hidden`); wide content (code, HAR JSON) still scrolls inside its
+    // own `min-w-0` boxes rather than being clipped.
+    <div className="min-h-screen overflow-x-clip bg-bg text-text">
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
           <Link to="/engagements" className="flex items-center gap-2 font-semibold">
