@@ -13,12 +13,13 @@ import {
 } from '@reporter/ui';
 import { TAG_COLORS, defaultTagColorFor } from '@reporter/shared';
 import { useCreateTag, useDeleteTag, useTags } from '../../api/hooks.js';
+import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 
 /**
  * Tag list + "new tag" form for one engagement. Presentational block meant to
  * live inside a Settings Card. Tags are scoped to the engagement.
  */
-export function TagManager({ slug }: { slug: string }) {
+export function TagManager({ slug, readOnly = false }: { slug: string; readOnly?: boolean }) {
   const { data: tags, isLoading, isError, refetch } = useTags(slug);
   const create = useCreateTag(slug);
   const del = useDeleteTag(slug);
@@ -70,6 +71,8 @@ export function TagManager({ slug }: { slug: string }) {
                 name={t.name}
                 colorName={t.colorName}
                 onRemove={() => removeTag(t.id, t.name)}
+                removeDisabled={readOnly}
+                removeTitle={readOnly ? READ_ONLY_TITLE : undefined}
               />
             </span>
           ))}
@@ -82,6 +85,7 @@ export function TagManager({ slug }: { slug: string }) {
           <Input
             id="tag-name"
             value={name}
+            disabled={readOnly}
             onChange={(e) => {
               setName(e.target.value);
               setColor(defaultTagColorFor(e.target.value));
@@ -95,14 +99,20 @@ export function TagManager({ slug }: { slug: string }) {
                 key={c.name}
                 type="button"
                 aria-label={c.name}
+                disabled={readOnly}
                 onClick={() => setColor(c.name)}
-                className={`h-6 w-6 rounded-full ${color === c.name ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''}`}
+                className={`h-6 w-6 rounded-full disabled:opacity-50 ${color === c.name ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''}`}
                 style={{ backgroundColor: resolved === 'dark' ? c.dark : c.light }}
               />
             ))}
           </div>
         </Field>
-        <Button onClick={add} loading={create.isPending} disabled={!name}>
+        <Button
+          onClick={add}
+          loading={create.isPending}
+          disabled={readOnly || !name}
+          title={readOnly ? READ_ONLY_TITLE : undefined}
+        >
           Add tag
         </Button>
       </div>

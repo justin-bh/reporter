@@ -4,6 +4,7 @@ import type { DraggableAttributes, DraggableSyntheticListeners } from '@dnd-kit/
 import { Badge, Button, TagChip, Textarea } from '@reporter/ui';
 import { EVIDENCE_TYPE_LABELS, type FindingEvidence } from '@reporter/shared';
 import { formatDateTime } from '../../lib/format.js';
+import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { evidenceThumbUrl } from '../../lib/urls.js';
 
 const TYPE_ICON: Record<string, string> = {
@@ -44,6 +45,7 @@ export function FindingEvidenceCard({
   onMove,
   onDetach,
   moving,
+  readOnly,
 }: {
   slug: string;
   ev: FindingEvidence;
@@ -58,6 +60,8 @@ export function FindingEvidenceCard({
   onDetach: () => void;
   /** The move action is in flight — disable it to avoid double-submits. */
   moving?: boolean;
+  /** Read-only access: every mutating control renders disabled. */
+  readOnly?: boolean;
 }) {
   const extraTags = ev.tags.length - 3;
   // Move this link to the other bucket. Full label for assistive tech / tooltip;
@@ -80,8 +84,10 @@ export function FindingEvidenceCard({
           {...drag.attributes}
           {...drag.listeners}
           type="button"
+          disabled={readOnly}
+          title={readOnly ? READ_ONLY_TITLE : undefined}
           aria-label="Drag to reorder"
-          className="mt-0.5 flex-none cursor-grab touch-none rounded-input px-0.5 text-muted transition-colors hover:text-text active:cursor-grabbing"
+          className="mt-0.5 flex-none cursor-grab touch-none rounded-input px-0.5 text-muted transition-colors hover:text-text active:cursor-grabbing disabled:opacity-50"
         >
           <span aria-hidden>⠿</span>
         </button>
@@ -110,8 +116,9 @@ export function FindingEvidenceCard({
             size="sm"
             onClick={onMove}
             loading={moving}
+            disabled={readOnly}
             aria-label={moveLabel}
-            title={moveLabel}
+            title={readOnly ? READ_ONLY_TITLE : moveLabel}
           >
             {!moving && (
               <span aria-hidden className="text-muted">
@@ -123,9 +130,10 @@ export function FindingEvidenceCard({
           <button
             type="button"
             onClick={onDetach}
+            disabled={readOnly}
             aria-label="Detach"
-            title="Detach"
-            className="rounded-input p-1 text-muted transition-colors hover:bg-surface-2 hover:text-danger focus-visible:text-danger"
+            title={readOnly ? READ_ONLY_TITLE : 'Detach'}
+            className="rounded-input p-1 text-muted transition-colors hover:bg-surface-2 hover:text-danger focus-visible:text-danger disabled:opacity-50"
           >
             ✕
           </button>
@@ -133,7 +141,12 @@ export function FindingEvidenceCard({
       </div>
 
       {variant === 'path' && onSaveCaption && (
-        <CaptionEditor key={ev.uuid} initial={ev.caption} onSave={onSaveCaption} />
+        <CaptionEditor
+          key={ev.uuid}
+          initial={ev.caption}
+          onSave={onSaveCaption}
+          disabled={readOnly}
+        />
       )}
     </div>
   );
@@ -168,9 +181,11 @@ function Thumb({ slug, ev }: { slug: string; ev: FindingEvidence }): ReactNode {
 function CaptionEditor({
   initial,
   onSave,
+  disabled,
 }: {
   initial: string;
   onSave: (caption: string) => void;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(initial);
   // Track what's persisted so we don't fire redundant saves.
@@ -206,6 +221,8 @@ function CaptionEditor({
       value={draft}
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
+      disabled={disabled}
+      title={disabled ? READ_ONLY_TITLE : undefined}
       placeholder="Describe this step of the attack…"
       aria-label="Attack-path step caption"
       className="mt-3 text-sm"

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Badge,
@@ -9,6 +9,8 @@ import {
   Field,
   Input,
   Modal,
+  Select,
+  SortableTh,
   Spinner,
   Table,
   Tbody,
@@ -17,13 +19,63 @@ import {
   Thead,
   Tr,
   useToast,
+  type SortDirection,
 } from '@reporter/ui';
-import type { Engagement } from '@reporter/shared';
+import { ENGAGEMENT_STATUSES, type Engagement, type EngagementStatus } from '@reporter/shared';
 import { slugify } from '../lib/slugify.js';
 import { formatDate, fromDateInput } from '../lib/format.js';
 import { useCreateEngagement, useEngagements, useToggleFavorite } from '../api/hooks.js';
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
+
+type SortColumn = 'name' | 'status' | 'evidence' | 'findings' | 'members';
+
+// Numeric columns start descending (most first); text columns start ascending.
+const FIRST_CLICK_DIRECTION: Record<SortColumn, SortDirection> = {
+  name: 'asc',
+  status: 'asc',
+  evidence: 'desc',
+  findings: 'desc',
+  members: 'desc',
+};
+
+// Lifecycle order, not alphabetical.
+const STATUS_ORDER: Record<EngagementStatus, number> = { active: 0, complete: 1, archived: 2 };
+
+function compareBy(column: SortColumn, direction: SortDirection) {
+  const dir = direction === 'asc' ? 1 : -1;
+  return (a: Engagement, b: Engagement): number => {
+    switch (column) {
+      case 'name':
+        return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      case 'status':
+        return dir * (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+      case 'evidence':
+        return dir * ((a.numEvidence ?? 0) - (b.numEvidence ?? 0));
+      case 'findings':
+        return dir * ((a.numFindings ?? 0) - (b.numFindings ?? 0));
+      case 'members':
+        return dir * ((a.numUsers ?? 0) - (b.numUsers ?? 0));
+    }
+  };
+}
+
+/**
+ * Favorites always come first. Within each partition the comparator applies;
+ * without one, server order (createdAt desc) is kept — sort() is stable.
+ */
+function orderEngagements(
+  engagements: Engagement[],
+  compare?: (a: Engagement, b: Engagement) => number,
+): Engagement[] {
+  const favorites = engagements.filter((e) => e.favorite);
+  const rest = engagements.filter((e) => !e.favorite);
+  if (compare) {
+    favorites.sort(compare);
+    rest.sort(compare);
+  }
+  return [...favorites, ...rest];
+}
 
 type EngagementsView = 'card' | 'table';
 const VIEW_STORAGE_KEY = 'reporter.engagementsView';
@@ -52,8 +104,30 @@ export function EngagementsPage() {
   const { data: engagements, isLoading, isError, refetch } = useEngagements();
   const [creating, setCreating] = useState(false);
   const [view, setView] = usePersistedView();
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<EngagementStatus | 'all'>('all');
+  // Lives here (not in EngagementsTable) so the sort survives view toggles
+  // and transient zero-match states unmounting the table.
+  const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection } | null>(null);
 
   const hasEngagements = Boolean(engagements && engagements.length > 0);
+  const filtersActive = search.trim() !== '' || status !== 'all';
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (engagements ?? []).filter(
+      (e) =>
+        (status === 'all' || e.status === status) &&
+        (!q || e.name.toLowerCase().includes(q) || e.slug.toLowerCase().includes(q)),
+    );
+  }, [engagements, search, status]);
+
+  const clearFilters = () => {
+    setSearch('');
+    setStatus('all');
+  };
+
+  const orderedCards = useMemo(() => orderEngagements(filtered), [filtered]);
 
   return (
     <div>
@@ -68,6 +142,32 @@ export function EngagementsPage() {
         </div>
       </div>
 
+      {hasEngagements && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter engagements…"
+            aria-label="Filter engagements by name or slug"
+            className="max-w-xs"
+          />
+          <div className="w-40">
+            <Select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as EngagementStatus | 'all')}
+              aria-label="Filter by status"
+            >
+              <option value="all">All statuses</option>
+              {ENGAGEMENT_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner size={26} />
@@ -80,11 +180,21 @@ export function EngagementsPage() {
           description="Create your first engagement to start collecting evidence."
           action={<Button onClick={() => setCreating(true)}>New engagement</Button>}
         />
+      ) : filtered.length === 0 && filtersActive ? (
+        <EmptyState
+          title="No engagements match your filters"
+          description="Try a different search or status."
+          action={
+            <Button variant="secondary" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          }
+        />
       ) : view === 'table' ? (
-        <EngagementsTable engagements={engagements} />
+        <EngagementsTable engagements={filtered} sort={sort} onSortChange={setSort} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {engagements.map((eng) => (
+          {orderedCards.map((eng) => (
             <EngagementCard key={eng.slug} eng={eng} />
           ))}
         </div>
@@ -127,10 +237,19 @@ function ViewToggle({
 
 function FavoriteButton({ eng }: { eng: Engagement }) {
   const toggle = useToggleFavorite(eng.slug);
+  const toast = useToast();
   return (
     <button
-      aria-label={eng.favorite ? 'Unfavorite' : 'Favorite'}
-      onClick={() => toggle.mutate(!eng.favorite)}
+      type="button"
+      aria-label="Favorite"
+      aria-pressed={Boolean(eng.favorite)}
+      disabled={toggle.isPending}
+      onClick={() =>
+        toggle.mutate(!eng.favorite, {
+          onError: (err) =>
+            toast.error(err instanceof Error ? err.message : 'Could not update favorite'),
+        })
+      }
       className={eng.favorite ? 'text-warning' : 'text-muted hover:text-warning'}
     >
       {eng.favorite ? '★' : '☆'}
@@ -177,21 +296,67 @@ function EngagementCard({ eng }: { eng: Engagement }) {
   );
 }
 
-function EngagementsTable({ engagements }: { engagements: Engagement[] }) {
+type SortState = { column: SortColumn; direction: SortDirection } | null;
+
+function EngagementsTable({
+  engagements,
+  sort,
+  onSortChange,
+}: {
+  engagements: Engagement[];
+  sort: SortState;
+  onSortChange: (next: SortState) => void;
+}) {
+  const toggleSort = (column: SortColumn) =>
+    onSortChange(
+      sort?.column === column
+        ? { column, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+        : { column, direction: FIRST_CLICK_DIRECTION[column] },
+    );
+  const directionOf = (column: SortColumn) =>
+    sort?.column === column ? sort.direction : undefined;
+
+  const ordered = useMemo(
+    () => orderEngagements(engagements, sort ? compareBy(sort.column, sort.direction) : undefined),
+    [engagements, sort],
+  );
+
   return (
     <Table>
       <Thead>
         <Tr>
           <Th />
-          <Th>Name</Th>
-          <Th>Status</Th>
-          <Th className="text-right">Evidence</Th>
-          <Th className="text-right">Findings</Th>
-          <Th className="text-right">Members</Th>
+          <SortableTh direction={directionOf('name')} onSort={() => toggleSort('name')}>
+            Name
+          </SortableTh>
+          <SortableTh direction={directionOf('status')} onSort={() => toggleSort('status')}>
+            Status
+          </SortableTh>
+          <SortableTh
+            align="right"
+            direction={directionOf('evidence')}
+            onSort={() => toggleSort('evidence')}
+          >
+            Evidence
+          </SortableTh>
+          <SortableTh
+            align="right"
+            direction={directionOf('findings')}
+            onSort={() => toggleSort('findings')}
+          >
+            Findings
+          </SortableTh>
+          <SortableTh
+            align="right"
+            direction={directionOf('members')}
+            onSort={() => toggleSort('members')}
+          >
+            Members
+          </SortableTh>
         </Tr>
       </Thead>
       <Tbody>
-        {engagements.map((eng) => {
+        {ordered.map((eng) => {
           const findings = eng.numFindings ?? 0;
           return (
             <Tr key={eng.slug}>

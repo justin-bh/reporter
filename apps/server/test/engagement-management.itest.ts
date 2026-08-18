@@ -49,25 +49,27 @@ function createFinding(cookie: string, title: string) {
 describe('engagement findings count', () => {
   it('reports numFindings on the list and detail responses', async () => {
     await setup();
-    const admin = await loginCookie(app, 'admin@test.local', 'password123');
+    // The list is membership-scoped (even for site admins), so use op1's
+    // engagement admin.
+    const engAdmin = await loginCookie(app, 'reader@test.local', 'password123');
 
     let list = await app
       .inject({
         method: 'GET',
         url: '/web/engagements',
-        headers: { ...WEB_HEADERS, cookie: admin },
+        headers: { ...WEB_HEADERS, cookie: engAdmin },
       })
       .then((r) => r.json());
     expect(list.find((e: { slug: string }) => e.slug === 'op1').numFindings).toBe(0);
 
-    await createFinding(admin, 'F1');
-    await createFinding(admin, 'F2');
+    await createFinding(engAdmin, 'F1');
+    await createFinding(engAdmin, 'F2');
 
     list = await app
       .inject({
         method: 'GET',
         url: '/web/engagements',
-        headers: { ...WEB_HEADERS, cookie: admin },
+        headers: { ...WEB_HEADERS, cookie: engAdmin },
       })
       .then((r) => r.json());
     expect(list.find((e: { slug: string }) => e.slug === 'op1').numFindings).toBe(2);
@@ -76,7 +78,7 @@ describe('engagement findings count', () => {
       .inject({
         method: 'GET',
         url: '/web/engagements/op1',
-        headers: { ...WEB_HEADERS, cookie: admin },
+        headers: { ...WEB_HEADERS, cookie: engAdmin },
       })
       .then((r) => r.json());
     expect(detail.numFindings).toBe(2);

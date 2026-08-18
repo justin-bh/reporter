@@ -28,11 +28,15 @@ export interface ParsedQuery {
   uuids: string[];
   /** `with-finding` → true, `without-finding` → false, absent → undefined. */
   withFinding?: boolean;
+  /** `starred` / `starred:true` → true (only evidence the viewer starred), `starred:false` → false. */
+  starred?: boolean;
+  /** `no-comments` → true: hide evidence that is a comment on other evidence. */
+  noComments?: boolean;
   /** `sort:asc` → true (oldest first); default false (newest first). */
   sortAsc: boolean;
 }
 
-const VALUE_KEYS = new Set(['tag', 'operator', 'type', 'range', 'uuid', 'sort']);
+const VALUE_KEYS = new Set(['tag', 'operator', 'type', 'range', 'uuid', 'sort', 'starred']);
 const EVIDENCE_TYPE_SET = new Set<string>(EVIDENCE_TYPES);
 
 interface RawToken {
@@ -146,9 +150,20 @@ export function parseQuery(input: string): ParsedQuery {
       case 'sort':
         result.sortAsc = value.toLowerCase() === 'asc';
         break;
+      case 'starred': {
+        const flag = value.toLowerCase();
+        if (flag === 'true') result.starred = true;
+        else if (flag === 'false') result.starred = false;
+        // Any other value is not a valid flag — keep the whole token as free
+        // text, the same way unknown key:value tokens are treated.
+        else result.text.push(`starred:${value}`);
+        break;
+      }
       case null:
         if (value === 'with-finding') result.withFinding = true;
         else if (value === 'without-finding') result.withFinding = false;
+        else if (value === 'starred') result.starred = true;
+        else if (value === 'no-comments') result.noComments = true;
         else result.text.push(value);
         break;
     }
@@ -171,6 +186,9 @@ export function stringifyQuery(q: ParsedQuery): string {
   for (const u of q.uuids) parts.push(`uuid:${u}`);
   if (q.withFinding === true) parts.push('with-finding');
   if (q.withFinding === false) parts.push('without-finding');
+  if (q.starred === true) parts.push('starred');
+  if (q.starred === false) parts.push('starred:false');
+  if (q.noComments === true) parts.push('no-comments');
   if (q.sortAsc) parts.push('sort:asc');
   for (const t of q.text) parts.push(quoteIfNeeded(t));
   return parts.join(' ');
@@ -185,6 +203,8 @@ export function isEmptyQuery(q: ParsedQuery): boolean {
     q.types.length === 0 &&
     q.dateRanges.length === 0 &&
     q.uuids.length === 0 &&
-    q.withFinding === undefined
+    q.withFinding === undefined &&
+    q.starred === undefined &&
+    q.noComments === undefined
   );
 }

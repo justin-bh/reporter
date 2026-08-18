@@ -10,7 +10,7 @@ The reporter design system. Owned by the `ux-ui` agent; the contract is `DESIGN.
 
 ## Primitives available now
 
-`ThemeProvider` / `useTheme`, `Button`, `Spinner`, `Input` / `Textarea` / `Field`, `Card` (+ `CardHeader`/`CardBody`), `Badge`, `TagChip`, `TagPicker`, `EmptyState`, `ErrorState`, `Modal` (focus-trapped, Esc-close), `ConfirmProvider` / `useConfirm` (themed promise-based confirm), `ToastProvider` / `useToast`, `Select`, `Checkbox`, `Table` (+ `Thead`/`Tbody`/`Tr`/`Th`/`Td`), `Tabs`, `cn`.
+`ThemeProvider` / `useTheme`, `Button`, `Spinner`, `Input` / `Textarea` / `Field`, `Card` (+ `CardHeader`/`CardBody`), `Badge`, `TagChip`, `TagPicker`, `EmptyState`, `ErrorState`, `Modal` (focus-trapped, Esc-close), `ConfirmProvider` / `useConfirm` (themed promise-based confirm), `ToastProvider` / `useToast`, `Select`, `Checkbox`, `Table` (+ `Thead`/`Tbody`/`Tr`/`Th`/`SortableTh`/`Td`), `Tabs`, `cn`.
 
 ## Still to add if needed
 

@@ -30,8 +30,22 @@ export const userSchema = z.object({
   admin: z.boolean(),
   disabled: z.boolean(),
   headless: z.boolean(),
+  /**
+   * Only populated on `/web/me`: true after a recovery-link sign-in, until the
+   * user sets a new password (which then doesn't require the current one).
+   */
+  mustResetPassword: z.boolean().optional(),
 });
 export type User = z.infer<typeof userSchema>;
+
+/**
+ * A user as seen from the admin console: the base user plus whether they have
+ * a TOTP secret enrolled (drives the admin "Reset TOTP" action).
+ */
+export const adminUserSchema = userSchema.extend({
+  hasTotp: z.boolean(),
+});
+export type AdminUser = z.infer<typeof adminUserSchema>;
 
 export const engagementSchema = z.object({
   slug: slugSchema,
@@ -55,6 +69,16 @@ export const engagementSchema = z.object({
   actualEndAt: isoDateSchema.nullable(),
 });
 export type Engagement = z.infer<typeof engagementSchema>;
+
+/**
+ * An engagement as seen from the admin console: every engagement site-wide,
+ * plus whether the requesting admin is themselves a member (non-members don't
+ * see it on their main Engagements page).
+ */
+export const adminEngagementSchema = engagementSchema.extend({
+  amMember: z.boolean(),
+});
+export type AdminEngagement = z.infer<typeof adminEngagementSchema>;
 
 /** A user attached to an engagement, with their role on it. */
 export const engagementMemberSchema = z.object({
@@ -97,6 +121,8 @@ export const evidenceSchema = z.object({
   parentEvidenceUuid: uuidSchema.nullable(),
   /** How many comments (linked evidence) point at this piece of evidence. */
   commentCount: z.number().int().nonnegative(),
+  /** Whether the requesting user starred this evidence (per-user, like engagement favorites). */
+  starred: z.boolean().optional(),
 });
 export type Evidence = z.infer<typeof evidenceSchema>;
 

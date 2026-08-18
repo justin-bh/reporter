@@ -14,13 +14,20 @@ import {
   useDeleteFindingCategory,
   useFindingCategories,
 } from '../../api/hooks.js';
+import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 
 /**
  * Finding-category list + add form. Presentational block meant to live inside a
  * Settings Card. Categories are shared across all engagements; deleting one is a
  * soft-delete and existing findings keep their label.
  */
-export function CategoryManager({ slug }: { slug: string }) {
+export function CategoryManager({
+  slug,
+  readOnly = false,
+}: {
+  slug: string;
+  readOnly?: boolean;
+}) {
   const { data: categories, isLoading, isError, refetch } = useFindingCategories(slug);
   const create = useCreateFindingCategory(slug);
   const del = useDeleteFindingCategory(slug);
@@ -80,7 +87,9 @@ export function CategoryManager({ slug }: { slug: string }) {
               <button
                 type="button"
                 onClick={() => removeCategory(c.id, c.category)}
-                className="text-muted hover:text-danger"
+                disabled={readOnly}
+                title={readOnly ? READ_ONLY_TITLE : undefined}
+                className="text-muted hover:text-danger disabled:opacity-50"
                 aria-label={`Delete category ${c.category}`}
               >
                 ✕
@@ -97,11 +106,17 @@ export function CategoryManager({ slug }: { slug: string }) {
             <Input
               id="cat-name"
               value={name}
+              disabled={readOnly}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Access Control"
             />
           </Field>
-          <Button type="submit" loading={create.isPending} disabled={!name.trim()}>
+          <Button
+            type="submit"
+            loading={create.isPending}
+            disabled={readOnly || !name.trim()}
+            title={readOnly ? READ_ONLY_TITLE : undefined}
+          >
             Add
           </Button>
         </div>

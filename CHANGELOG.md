@@ -16,6 +16,45 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Admin → Engagements console.** A new fourth tab in the Admin area lists
+  every engagement on the server — any status, member or not — with member /
+  evidence / finding counts and the created date, a name/slug text filter plus a
+  status filter, and sortable columns. Each row links to the engagement and to
+  its settings (site admins can manage any engagement's settings), can be
+  deleted in place after a cascade warning, and engagements the admin isn't a
+  member of are marked "not a member". New admin-only
+  `GET /web/admin/engagements`.
+- **Admin user tools: recovery links, API-key control & TOTP reset.** The
+  Admin → Users tab gains per-user actions: **Recovery link** issues the
+  (previously API-only) one-time, 24-hour sign-in link and shows it in a modal
+  with copy-to-clipboard — and the link now works end to end via the new
+  `/login/recovery/:code` page and `POST /web/login/recovery` (single-use,
+  redeemed atomically, rate-limited like login). Redeeming a link flags the
+  account (`mustResetPassword`) so the user can set a new password once without
+  knowing the current one — Account → Security adapts accordingly; **API keys**
+  lists a user's client API keys (access key, last used, created — never the
+  secret) with per-key revocation; **Reset TOTP** clears a user's enrolled TOTP
+  secret (TOTP login enforcement is not yet enabled; only shown for users with
+  TOTP enrolled — the admin users list now reports `hasTotp`). New admin-only
+  `POST /web/admin/users/:slug/totp-reset` and
+  `GET`/`DELETE /web/admin/users/:slug/api-keys[/:accessKey]`.
+- **Evidence starring & new timeline filters.** Evidence can now be starred
+  per-user (like engagement favorites) straight from the timeline rows — the
+  star never navigates, and read-only members can star too. The timeline filter
+  bar gains a **Starred only** checkbox and a **Hide comments** checkbox that
+  hides evidence linked as comments on other evidence; both surface as removable
+  chips, work in saved queries, and round-trip through the Advanced raw-query
+  mode via the new `starred` / `no-comments` query keys. The evidence API now
+  returns `starred`, and the web API adds
+  `POST /web/engagements/:slug/evidence/:uuid/star`.
+- **Engagements list: filtering, favorites pinning & sortable table.** The
+  engagements page gains a filter bar (free-text match on name/slug plus a
+  status filter) that applies to both the card and table views, with a
+  clear-filters empty state when nothing matches. Starred engagements are always
+  pinned to the top of both views, and the table's Name / Status / Evidence /
+  Findings / Members columns are click-to-sort (text columns start ascending,
+  numeric columns start with the largest counts). New `SortableTh` primitive in
+  `@reporter/ui` for accessible sortable table headers.
 - **Engagement lifecycle dates.** Engagements now track a **start date** (set to
   creation time, editable), a user-entered **projected end date**, and an
   **actual end date** the server stamps automatically whenever an engagement moves
@@ -91,6 +130,23 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Changed
 
+- **Read-only members see disabled controls instead of 403 errors.** When your
+  role on an engagement is read-only, every mutating control on its web pages —
+  add/edit/delete evidence, comments, findings (incl. import, attach/detach,
+  captions, and drag reordering), saved queries, tags, and categories — now
+  renders greyed out with an explanatory tooltip instead of failing with a
+  permission error on click; admin-only Settings controls (details, members) do
+  the same for non-admin members. Site admins keep full controls on any
+  engagement, read-oriented actions (filters, starring, favorites, export
+  downloads) stay enabled for everyone, and the server still enforces every
+  rule.
+- **The Engagements page is membership-scoped for everyone.** Site admins no
+  longer see every engagement on the main Engagements page — it now lists only
+  the engagements they are a member of, matching its "Engagements you can
+  access" subtitle. The new **Admin → Engagements** tab is the all-engagements
+  surface. (Server-side, `GET /web/engagements` no longer special-cases
+  admins; the client API `GET /api/engagements` still returns everything for
+  admins so capture tools keep working.)
 - **Renamed the core "Operation" concept to "Engagement"** across the entire
   stack — the term red-teamers use for a scoped piece of work. This is a breaking
   change with no automatic data migration:

@@ -1,4 +1,5 @@
 import type {
+  ApiKey as DbApiKey,
   Evidence as DbEvidence,
   EvidenceFinding as DbEvidenceFinding,
   Finding as DbFinding,
@@ -9,6 +10,7 @@ import type {
   User as DbUser,
 } from '@prisma/client';
 import type {
+  ApiKey,
   Evidence,
   FindingEvidence,
   Finding,
@@ -19,7 +21,7 @@ import type {
   User,
 } from '@reporter/shared';
 
-export function serializeUser(u: DbUser): User {
+export function serializeUser(u: DbUser, extras: { mustResetPassword?: boolean } = {}): User {
   return {
     slug: u.slug,
     firstName: u.firstName,
@@ -28,6 +30,8 @@ export function serializeUser(u: DbUser): User {
     admin: u.admin,
     disabled: u.disabled,
     headless: u.headless,
+    // Only /web/me passes this — it lives on the local AuthIdentity, not the user.
+    mustResetPassword: extras.mustResetPassword,
   };
 }
 
@@ -57,6 +61,15 @@ export function serializeEngagement(
   };
 }
 
+/** Public API-key shape. The secret is never included (it is returned exactly once, at creation). */
+export function serializeApiKey(k: DbApiKey): ApiKey {
+  return {
+    accessKey: k.accessKey,
+    lastAuth: k.lastAuth?.toISOString() ?? null,
+    createdAt: k.createdAt.toISOString(),
+  };
+}
+
 export function serializeTag(t: DbTag): Tag {
   return { id: t.id, name: t.name, colorName: t.colorName };
 }
@@ -68,6 +81,8 @@ type EvidenceWithRelations = DbEvidence & {
   parent?: Pick<DbEvidence, 'uuid'> | null;
   /** Present when the include counts comments (linked evidence) on this item. */
   _count?: { comments: number };
+  /** The requesting user's pref only (see `evidenceInclude`); powers `starred`. */
+  userPrefs?: { isFavorite: boolean }[];
 };
 
 export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: string): Evidence {
@@ -88,6 +103,7 @@ export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: stri
     hasThumbnail: Boolean(e.thumbBlobKey),
     parentEvidenceUuid: e.parent?.uuid ?? null,
     commentCount: e._count?.comments ?? 0,
+    starred: e.userPrefs?.[0]?.isFavorite ?? false,
   };
 }
 
@@ -132,12 +148,18 @@ export function serializeSavedQuery(q: DbSavedQuery): SavedQuery {
   return { id: q.id, name: q.name, query: q.query, type: q.type };
 }
 
-/** Standard include for returning a fully-populated evidence row. */
-export const evidenceInclude = {
-  operator: { select: { slug: true, firstName: true, lastName: true } },
-  tags: { include: { tag: true } },
-  // Comment-linking: the parent (for `parentEvidenceUuid`) and the count of
-  // comments pointing at this item (for `commentCount`).
-  parent: { select: { uuid: true } },
-  _count: { select: { comments: true } },
-} as const;
+/**
+ * Standard include for returning a fully-populated evidence row, scoped to the
+ * requesting user so `starred` reflects — and only ever exposes — their pref.
+ */
+export function evidenceInclude(userId: number) {
+  return {
+    operator: { select: { slug: true, firstName: true, lastName: true } },
+    tags: { include: { tag: true } },
+    // Comment-linking: the parent (for `parentEvidenceUuid`) and the count of
+    // comments pointing at this item (for `commentCount`).
+    parent: { select: { uuid: true } },
+    _count: { select: { comments: true } },
+    userPrefs: { where: { userId }, select: { isFavorite: true } },
+  } as const;
+}

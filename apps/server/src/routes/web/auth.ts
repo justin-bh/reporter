@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { verifyPassword } from '../../auth/password.js';
@@ -78,6 +79,58 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // Redeem an admin-issued one-time recovery link (see POST /admin/users/:slug/recovery).
+  // Rate-limited like /login; the code is single-use and 24h-expiring.
+  app.post(
+    '/login/recovery',
+    { config: { rateLimit: { max: app.config.LOGIN_RATE_LIMIT_MAX, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { code } = z.object({ code: z.string().min(1) }).parse(req.body);
+      const codeHash = createHash('sha256').update(code).digest('hex');
+      const recovery = await app.db.recoveryCode.findUnique({
+        where: { codeHash },
+        include: { user: true },
+      });
+      const valid =
+        recovery &&
+        !recovery.usedAt &&
+        recovery.expiresAt > new Date() &&
+        !recovery.user.disabled &&
+        !recovery.user.deletedAt;
+      if (!valid) throw new HttpError(401, 'This recovery link is invalid or has expired');
+
+      // Atomic single-use claim: concurrent redemptions race on usedAt, and
+      // exactly one wins. Losers get the same 401 as an invalid code.
+      const claimed = await app.db.recoveryCode.updateMany({
+        where: { id: recovery.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new HttpError(401, 'This recovery link is invalid or has expired');
+      }
+
+      // Recovery implies the old credentials may be compromised: burn any
+      // other outstanding codes and revoke every existing session so only
+      // the recovery session can use the current-password waiver below.
+      await app.db.recoveryCode.updateMany({
+        where: { userId: recovery.user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      await app.db.session.deleteMany({ where: { userId: recovery.user.id } });
+
+      // The user signed in without their password, so require them to set a
+      // new one (the account password route waives "current password" once).
+      await app.db.authIdentity.updateMany({
+        where: { userId: recovery.user.id, scheme: 'local' },
+        data: { mustResetPassword: true, lastLogin: new Date() },
+      });
+
+      const token = await createSession(app.db, recovery.user.id);
+      setSessionCookie(app, reply, token);
+      return { user: serializeUser(recovery.user) };
+    },
+  );
+
   app.post('/logout', async (req, reply) => {
     await destroySession(app.db, req.cookies?.[SESSION_COOKIE]);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
@@ -86,6 +139,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/me', { preHandler: requireAuth }, async (req) => {
     const user = await app.db.user.findUniqueOrThrow({ where: { id: req.authedUser!.id } });
-    return { user: serializeUser(user) };
+    const identity = await app.db.authIdentity.findFirst({
+      where: { userId: user.id, scheme: 'local' },
+      select: { mustResetPassword: true },
+    });
+    return {
+      user: serializeUser(user, { mustResetPassword: identity?.mustResetPassword ?? false }),
+    };
   });
 }

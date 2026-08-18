@@ -62,6 +62,7 @@ model User {
   sessions     Session[]
   roles        UserEngagementRole[]
   prefs        UserEngagementPref[]
+  evidencePrefs UserEvidencePref[]
   evidence     Evidence[]
 
   @@map("users")
@@ -193,6 +194,19 @@ model UserEngagementPref {
   @@map("user_engagement_prefs")
 }
 
+model UserEvidencePref {
+  id         Int     @id @default(autoincrement())
+  userId     Int     @map("user_id")
+  evidenceId Int     @map("evidence_id")
+  isFavorite Boolean @default(false) @map("is_favorite")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, evidenceId])
+  @@map("user_evidence_prefs")
+}
+
 model Tag {
   id          Int    @id @default(autoincrement())
   engagementId Int    @map("engagement_id")
@@ -241,6 +255,7 @@ model Evidence {
   tags      EvidenceTag[]
   findings  EvidenceFinding[]
   metadata  EvidenceMetadata[]
+  userPrefs UserEvidencePref[]
 
   @@index([engagementId, occurredAt])
   @@index([parentEvidenceId])

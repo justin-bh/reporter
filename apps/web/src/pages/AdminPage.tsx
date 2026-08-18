@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
@@ -10,6 +11,8 @@ import {
   Field,
   Input,
   Modal,
+  Select,
+  SortableTh,
   Spinner,
   Table,
   Tabs,
@@ -21,10 +24,29 @@ import {
   Tr,
   useConfirm,
   useToast,
+  type SortDirection,
 } from '@reporter/ui';
-import { defaultTagColorFor } from '@reporter/shared';
+import {
+  ENGAGEMENT_STATUSES,
+  defaultTagColorFor,
+  type AdminEngagement,
+  type AdminUser,
+  type EngagementStatus,
+} from '@reporter/shared';
 import { api } from '../api/client.js';
-import { useCreateUser, useUpdateUser, useUsers } from '../api/hooks.js';
+import {
+  useAdminEngagements,
+  useCreateUser,
+  useDeleteEngagement,
+  useGenerateRecoveryLink,
+  useResetTotp,
+  useRevokeUserApiKey,
+  useUpdateUser,
+  useUserApiKeys,
+  useUsers,
+} from '../api/hooks.js';
+import { formatDate, formatDateTime } from '../lib/format.js';
+import { copyToClipboard } from '../lib/clipboard.js';
 
 export function AdminPage() {
   const [tab, setTab] = useState('users');
@@ -39,11 +61,13 @@ export function AdminPage() {
           { key: 'users', label: 'Users' },
           { key: 'default-tags', label: 'Default tags' },
           { key: 'categories', label: 'Finding categories' },
+          { key: 'engagements', label: 'Engagements' },
         ]}
       />
       {tab === 'users' && <UsersTab />}
       {tab === 'default-tags' && <DefaultTagsTab />}
       {tab === 'categories' && <CategoriesTab />}
+      {tab === 'engagements' && <EngagementsTab />}
     </div>
   );
 }
@@ -51,7 +75,38 @@ export function AdminPage() {
 function UsersTab() {
   const { data: users, isLoading, isError, refetch } = useUsers();
   const updateUser = useUpdateUser();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const recovery = useGenerateRecoveryLink();
+  const resetTotp = useResetTotp();
   const [creating, setCreating] = useState(false);
+  const [recoveryFor, setRecoveryFor] = useState<{ user: AdminUser; url: string } | null>(null);
+  const [apiKeysFor, setApiKeysFor] = useState<AdminUser | null>(null);
+
+  async function generateRecovery(u: AdminUser) {
+    try {
+      const { recoveryUrl } = await recovery.mutateAsync(u.slug);
+      setRecoveryFor({ user: u, url: recoveryUrl });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not generate a recovery link');
+    }
+  }
+
+  async function confirmResetTotp(u: AdminUser) {
+    const ok = await confirm({
+      title: 'Reset TOTP',
+      message: `Reset TOTP for ${u.firstName} ${u.lastName}? This clears their authenticator secret. (TOTP login enforcement is not yet enabled.)`,
+      confirmLabel: 'Reset TOTP',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await resetTotp.mutateAsync(u.slug);
+      toast.success('TOTP reset');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not reset TOTP');
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -72,6 +127,7 @@ function UsersTab() {
               <Th>Email</Th>
               <Th>Admin</Th>
               <Th>Status</Th>
+              <Th />
             </Tr>
           </Thead>
           <Tbody>
@@ -107,13 +163,151 @@ function UsersTab() {
                     )}
                   </button>
                 </Td>
+                <Td className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={recovery.isPending && recovery.variables === u.slug}
+                      onClick={() => generateRecovery(u)}
+                    >
+                      Recovery link
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setApiKeysFor(u)}>
+                      API keys
+                    </Button>
+                    {u.hasTotp && (
+                      <Button variant="ghost" size="sm" onClick={() => confirmResetTotp(u)}>
+                        Reset TOTP
+                      </Button>
+                    )}
+                  </div>
+                </Td>
               </Tr>
             ))}
           </Tbody>
         </Table>
       )}
       <CreateUserModal open={creating} onClose={() => setCreating(false)} />
+      <RecoveryLinkModal recovery={recoveryFor} onClose={() => setRecoveryFor(null)} />
+      <UserApiKeysModal user={apiKeysFor} onClose={() => setApiKeysFor(null)} />
     </div>
+  );
+}
+
+function RecoveryLinkModal({
+  recovery,
+  onClose,
+}: {
+  recovery: { user: AdminUser; url: string } | null;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  return (
+    <Modal
+      open={Boolean(recovery)}
+      onClose={onClose}
+      title="One-time recovery link"
+      footer={<Button onClick={onClose}>Done</Button>}
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-text">
+          Share this link with{' '}
+          <span className="font-semibold">
+            {recovery?.user.firstName} {recovery?.user.lastName}
+          </span>{' '}
+          over a trusted channel. It signs them in once, without a password.
+        </p>
+        <div className="rounded-input border border-border bg-surface-2 p-2">
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all font-mono text-xs">{recovery?.url}</code>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="flex-none"
+              onClick={async () => {
+                const ok = await copyToClipboard(recovery?.url ?? '');
+                if (ok) toast.success('Recovery link copied');
+                else toast.error('Copy failed — select the link and copy manually');
+              }}
+            >
+              Copy
+            </Button>
+          </div>
+        </div>
+        <p className="text-sm text-warning">
+          The link expires in 24 hours, works exactly once, and won’t be shown again.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function UserApiKeysModal({ user, onClose }: { user: AdminUser | null; onClose: () => void }) {
+  const { data: keys, isLoading, isError, refetch } = useUserApiKeys(user?.slug ?? null);
+  const revoke = useRevokeUserApiKey();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function confirmRevoke(accessKey: string) {
+    if (!user) return;
+    const ok = await confirm({
+      title: 'Revoke API key',
+      message: `Revoke this API key belonging to ${user.firstName} ${user.lastName}? Any desktop app or reporter-term using it will stop working immediately.`,
+      confirmLabel: 'Revoke',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await revoke.mutateAsync({ slug: user.slug, accessKey });
+      toast.success('API key revoked');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not revoke the API key');
+    }
+  }
+
+  return (
+    <Modal
+      open={Boolean(user)}
+      onClose={onClose}
+      title={user ? `API keys — ${user.firstName} ${user.lastName}` : 'API keys'}
+      footer={<Button onClick={onClose}>Done</Button>}
+    >
+      {isLoading ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorState description="Couldn’t load their API keys." onRetry={() => refetch()} />
+      ) : !keys || keys.length === 0 ? (
+        <p className="text-sm text-muted">
+          This user has no API keys. They can create one under Account → API keys.
+        </p>
+      ) : (
+        <Table>
+          <Thead>
+            <Tr>
+              <Th>Access key</Th>
+              <Th>Last used</Th>
+              <Th>Created</Th>
+              <Th />
+            </Tr>
+          </Thead>
+          <Tbody>
+            {keys.map((k) => (
+              <Tr key={k.accessKey}>
+                <Td className="font-mono text-xs">{k.accessKey}</Td>
+                <Td>{k.lastAuth ? formatDateTime(k.lastAuth) : <Badge>never</Badge>}</Td>
+                <Td>{formatDateTime(k.createdAt)}</Td>
+                <Td className="text-right">
+                  <Button variant="ghost" size="sm" onClick={() => confirmRevoke(k.accessKey)}>
+                    Revoke
+                  </Button>
+                </Td>
+              </Tr>
+            ))}
+          </Tbody>
+        </Table>
+      )}
+    </Modal>
   );
 }
 
@@ -370,5 +564,246 @@ function CategoriesTab() {
         </Button>
       </div>
     </Card>
+  );
+}
+
+const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
+
+type EngSortColumn = 'name' | 'status' | 'members' | 'evidence' | 'findings' | 'created';
+
+// Numeric columns start descending (most first); text columns start ascending;
+// created starts with the newest.
+const ENG_FIRST_CLICK: Record<EngSortColumn, SortDirection> = {
+  name: 'asc',
+  status: 'asc',
+  members: 'desc',
+  evidence: 'desc',
+  findings: 'desc',
+  created: 'desc',
+};
+
+// Lifecycle order, not alphabetical.
+const STATUS_ORDER: Record<EngagementStatus, number> = { active: 0, complete: 1, archived: 2 };
+
+function compareAdminEngagements(column: EngSortColumn, direction: SortDirection) {
+  const dir = direction === 'asc' ? 1 : -1;
+  return (a: AdminEngagement, b: AdminEngagement): number => {
+    switch (column) {
+      case 'name':
+        return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      case 'status':
+        return dir * (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+      case 'members':
+        return dir * ((a.numUsers ?? 0) - (b.numUsers ?? 0));
+      case 'evidence':
+        return dir * ((a.numEvidence ?? 0) - (b.numEvidence ?? 0));
+      case 'findings':
+        return dir * ((a.numFindings ?? 0) - (b.numFindings ?? 0));
+      case 'created':
+        // ISO timestamps compare correctly as strings.
+        return dir * a.createdAt.localeCompare(b.createdAt);
+    }
+  };
+}
+
+function EngagementsTab() {
+  const { data: engagements, isLoading, isError, refetch } = useAdminEngagements();
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<EngagementStatus | 'all'>('all');
+  const [sort, setSort] = useState<{ column: EngSortColumn; direction: SortDirection } | null>(
+    null,
+  );
+
+  const filtersActive = search.trim() !== '' || status !== 'all';
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (engagements ?? []).filter(
+      (e) =>
+        (status === 'all' || e.status === status) &&
+        (!q || e.name.toLowerCase().includes(q) || e.slug.toLowerCase().includes(q)),
+    );
+  }, [engagements, search, status]);
+
+  // Server order (createdAt desc) is kept until a column is clicked — sort() is stable.
+  const ordered = useMemo(() => {
+    if (!sort) return filtered;
+    return [...filtered].sort(compareAdminEngagements(sort.column, sort.direction));
+  }, [filtered, sort]);
+
+  const toggleSort = (column: EngSortColumn) =>
+    setSort(
+      sort?.column === column
+        ? { column, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+        : { column, direction: ENG_FIRST_CLICK[column] },
+    );
+  const directionOf = (column: EngSortColumn) =>
+    sort?.column === column ? sort.direction : undefined;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">
+        Every engagement on this server, including ones you’re not a member of.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter engagements…"
+          aria-label="Filter engagements by name or slug"
+          className="max-w-xs"
+        />
+        <div className="w-40">
+          <Select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as EngagementStatus | 'all')}
+            aria-label="Filter by status"
+          >
+            <option value="all">All statuses</option>
+            {ENGAGEMENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <Spinner size={26} />
+        </div>
+      ) : isError ? (
+        <ErrorState description="Couldn’t load engagements." onRetry={() => refetch()} />
+      ) : !engagements || engagements.length === 0 ? (
+        <EmptyState
+          title="No engagements yet"
+          description="Engagements created by anyone on this server will appear here."
+        />
+      ) : filtered.length === 0 && filtersActive ? (
+        <EmptyState
+          title="No engagements match your filters"
+          description="Try a different search or status."
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setSearch('');
+                setStatus('all');
+              }}
+            >
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <Table>
+          <Thead>
+            <Tr>
+              <SortableTh direction={directionOf('name')} onSort={() => toggleSort('name')}>
+                Name
+              </SortableTh>
+              <SortableTh direction={directionOf('status')} onSort={() => toggleSort('status')}>
+                Status
+              </SortableTh>
+              <SortableTh
+                align="right"
+                direction={directionOf('members')}
+                onSort={() => toggleSort('members')}
+              >
+                Members
+              </SortableTh>
+              <SortableTh
+                align="right"
+                direction={directionOf('evidence')}
+                onSort={() => toggleSort('evidence')}
+              >
+                Evidence
+              </SortableTh>
+              <SortableTh
+                align="right"
+                direction={directionOf('findings')}
+                onSort={() => toggleSort('findings')}
+              >
+                Findings
+              </SortableTh>
+              <SortableTh direction={directionOf('created')} onSort={() => toggleSort('created')}>
+                Created
+              </SortableTh>
+              <Th />
+            </Tr>
+          </Thead>
+          <Tbody>
+            {ordered.map((eng) => (
+              <AdminEngagementRow key={eng.slug} eng={eng} />
+            ))}
+          </Tbody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function AdminEngagementRow({ eng }: { eng: AdminEngagement }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const remove = useDeleteEngagement(eng.slug);
+
+  async function confirmDelete() {
+    const ok = await confirm({
+      title: 'Delete engagement',
+      message: `Delete “${eng.name}”? This permanently removes the engagement and all of its evidence, findings, tags, saved queries, and members. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await remove.mutateAsync();
+      toast.success('Engagement deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete engagement');
+    }
+  }
+
+  return (
+    <Tr>
+      <Td>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/engagements/${eng.slug}/evidence`}
+            className="font-medium text-text hover:text-accent"
+          >
+            {eng.name}
+          </Link>
+          {!eng.amMember && <span className="text-xs text-muted">not a member</span>}
+        </div>
+      </Td>
+      <Td>
+        <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
+      </Td>
+      <Td className="text-right tabular-nums">{eng.numUsers ?? 0}</Td>
+      <Td className="text-right tabular-nums">{eng.numEvidence ?? 0}</Td>
+      <Td className="text-right tabular-nums">{eng.numFindings ?? 0}</Td>
+      <Td className="text-muted">{formatDate(eng.createdAt)}</Td>
+      <Td className="text-right">
+        <div className="flex justify-end gap-1">
+          {/* Ghost-button look, but a real link (no nested interactive elements). */}
+          <Link
+            to={`/engagements/${eng.slug}/settings`}
+            className="inline-flex h-8 items-center rounded-input px-3 text-sm font-medium text-text transition-colors hover:bg-surface-2"
+          >
+            Settings
+          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-danger"
+            onClick={confirmDelete}
+            loading={remove.isPending}
+          >
+            Delete
+          </Button>
+        </div>
+      </Td>
+    </Tr>
   );
 }

@@ -20,7 +20,14 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
       const { slug } = req.params as { slug: string };
       const query = (req.query as { q?: string }).q ?? '';
       const eng = await engagementBySlug(app, slug);
-      return listEvidence(app, eng.id, slug, parseQuery(query), parsePagination(req.query as any));
+      return listEvidence(
+        app,
+        eng.id,
+        slug,
+        parseQuery(query),
+        parsePagination(req.query as any),
+        req.authedUser!.id,
+      );
     },
   );
 
@@ -70,10 +77,33 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
       const eng = await engagementBySlug(app, slug);
       const ev = await app.db.evidence.findFirst({
         where: { uuid, engagementId: eng.id },
-        include: evidenceInclude,
+        include: evidenceInclude(req.authedUser!.id),
       });
       if (!ev) throw new HttpError(404, 'Evidence not found');
       return serializeEvidence(ev, slug);
+    },
+  );
+
+  // Star / unstar a piece of evidence for the current user. Read-only members
+  // may star too — it's a personal marker, like engagement favorites.
+  app.post(
+    '/engagements/:slug/evidence/:uuid/star',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req) => {
+      const { slug, uuid } = req.params as { slug: string; uuid: string };
+      const { starred } = z.object({ starred: z.boolean() }).parse(req.body);
+      const eng = await engagementBySlug(app, slug);
+      const ev = await app.db.evidence.findFirst({
+        where: { uuid, engagementId: eng.id },
+        select: { id: true },
+      });
+      if (!ev) throw new HttpError(404, 'Evidence not found');
+      await app.db.userEvidencePref.upsert({
+        where: { userId_evidenceId: { userId: req.authedUser!.id, evidenceId: ev.id } },
+        create: { userId: req.authedUser!.id, evidenceId: ev.id, isFavorite: starred },
+        update: { isFavorite: starred },
+      });
+      return { starred };
     },
   );
 
@@ -124,7 +154,7 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
       if (!parent) throw new HttpError(404, 'Evidence not found');
       const comments = await app.db.evidence.findMany({
         where: { parentEvidenceId: parent.id },
-        include: evidenceInclude,
+        include: evidenceInclude(req.authedUser!.id),
         orderBy: { occurredAt: 'asc' },
       });
       return comments.map((c) => serializeEvidence(c, slug));
@@ -171,7 +201,7 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
 
       const updated = await app.db.evidence.findUniqueOrThrow({
         where: { id: ev.id },
-        include: evidenceInclude,
+        include: evidenceInclude(req.authedUser!.id),
       });
       return serializeEvidence(updated, slug);
     },

@@ -1,21 +1,30 @@
 import { randomBytes, createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { defaultTagColorFor } from '@reporter/shared';
+import { defaultTagColorFor, type AdminEngagement, type AdminUser } from '@reporter/shared';
 import { HttpError, requireAdmin, requireAuth } from '../../auth/guards.js';
 import { createLocalUser } from '../../services/users.js';
-import { serializeUser } from '../../services/serializers.js';
+import {
+  serializeApiKey,
+  serializeEngagement,
+  serializeUser,
+} from '../../services/serializers.js';
 
 const adminGuard = [requireAuth, requireAdmin];
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // --- Users ---
-  app.get('/admin/users', { preHandler: adminGuard }, async () => {
+  app.get('/admin/users', { preHandler: adminGuard }, async (): Promise<AdminUser[]> => {
     const users = await app.db.user.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: 'asc' },
+      // Filter in the query — never materialize TOTP secrets for a list view.
+      include: { identities: { where: { totpSecret: { not: null } }, select: { id: true } } },
     });
-    return users.map(serializeUser);
+    return users.map((u) => ({
+      ...serializeUser(u),
+      hasTotp: u.identities.length > 0,
+    }));
   });
 
   app.post('/admin/users', { preHandler: adminGuard }, async (req, reply) => {
@@ -82,6 +91,69 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     // The code is returned once; the admin shares the /login/recovery/<code> link.
     return { recoveryUrl: `${app.config.APP_URL}/login/recovery/${code}` };
   });
+
+  // Clear the user's TOTP secret(s) so they re-enroll on next login. A no-op
+  // (nothing enrolled) still succeeds; `hadTotp` tells the caller which it was.
+  app.post('/admin/users/:slug/totp-reset', { preHandler: adminGuard }, async (req) => {
+    const { slug } = req.params as { slug: string };
+    const user = await app.db.user.findUnique({ where: { slug } });
+    if (!user) throw new HttpError(404, 'User not found');
+    const { count } = await app.db.authIdentity.updateMany({
+      where: { userId: user.id, totpSecret: { not: null } },
+      data: { totpSecret: null },
+    });
+    return { ok: true, hadTotp: count > 0 };
+  });
+
+  // --- Per-user API keys (visibility + revocation) ---
+  app.get('/admin/users/:slug/api-keys', { preHandler: adminGuard }, async (req) => {
+    const { slug } = req.params as { slug: string };
+    const user = await app.db.user.findUnique({ where: { slug } });
+    if (!user) throw new HttpError(404, 'User not found');
+    const keys = await app.db.apiKey.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    return keys.map(serializeApiKey);
+  });
+
+  app.delete(
+    '/admin/users/:slug/api-keys/:accessKey',
+    { preHandler: adminGuard },
+    async (req) => {
+      const { slug, accessKey } = req.params as { slug: string; accessKey: string };
+      const user = await app.db.user.findUnique({ where: { slug } });
+      if (!user) throw new HttpError(404, 'User not found');
+      const key = await app.db.apiKey.findUnique({ where: { accessKey } });
+      if (!key || key.userId !== user.id) throw new HttpError(404, 'API key not found');
+      await app.db.apiKey.delete({ where: { id: key.id } });
+      return { ok: true };
+    },
+  );
+
+  // --- Engagements (site-wide view; per-engagement mutations reuse the
+  // /engagements/:slug routes, which site admins already bypass into) ---
+  app.get(
+    '/admin/engagements',
+    { preHandler: adminGuard },
+    async (req): Promise<AdminEngagement[]> => {
+      const engs = await app.db.engagement.findMany({
+        include: {
+          _count: { select: { evidence: true, roles: true, findings: true } },
+          roles: { where: { userId: req.authedUser!.id }, select: { role: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      return engs.map((eng) => ({
+        ...serializeEngagement(eng, {
+          numUsers: eng._count.roles,
+          numEvidence: eng._count.evidence,
+          numFindings: eng._count.findings,
+        }),
+        amMember: eng.roles.length > 0,
+      }));
+    },
+  );
 
   // --- Default tags ---
   app.get('/admin/default-tags', { preHandler: adminGuard }, async () => {

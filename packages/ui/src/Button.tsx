@@ -14,13 +14,15 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const base =
   'inline-flex items-center justify-center gap-2 font-medium rounded-input transition-colors ' +
-  'disabled:opacity-50 disabled:pointer-events-none select-none';
+  'disabled:opacity-50 select-none';
 
+// Hover styles are enabled-only: disabled buttons stay hoverable (so their
+// `title` explanation shows) but must not shift color.
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-accent-contrast hover:bg-accent-hover',
-  secondary: 'bg-surface-2 text-text border border-border hover:bg-border',
-  ghost: 'bg-transparent text-text hover:bg-surface-2',
-  danger: 'bg-danger text-white hover:bg-danger-hover',
+  primary: 'bg-accent text-accent-contrast enabled:hover:bg-accent-hover',
+  secondary: 'bg-surface-2 text-text border border-border enabled:hover:bg-border',
+  ghost: 'bg-transparent text-text enabled:hover:bg-surface-2',
+  danger: 'bg-danger text-white enabled:hover:bg-danger-hover',
 };
 
 const sizes: Record<ButtonSize, string> = {

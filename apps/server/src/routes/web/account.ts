@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { HttpError, requireAuth } from '../../auth/guards.js';
 import { hashPassword, verifyPassword } from '../../auth/password.js';
 import { generateApiKey } from '../../services/apikeys.js';
-import { serializeUser } from '../../services/serializers.js';
+import { serializeApiKey, serializeUser } from '../../services/serializers.js';
 
 export async function accountRoutes(app: FastifyInstance): Promise<void> {
   app.get('/account/api-keys', { preHandler: requireAuth }, async (req) => {
@@ -11,12 +11,7 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
       where: { userId: req.authedUser!.id },
       orderBy: { createdAt: 'desc' },
     });
-    // Never return secretKey.
-    return keys.map((k) => ({
-      accessKey: k.accessKey,
-      lastAuth: k.lastAuth?.toISOString() ?? null,
-      createdAt: k.createdAt.toISOString(),
-    }));
+    return keys.map(serializeApiKey);
   });
 
   app.post('/account/api-keys', { preHandler: requireAuth }, async (req, reply) => {
@@ -44,17 +39,21 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/account/password', { preHandler: requireAuth }, async (req) => {
     const { currentPassword, newPassword } = z
-      .object({ currentPassword: z.string(), newPassword: z.string().min(8) })
+      .object({ currentPassword: z.string().optional(), newPassword: z.string().min(8) })
       .parse(req.body);
 
     const identity = await app.db.authIdentity.findFirst({
       where: { userId: req.authedUser!.id, scheme: 'local' },
     });
-    if (
-      !identity?.passwordHash ||
-      !(await verifyPassword(identity.passwordHash, currentPassword))
-    ) {
-      throw new HttpError(400, 'Current password is incorrect');
+    if (!identity) throw new HttpError(400, 'Current password is incorrect');
+    // A pending reset (recovery-link sign-in) waives the current password once;
+    // otherwise it is required and must verify.
+    if (!identity.mustResetPassword) {
+      const ok =
+        identity.passwordHash &&
+        currentPassword &&
+        (await verifyPassword(identity.passwordHash, currentPassword));
+      if (!ok) throw new HttpError(400, 'Current password is incorrect');
     }
     await app.db.authIdentity.update({
       where: { id: identity.id },

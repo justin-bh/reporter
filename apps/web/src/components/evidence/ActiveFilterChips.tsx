@@ -44,7 +44,8 @@ function RemovableChip({ label, onRemove }: { label: string; onRemove: () => voi
 
 /**
  * Renders one removable chip per active constraint, in the same canonical order
- * as `stringifyQuery` (tags, operators, types, dates, uuids, finding), plus a
+ * as `stringifyQuery` (tags, operators, types, dates, uuids, finding, starred,
+ * comments), plus a
  * Clear-all action. Free-text and sort are not chipped — they live in the search
  * box and the Sort control respectively.
  */
@@ -65,7 +66,9 @@ export function ActiveFilterChips({
     parsed.types.length > 0 ||
     parsed.dateRanges.length > 0 ||
     parsed.uuids.length > 0 ||
-    parsed.withFinding !== undefined;
+    parsed.withFinding !== undefined ||
+    parsed.starred !== undefined ||
+    parsed.noComments !== undefined;
 
   if (!hasChips) {
     return isEmptyQuery(parsed) ? (
@@ -89,6 +92,8 @@ export function ActiveFilterChips({
   const removeUuid = (u: string) =>
     onChange({ ...parsed, uuids: parsed.uuids.filter((x) => x !== u) });
   const clearFinding = () => onChange({ ...parsed, withFinding: undefined });
+  const clearStarred = () => onChange({ ...parsed, starred: undefined });
+  const clearNoComments = () => onChange({ ...parsed, noComments: undefined });
 
   const clearAll = () =>
     onChange({
@@ -99,6 +104,8 @@ export function ActiveFilterChips({
       dateRanges: [],
       uuids: [],
       withFinding: undefined,
+      starred: undefined,
+      noComments: undefined,
       sortAsc: parsed.sortAsc,
     });
 
@@ -145,6 +152,15 @@ export function ActiveFilterChips({
           label={parsed.withFinding ? 'With a finding' : 'Without a finding'}
           onRemove={clearFinding}
         />
+      )}
+      {parsed.starred !== undefined && (
+        <RemovableChip
+          label={parsed.starred ? 'Starred' : 'Not starred'}
+          onRemove={clearStarred}
+        />
+      )}
+      {parsed.noComments !== undefined && (
+        <RemovableChip label="Comments hidden" onRemove={clearNoComments} />
       )}
       <Button variant="ghost" size="sm" onClick={clearAll}>
         Clear all

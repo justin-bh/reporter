@@ -69,6 +69,10 @@ Tag colors are a fixed 12-swatch palette shared from `@reporter/shared` (`TAG_CO
 
 `apps/term/src/theme.ts` maps the palette to ANSI: accent = teal, success = green, warning = yellow, danger = red, muted = gray. Symbols match GUI toast semantics: `✔` success, `✖` error, `⚠` warning, `›` prompt. Same glossary and tone as the GUI.
 
+## Read-only & insufficient-role controls
+
+When the user lacks the role a control needs, render it **disabled with a `title` explaining why** (`READ_ONLY_TITLE` / `ADMIN_ONLY_TITLE` from `apps/web/src/lib/permissions.ts`) — don't hide it. Inputs disable along with their save buttons, so a whole form reads as inert rather than a form that fails on submit. Never add `pointer-events-none` to disabled controls: it suppresses the explanatory tooltip.
+
 ## Accessibility baseline
 
 - Contrast ≥ 4.5:1 for text (tokens above are chosen to pass in both themes).

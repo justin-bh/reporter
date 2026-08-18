@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Button, Input } from '@reporter/ui';
+import { Button, Checkbox, Input } from '@reporter/ui';
 import { parseQuery, stringifyQuery, type ParsedQuery } from '@reporter/shared';
 import { useEvidenceOperators, useTags, type EvidenceOperator } from '../../api/hooks.js';
+import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { ActiveFilterChips } from './ActiveFilterChips.js';
 import { TagsFilter } from './filters/TagsFilter.js';
 import { TypeFilter } from './filters/TypeFilter.js';
@@ -27,6 +28,7 @@ export function FilterBar({
   onChange,
   operatorsOnPage,
   onAdd,
+  canAdd,
   onExpandAll,
   onCollapseAll,
   showGroupControls,
@@ -36,6 +38,8 @@ export function FilterBar({
   onChange: (next: ParsedQuery) => void;
   operatorsOnPage: EvidenceOperator[];
   onAdd: () => void;
+  /** The user may create evidence here; false renders Add evidence disabled. */
+  canAdd: boolean;
   onExpandAll: () => void;
   onCollapseAll: () => void;
   showGroupControls: boolean;
@@ -115,6 +119,17 @@ export function FilterBar({
             onChange({ ...parsed, withFinding: next.withFinding, sortAsc: next.sortAsc })
           }
         />
+        {/* Unchecking clears the constraint (undefined), not "starred:false". */}
+        <Checkbox
+          label="Starred only"
+          checked={parsed.starred === true}
+          onChange={(e) => onChange({ ...parsed, starred: e.target.checked ? true : undefined })}
+        />
+        <Checkbox
+          label="Hide comments"
+          checked={parsed.noComments === true}
+          onChange={(e) => onChange({ ...parsed, noComments: e.target.checked ? true : undefined })}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           {showGroupControls && (
@@ -127,7 +142,12 @@ export function FilterBar({
               </Button>
             </>
           )}
-          <Button size="sm" onClick={onAdd}>
+          <Button
+            size="sm"
+            onClick={onAdd}
+            disabled={!canAdd}
+            title={canAdd ? undefined : READ_ONLY_TITLE}
+          >
             Add evidence
           </Button>
         </div>
@@ -169,7 +189,8 @@ export function FilterBar({
           <p className="text-xs text-muted">
             Keys: <code>tag:</code> <code>type:</code> <code>operator:</code>{' '}
             <code>range:from,to</code> <code>uuid:</code> <code>with-finding</code>{' '}
-            <code>without-finding</code> <code>sort:asc</code>. Quote multi-word values.
+            <code>without-finding</code> <code>starred</code> <code>no-comments</code>{' '}
+            <code>sort:asc</code>. Quote multi-word values.
           </p>
         </form>
       )}

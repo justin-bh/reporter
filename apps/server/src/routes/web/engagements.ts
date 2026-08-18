@@ -10,11 +10,12 @@ import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards
 import { serializeEngagement, serializeUser } from '../../services/serializers.js';
 
 export async function engagementRoutes(app: FastifyInstance): Promise<void> {
-  // List engagements visible to the current user (admins see all).
+  // List the engagements the user is a member of — for everyone, site admins
+  // included. The all-engagements view lives at GET /web/admin/engagements.
   app.get('/engagements', { preHandler: requireAuth }, async (req) => {
     const user = req.authedUser!;
     const engs = await app.db.engagement.findMany({
-      where: user.admin ? {} : { roles: { some: { userId: user.id } } },
+      where: { roles: { some: { userId: user.id } } },
       include: {
         _count: { select: { evidence: true, roles: true, findings: true } },
         roles: { where: { userId: user.id }, select: { role: true } },
