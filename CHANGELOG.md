@@ -110,6 +110,16 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Fixed
 
+- **`docker compose build` for the server image no longer fails compiling
+  `node-pty`.** The desktop app's `dbus-next` dependency pulls in an optional
+  `usocket`, which pinned `node-gyp@7.1.2` into the lockfile. That old node-gyp
+  got hoisted and used to build `node-pty` (needed only by `reporter-term`)
+  during the server image's `pnpm install`, and it can't compile against Node
+  22.2x (`gyp ERR! Cannot assign to read only property 'cflags'`). Added a pnpm
+  override pinning `node-gyp` to `9.4.1` (the version `@electron/rebuild`
+  already resolves), which collapses the toolchain to one Node-22-capable
+  node-gyp and drops the 7.1.2 subtree from the lockfile. Node stays at 22 and
+  the terminal recorder still builds/loads `node-pty`.
 - **Sign out reliably returns to the login screen.** Signing out could leave the
   user on the app with a "Couldn't load your engagements" error instead of the
   login page, because protected queries refetched (and 401'd) before the auth
