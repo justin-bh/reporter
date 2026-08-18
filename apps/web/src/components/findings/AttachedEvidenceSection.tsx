@@ -7,7 +7,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import {
   SortableContext,
   arrayMove,
@@ -81,7 +81,7 @@ export function AttachedEvidenceSection({
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          modifiers={[restrictToVerticalAxis]}
           onDragEnd={onDragEnd}
         >
           <SortableContext items={items.map((e) => e.uuid)} strategy={verticalListSortingStrategy}>
