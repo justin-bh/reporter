@@ -23,6 +23,7 @@ import {
   useReorderEvidence,
   useUpdateFindingEvidence,
 } from '../../api/hooks.js';
+import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { FindingEvidenceCard } from './FindingEvidenceCard.js';
 
 /**
@@ -34,11 +35,14 @@ export function AttachedEvidenceSection({
   findingUuid,
   items,
   onAttach,
+  canWrite,
 }: {
   slug: string;
   findingUuid: string;
   items: FindingEvidence[];
   onAttach: () => void;
+  /** The user may edit the finding; false renders every mutating control disabled. */
+  canWrite: boolean;
 }) {
   const reorder = useReorderEvidence(slug, findingUuid);
 
@@ -62,7 +66,13 @@ export function AttachedEvidenceSection({
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text">Attached Evidence ({items.length})</h3>
-        <Button size="sm" variant="secondary" onClick={onAttach}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onAttach}
+          disabled={!canWrite}
+          title={canWrite ? undefined : READ_ONLY_TITLE}
+        >
           Attach
         </Button>
       </div>
@@ -72,7 +82,13 @@ export function AttachedEvidenceSection({
           title="No attached evidence yet."
           description="Attach evidence that supports this finding but isn't part of the ordered attack path."
           action={
-            <Button size="sm" variant="secondary" onClick={onAttach}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onAttach}
+              disabled={!canWrite}
+              title={canWrite ? undefined : READ_ONLY_TITLE}
+            >
               Attach
             </Button>
           }
@@ -87,7 +103,13 @@ export function AttachedEvidenceSection({
           <SortableContext items={items.map((e) => e.uuid)} strategy={verticalListSortingStrategy}>
             <ul className="flex flex-col gap-2">
               {items.map((ev) => (
-                <SortableAttached key={ev.uuid} slug={slug} findingUuid={findingUuid} ev={ev} />
+                <SortableAttached
+                  key={ev.uuid}
+                  slug={slug}
+                  findingUuid={findingUuid}
+                  ev={ev}
+                  canWrite={canWrite}
+                />
               ))}
             </ul>
           </SortableContext>
@@ -101,10 +123,12 @@ function SortableAttached({
   slug,
   findingUuid,
   ev,
+  canWrite,
 }: {
   slug: string;
   findingUuid: string;
   ev: FindingEvidence;
+  canWrite: boolean;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -112,6 +136,7 @@ function SortableAttached({
   const update = useUpdateFindingEvidence(slug, findingUuid);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ev.uuid,
+    disabled: !canWrite,
   });
 
   async function onDetach() {
@@ -155,6 +180,7 @@ function SortableAttached({
         onMove={onMove}
         onDetach={onDetach}
         moving={update.isPending}
+        readOnly={!canWrite}
       />
     </li>
   );

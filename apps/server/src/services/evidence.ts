@@ -96,7 +96,7 @@ export async function createEvidence(
       occurredAt,
       tags: { create: validTags.map((t) => ({ tagId: t.id })) },
     },
-    include: evidenceInclude,
+    include: evidenceInclude(args.operatorId),
   });
 
   return serializeEvidence(created, args.engagementSlug);
@@ -109,19 +109,21 @@ export interface EvidenceListResult {
   pageSize: number;
 }
 
-/** List evidence for an engagement, filtered by a parsed timeline query. */
+/** List evidence for an engagement, filtered by a parsed timeline query.
+ *  `userId` scopes the per-user bits: the `starred` flag and the starred filter. */
 export async function listEvidence(
   app: FastifyInstance,
   engagementId: number,
   engagementSlug: string,
   query: ParsedQuery,
   pagination: Pagination,
+  userId: number,
 ): Promise<EvidenceListResult> {
-  const where = buildEvidenceWhere(query, engagementId);
+  const where = buildEvidenceWhere(query, engagementId, userId);
   const [rows, total] = await app.db.$transaction([
     app.db.evidence.findMany({
       where,
-      include: evidenceInclude,
+      include: evidenceInclude(userId),
       orderBy: { occurredAt: query.sortAsc ? 'asc' : 'desc' },
       skip: pagination.skip,
       take: pagination.take,

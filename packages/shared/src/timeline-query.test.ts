@@ -56,6 +56,27 @@ describe('parseQuery', () => {
     expect(parseQuery('').sortAsc).toBe(false);
   });
 
+  it('parses the starred flag as a bareword and as a key', () => {
+    expect(parseQuery('starred').starred).toBe(true);
+    expect(parseQuery('starred:true').starred).toBe(true);
+    expect(parseQuery('starred:false').starred).toBe(false);
+    expect(parseQuery('nothing').starred).toBeUndefined();
+    expect(isEmptyQuery(parseQuery('starred'))).toBe(false);
+  });
+
+  it('keeps malformed starred values as free text', () => {
+    const q = parseQuery('starred:maybe');
+    expect(q.starred).toBeUndefined();
+    expect(q.text).toEqual(['starred:maybe']);
+    expect(parseQuery('starred:').starred).toBeUndefined();
+  });
+
+  it('parses the no-comments flag', () => {
+    expect(parseQuery('no-comments').noComments).toBe(true);
+    expect(parseQuery('nothing').noComments).toBeUndefined();
+    expect(isEmptyQuery(parseQuery('no-comments'))).toBe(false);
+  });
+
   it('does not misparse a URL as a key:value pair', () => {
     const q = parseQuery('https://example.com/login');
     expect(q.text).toEqual(['https://example.com/login']);
@@ -92,5 +113,17 @@ describe('stringifyQuery / round-trip', () => {
   it('quotes values containing spaces', () => {
     const s = stringifyQuery(parseQuery('tag:"lateral movement"'));
     expect(s).toContain('tag:"lateral movement"');
+  });
+
+  it('stringifies and round-trips starred and no-comments', () => {
+    expect(stringifyQuery(parseQuery('starred'))).toBe('starred');
+    expect(stringifyQuery(parseQuery('starred:false'))).toBe('starred:false');
+    expect(stringifyQuery(parseQuery('no-comments'))).toBe('no-comments');
+
+    const once = parseQuery('tag:sqli starred no-comments free text');
+    const round = parseQuery(stringifyQuery(once));
+    expect(round).toEqual(once);
+    expect(round.starred).toBe(true);
+    expect(round.noComments).toBe(true);
   });
 });

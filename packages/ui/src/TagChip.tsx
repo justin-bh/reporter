@@ -7,6 +7,9 @@ export interface TagChipProps {
   /** Palette color name from `@reporter/shared` TAG_COLORS. */
   colorName: string;
   onRemove?: () => void;
+  /** Keep the remove button visible but greyed out and inert. */
+  removeDisabled?: boolean;
+  removeTitle?: string;
   className?: string;
 }
 
@@ -14,7 +17,14 @@ export interface TagChipProps {
  * A colored tag pill. Colors come from the shared TAG_COLORS palette so a tag
  * looks identical in the web timeline, desktop history, and CLI lists.
  */
-export function TagChip({ name, colorName, onRemove, className }: TagChipProps) {
+export function TagChip({
+  name,
+  colorName,
+  onRemove,
+  removeDisabled,
+  removeTitle,
+  className,
+}: TagChipProps) {
   const { resolved } = useTheme();
   const color = tagColor(colorName);
   const bg = resolved === 'dark' ? color.dark : color.light;
@@ -32,8 +42,10 @@ export function TagChip({ name, colorName, onRemove, className }: TagChipProps) 
         <button
           type="button"
           onClick={onRemove}
+          disabled={removeDisabled}
+          title={removeTitle}
           aria-label={`Remove tag ${name}`}
-          className="ml-0.5 rounded-full opacity-80 hover:opacity-100"
+          className="ml-0.5 rounded-full opacity-80 hover:opacity-100 disabled:opacity-40"
           style={{ color: color.fg }}
         >
           ×

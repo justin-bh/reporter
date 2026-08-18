@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Badge, TagChip } from '@reporter/ui';
+import { Badge, TagChip, useToast } from '@reporter/ui';
 import { EVIDENCE_TYPE_LABELS, type Evidence } from '@reporter/shared';
+import { useToggleEvidenceStar } from '../../api/hooks.js';
 import { evidenceThumbUrl } from '../../lib/urls.js';
 import { TimestampRail } from './TimestampRail.js';
 
@@ -13,14 +14,37 @@ const TYPE_ICON: Record<string, string> = {
   none: '✎',
 };
 
-/** One evidence entry in the daily-journal list. The whole row links to detail. */
+/** Per-user star toggle. Rendered as a sibling of the row Link, never inside it. */
+function StarButton({ slug, ev }: { slug: string; ev: Evidence }) {
+  const toggle = useToggleEvidenceStar(slug, ev.uuid);
+  const toast = useToast();
+  return (
+    <button
+      type="button"
+      aria-label="Star"
+      aria-pressed={Boolean(ev.starred)}
+      disabled={toggle.isPending}
+      onClick={() =>
+        toggle.mutate(!ev.starred, {
+          onError: (err) =>
+            toast.error(err instanceof Error ? err.message : 'Could not update star'),
+        })
+      }
+      className={ev.starred ? 'text-warning' : 'text-muted hover:text-warning'}
+    >
+      {ev.starred ? '★' : '☆'}
+    </button>
+  );
+}
+
+/** One evidence entry in the daily-journal list. The row content links to detail. */
 export function EvidenceEntryRow({ slug, ev }: { slug: string; ev: Evidence }) {
   const extraTags = ev.tags.length - 4;
   return (
-    <li>
+    <li className="flex items-start gap-3 rounded-card border border-border bg-surface p-3 transition-colors hover:border-accent/50">
       <Link
         to={`/engagements/${slug}/evidence/${ev.uuid}`}
-        className="flex items-start gap-3 rounded-card border border-border bg-surface p-3 transition-colors hover:border-accent/50"
+        className="flex min-w-0 flex-1 items-start gap-3"
       >
         <TimestampRail iso={ev.occurredAt} />
         <div className="h-12 w-12 flex-none overflow-hidden rounded-input border border-border bg-surface-2">
@@ -68,6 +92,9 @@ export function EvidenceEntryRow({ slug, ev }: { slug: string; ev: Evidence }) {
           </div>
         </div>
       </Link>
+      <div className="flex-none self-center">
+        <StarButton slug={slug} ev={ev} />
+      </div>
     </li>
   );
 }

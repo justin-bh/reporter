@@ -91,7 +91,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       // buckets by `inPath`.
       const links = await app.db.evidenceFinding.findMany({
         where: { findingId: finding.id },
-        include: { evidence: { include: evidenceInclude } },
+        include: { evidence: { include: evidenceInclude(req.authedUser!.id) } },
         orderBy: [{ inPath: 'desc' }, { position: 'asc' }, { evidenceId: 'asc' }],
       });
       return {
@@ -255,7 +255,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       const updated = await app.db.evidenceFinding.update({
         where: { evidenceId_findingId: { evidenceId: evidence.id, findingId: finding.id } },
         data,
-        include: { evidence: { include: evidenceInclude } },
+        include: { evidence: { include: evidenceInclude(req.authedUser!.id) } },
       });
       return serializeFindingEvidence(updated, slug);
     },

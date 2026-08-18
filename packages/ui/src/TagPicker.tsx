@@ -13,10 +13,21 @@ export interface TagPickerProps {
   selectedIds: number[];
   onChange: (ids: number[]) => void;
   emptyHint?: string;
+  /** Render the chips greyed out and ignore toggles. */
+  disabled?: boolean;
+  /** Tooltip for the whole picker (e.g. why it is disabled). */
+  title?: string;
 }
 
 /** Toggleable set of tag chips. Selected chips are filled, others outlined. */
-export function TagPicker({ tags, selectedIds, onChange, emptyHint }: TagPickerProps) {
+export function TagPicker({
+  tags,
+  selectedIds,
+  onChange,
+  emptyHint,
+  disabled,
+  title,
+}: TagPickerProps) {
   const { resolved } = useTheme();
   const selected = new Set(selectedIds);
 
@@ -32,7 +43,7 @@ export function TagPicker({ tags, selectedIds, onChange, emptyHint }: TagPickerP
   };
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1.5" title={title}>
       {tags.map((t) => {
         const color = tagColor(t.colorName);
         const bg = resolved === 'dark' ? color.dark : color.light;
@@ -42,9 +53,11 @@ export function TagPicker({ tags, selectedIds, onChange, emptyHint }: TagPickerP
             key={t.id}
             type="button"
             aria-pressed={isOn}
+            disabled={disabled}
             onClick={() => toggle(t.id)}
             className={cn(
               'rounded-full px-2.5 py-0.5 text-xs font-medium transition-opacity',
+              'disabled:opacity-50',
               !isOn && 'border',
             )}
             style={

@@ -98,7 +98,14 @@ export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
       const { slug } = req.params as { slug: string };
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const query = (req.query as { q?: string }).q ?? '';
-      return listEvidence(app, eng.id, slug, parseQuery(query), parsePagination(req.query as any));
+      return listEvidence(
+        app,
+        eng.id,
+        slug,
+        parseQuery(query),
+        parsePagination(req.query as any),
+        req.authedUser!.id,
+      );
     },
   );
 

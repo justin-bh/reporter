@@ -23,6 +23,7 @@ import {
   useReorderEvidence,
   useUpdateFindingEvidence,
 } from '../../api/hooks.js';
+import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { FindingEvidenceCard } from './FindingEvidenceCard.js';
 
 /**
@@ -34,11 +35,14 @@ export function AttackPathSection({
   findingUuid,
   items,
   onAddStep,
+  canWrite,
 }: {
   slug: string;
   findingUuid: string;
   items: FindingEvidence[];
   onAddStep: () => void;
+  /** The user may edit the finding; false renders every mutating control disabled. */
+  canWrite: boolean;
 }) {
   const reorder = useReorderEvidence(slug, findingUuid);
 
@@ -62,7 +66,12 @@ export function AttackPathSection({
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text">Attack Path ({items.length})</h3>
-        <Button size="sm" onClick={onAddStep}>
+        <Button
+          size="sm"
+          onClick={onAddStep}
+          disabled={!canWrite}
+          title={canWrite ? undefined : READ_ONLY_TITLE}
+        >
           Add step
         </Button>
       </div>
@@ -72,7 +81,12 @@ export function AttackPathSection({
           title="Build the attack path"
           description="Add evidence steps that tell the story of the attack, in order."
           action={
-            <Button size="sm" onClick={onAddStep}>
+            <Button
+              size="sm"
+              onClick={onAddStep}
+              disabled={!canWrite}
+              title={canWrite ? undefined : READ_ONLY_TITLE}
+            >
               Add step
             </Button>
           }
@@ -94,6 +108,7 @@ export function AttackPathSection({
                   ev={ev}
                   stepNumber={i + 1}
                   isLast={i === items.length - 1}
+                  canWrite={canWrite}
                 />
               ))}
             </ol>
@@ -110,12 +125,14 @@ function SortableStep({
   ev,
   stepNumber,
   isLast,
+  canWrite,
 }: {
   slug: string;
   findingUuid: string;
   ev: FindingEvidence;
   stepNumber: number;
   isLast: boolean;
+  canWrite: boolean;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -123,6 +140,7 @@ function SortableStep({
   const update = useUpdateFindingEvidence(slug, findingUuid);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ev.uuid,
+    disabled: !canWrite,
   });
 
   async function onDetach() {
@@ -168,6 +186,7 @@ function SortableStep({
         onMove={onMove}
         onDetach={onDetach}
         moving={update.isPending}
+        readOnly={!canWrite}
       />
       {/* Subtle sequence connector between steps: a short token-colored rule so the
           ordered flow reads clearly in both themes. */}

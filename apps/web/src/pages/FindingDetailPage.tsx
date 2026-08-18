@@ -21,6 +21,7 @@ import {
   useFindingCategories,
   useUpdateFinding,
 } from '../api/hooks.js';
+import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { CvssCalculator, type CvssResult } from '../components/findings/CvssCalculator.js';
 import { AttackPathSection } from '../components/findings/AttackPathSection.js';
 import { AttachedEvidenceSection } from '../components/findings/AttachedEvidenceSection.js';
@@ -32,6 +33,7 @@ export function FindingDetailPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const { data: finding, isLoading } = useFinding(slug, uuid);
+  const { canWrite } = useEngagementPermissions(slug);
   const update = useUpdateFinding(slug, uuid);
   const del = useDeleteFinding(slug);
   const { data: categories } = useFindingCategories(slug);
@@ -74,6 +76,9 @@ export function FindingDetailPage() {
 
   if (isLoading) return <Spinner size={26} />;
   if (!finding) return <p className="text-danger">Finding not found.</p>;
+
+  // Read-only pattern: inputs disable along with their save buttons.
+  const readOnlyTitle = canWrite ? undefined : READ_ONLY_TITLE;
 
   // Server pre-sorts: Attack Path (inPath=true) first, then Attached, each by position.
   const pathItems = finding.evidence.filter((e) => e.inPath);
@@ -156,7 +161,13 @@ export function FindingDetailPage() {
         <Link to={`/engagements/${slug}/findings`} className="text-sm text-muted hover:text-text">
           ← Back to findings
         </Link>
-        <Button variant="ghost" onClick={removeFinding} className="text-danger">
+        <Button
+          variant="ghost"
+          onClick={removeFinding}
+          className="text-danger"
+          disabled={!canWrite}
+          title={canWrite ? undefined : READ_ONLY_TITLE}
+        >
           Delete finding
         </Button>
       </div>
@@ -168,6 +179,8 @@ export function FindingDetailPage() {
             id="ft"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
+            disabled={!canWrite}
+            title={readOnlyTitle}
           />
         </Field>
         <Field label="Category" htmlFor="fc">
@@ -177,6 +190,8 @@ export function FindingDetailPage() {
               className="max-w-[16rem]"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
+              disabled={!canWrite}
+              title={readOnlyTitle}
             >
               <option value="">No category</option>
               {/* Preserve a soft-deleted category still on this finding. */}
@@ -196,6 +211,8 @@ export function FindingDetailPage() {
                   aria-label="New category name"
                   className="max-w-[12rem]"
                   autoFocus
+                  disabled={!canWrite}
+                  title={readOnlyTitle}
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
                   onKeyDown={(e) => {
@@ -236,6 +253,8 @@ export function FindingDetailPage() {
                 size="sm"
                 variant="ghost"
                 onClick={() => setAddingCategory(true)}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
               >
                 ＋ New
               </Button>
@@ -250,6 +269,8 @@ export function FindingDetailPage() {
               className="max-w-[10rem]"
               value={form.severity}
               onChange={(e) => pickSeverity(e.target.value as Severity | '')}
+              disabled={!canWrite}
+              title={readOnlyTitle}
             >
               <option value="">Unrated</option>
               {SEVERITIES.map((s) => (
@@ -258,7 +279,14 @@ export function FindingDetailPage() {
                 </option>
               ))}
             </Select>
-            <Button type="button" size="sm" variant="secondary" onClick={() => setCalc(true)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setCalc(true)}
+              disabled={!canWrite}
+              title={readOnlyTitle}
+            >
               CVSS calculator
             </Button>
             {form.cvssVector && (
@@ -278,6 +306,8 @@ export function FindingDetailPage() {
             rows={6}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
+            disabled={!canWrite}
+            title={readOnlyTitle}
           />
         </Field>
         <div className="flex items-center justify-between">
@@ -285,8 +315,15 @@ export function FindingDetailPage() {
             label="Ready to report"
             checked={form.readyToReport}
             onChange={(e) => setForm({ ...form, readyToReport: e.target.checked })}
+            disabled={!canWrite}
+            title={readOnlyTitle}
           />
-          <Button onClick={save} loading={update.isPending}>
+          <Button
+            onClick={save}
+            loading={update.isPending}
+            disabled={!canWrite}
+            title={canWrite ? undefined : READ_ONLY_TITLE}
+          >
             Save changes
           </Button>
         </div>
@@ -298,12 +335,14 @@ export function FindingDetailPage() {
         findingUuid={uuid}
         items={pathItems}
         onAddStep={() => setPickerTarget('path')}
+        canWrite={canWrite}
       />
       <AttachedEvidenceSection
         slug={slug}
         findingUuid={uuid}
         items={attachedItems}
         onAttach={() => setPickerTarget('attached')}
+        canWrite={canWrite}
       />
 
       <CvssCalculator

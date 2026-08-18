@@ -40,11 +40,13 @@ import {
   useImportFindings,
   useReorderFindings,
 } from '../api/hooks.js';
+import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { ExportFindingsModal } from '../components/findings/ExportFindingsModal.js';
 
 export function FindingsPage() {
   const { slug = '' } = useParams();
   const toast = useToast();
+  const { canWrite } = useEngagementPermissions(slug);
   const { data: findings, isLoading, isError, refetch } = useFindings(slug);
   const reorder = useReorderFindings(slug);
   const importFindings = useImportFindings(slug);
@@ -114,6 +116,8 @@ export function FindingsPage() {
             variant="ghost"
             onClick={() => fileInput.current?.click()}
             loading={importFindings.isPending}
+            disabled={!canWrite}
+            title={canWrite ? undefined : READ_ONLY_TITLE}
           >
             Import
           </Button>
@@ -122,7 +126,13 @@ export function FindingsPage() {
               Export
             </Button>
           )}
-          <Button onClick={() => setCreating(true)}>New finding</Button>
+          <Button
+            onClick={() => setCreating(true)}
+            disabled={!canWrite}
+            title={canWrite ? undefined : READ_ONLY_TITLE}
+          >
+            New finding
+          </Button>
         </div>
       </div>
 
@@ -134,7 +144,15 @@ export function FindingsPage() {
         <EmptyState
           title="No findings yet"
           description="Group related evidence into a finding to build your report."
-          action={<Button onClick={() => setCreating(true)}>New finding</Button>}
+          action={
+            <Button
+              onClick={() => setCreating(true)}
+              disabled={!canWrite}
+              title={canWrite ? undefined : READ_ONLY_TITLE}
+            >
+              New finding
+            </Button>
+          }
         />
       ) : (
         <DndContext
@@ -149,7 +167,7 @@ export function FindingsPage() {
           >
             <ul className="flex flex-col gap-2">
               {findings.map((f) => (
-                <SortableFindingRow key={f.uuid} slug={slug} finding={f} />
+                <SortableFindingRow key={f.uuid} slug={slug} finding={f} canWrite={canWrite} />
               ))}
             </ul>
           </SortableContext>
@@ -162,12 +180,21 @@ export function FindingsPage() {
   );
 }
 
-function SortableFindingRow({ slug, finding: f }: { slug: string; finding: Finding }) {
+function SortableFindingRow({
+  slug,
+  finding: f,
+  canWrite,
+}: {
+  slug: string;
+  finding: Finding;
+  canWrite: boolean;
+}) {
   const confirm = useConfirm();
   const toast = useToast();
   const del = useDeleteFinding(slug);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.uuid,
+    disabled: !canWrite,
   });
 
   const style = {
@@ -201,8 +228,11 @@ function SortableFindingRow({ slug, finding: f }: { slug: string; finding: Findi
       <button
         {...attributes}
         {...listeners}
+        type="button"
+        disabled={!canWrite}
+        title={canWrite ? undefined : READ_ONLY_TITLE}
         aria-label="Drag to reorder"
-        className="cursor-grab touch-none px-1 text-muted hover:text-text active:cursor-grabbing"
+        className="cursor-grab touch-none px-1 text-muted hover:text-text active:cursor-grabbing disabled:opacity-50"
       >
         ⠿
       </button>
@@ -222,9 +252,12 @@ function SortableFindingRow({ slug, finding: f }: { slug: string; finding: Findi
         </div>
       </Link>
       <button
+        type="button"
         onClick={remove}
+        disabled={!canWrite}
+        title={canWrite ? undefined : READ_ONLY_TITLE}
         aria-label="Delete finding"
-        className="px-1 text-muted hover:text-danger"
+        className="px-1 text-muted hover:text-danger disabled:opacity-50"
       >
         ✕
       </button>

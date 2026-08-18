@@ -9,6 +9,7 @@ import {
   type ParsedQuery,
 } from '@reporter/shared';
 import { useTimeline, type EvidenceOperator } from '../api/hooks.js';
+import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { CreateEvidenceModal } from '../components/evidence/CreateEvidenceModal.js';
 import { FilterBar } from '../components/evidence/FilterBar.js';
 import { EvidenceDayGroup } from '../components/evidence/EvidenceDayGroup.js';
@@ -40,6 +41,7 @@ export function TimelinePage() {
   const [adding, setAdding] = useState(false);
 
   const parsed = useMemo(() => parseQuery(q), [q]);
+  const { canWrite } = useEngagementPermissions(slug);
   const { data, isLoading, isError, isFetching, refetch } = useTimeline(slug, q, page);
 
   const applyQuery = useCallback(
@@ -92,6 +94,7 @@ export function TimelinePage() {
         onChange={applyQuery}
         operatorsOnPage={operatorsOnPage}
         onAdd={() => setAdding(true)}
+        canAdd={canWrite}
         onExpandAll={expandAll}
         onCollapseAll={collapseAll}
         showGroupControls={groups.length > 1}
@@ -114,7 +117,13 @@ export function TimelinePage() {
             }
             action={
               isEmptyQuery(parsed) ? (
-                <Button onClick={() => setAdding(true)}>Add evidence</Button>
+                <Button
+                  onClick={() => setAdding(true)}
+                  disabled={!canWrite}
+                  title={canWrite ? undefined : READ_ONLY_TITLE}
+                >
+                  Add evidence
+                </Button>
               ) : (
                 <Button variant="secondary" onClick={() => applyQuery(EMPTY_QUERY)}>
                   Clear filters

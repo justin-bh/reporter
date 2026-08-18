@@ -12,9 +12,11 @@ import {
   useToast,
 } from '@reporter/ui';
 import { useCreateSavedQuery, useDeleteSavedQuery, useSavedQueries } from '../api/hooks.js';
+import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 
 export function QueriesPage() {
   const { slug = '' } = useParams();
+  const { canWrite } = useEngagementPermissions(slug);
   const { data: queries, isLoading, isError, refetch } = useSavedQueries(slug);
   const create = useCreateSavedQuery(slug);
   const del = useDeleteSavedQuery(slug);
@@ -73,8 +75,11 @@ export function QueriesPage() {
                     </Button>
                   </Link>
                   <button
+                    type="button"
                     onClick={() => removeQuery(q.id, q.name)}
-                    className="text-muted hover:text-danger"
+                    disabled={!canWrite}
+                    title={canWrite ? undefined : READ_ONLY_TITLE}
+                    className="text-muted hover:text-danger disabled:opacity-50"
                     aria-label={`Delete saved query ${q.name}`}
                   >
                     ✕
@@ -89,7 +94,13 @@ export function QueriesPage() {
       <Card className="h-fit space-y-4 p-4">
         <h3 className="text-sm font-semibold text-text">Save a query</h3>
         <Field label="Name" htmlFor="q-name">
-          <Input id="q-name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input
+            id="q-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!canWrite}
+            title={canWrite ? undefined : READ_ONLY_TITLE}
+          />
         </Field>
         <Field label="Query" htmlFor="q-query" hint="e.g. tag:sqli type:image">
           <Input
@@ -97,9 +108,16 @@ export function QueriesPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="font-mono"
+            disabled={!canWrite}
+            title={canWrite ? undefined : READ_ONLY_TITLE}
           />
         </Field>
-        <Button onClick={add} loading={create.isPending} disabled={!name || !query}>
+        <Button
+          onClick={add}
+          loading={create.isPending}
+          disabled={!canWrite || !name || !query}
+          title={canWrite ? undefined : READ_ONLY_TITLE}
+        >
           Save query
         </Button>
       </Card>

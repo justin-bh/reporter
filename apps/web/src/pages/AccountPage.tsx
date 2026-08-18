@@ -87,18 +87,26 @@ function ProfileTab() {
 }
 
 function SecurityTab() {
+  const { user, refresh } = useAuth();
   const toast = useToast();
   const [currentPassword, setCurrent] = useState('');
   const [newPassword, setNew] = useState('');
   const [busy, setBusy] = useState(false);
+  // After a recovery-link sign-in the server waives the current password once.
+  const resetPending = Boolean(user?.mustResetPassword);
 
   async function change() {
     setBusy(true);
     try {
-      await api.post('/web/account/password', { currentPassword, newPassword });
+      await api.post('/web/account/password', {
+        currentPassword: currentPassword || undefined,
+        newPassword,
+      });
       setCurrent('');
       setNew('');
       toast.success('Password changed');
+      // Refresh /web/me so a pending mustResetPassword flag clears in the UI.
+      await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not change password');
     } finally {
@@ -109,7 +117,16 @@ function SecurityTab() {
   return (
     <Card className="max-w-md space-y-4 p-4">
       <h3 className="text-sm font-semibold text-text">Change password</h3>
-      <Field label="Current password" htmlFor="cp">
+      {resetPending && (
+        <p className="text-sm text-warning">
+          You signed in with a recovery link — set a new password now.
+        </p>
+      )}
+      <Field
+        label="Current password"
+        htmlFor="cp"
+        hint={resetPending ? 'Not required after a recovery sign-in.' : undefined}
+      >
         <Input
           id="cp"
           type="password"
@@ -126,7 +143,11 @@ function SecurityTab() {
           minLength={8}
         />
       </Field>
-      <Button onClick={change} loading={busy} disabled={!currentPassword || newPassword.length < 8}>
+      <Button
+        onClick={change}
+        loading={busy}
+        disabled={(!resetPending && !currentPassword) || newPassword.length < 8}
+      >
         Change password
       </Button>
     </Card>

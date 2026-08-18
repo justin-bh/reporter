@@ -22,8 +22,10 @@ import {
 } from '@reporter/ui';
 import type { EngagementMember, EngagementRole, EngagementStatus } from '@reporter/shared';
 import { api } from '../api/client.js';
+import { useAuth } from '../auth.js';
 import { useDeleteEngagement, useEngagement, useUpdateEngagement } from '../api/hooks.js';
 import { fromDateInput, toDateInputValue } from '../lib/format.js';
+import { ADMIN_ONLY_TITLE, canAdmin, canWrite } from '../lib/permissions.js';
 import { TagManager } from '../components/engagement/TagManager.js';
 import { CategoryManager } from '../components/engagement/CategoryManager.js';
 
@@ -34,6 +36,7 @@ export function EngagementSettingsPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const confirm = useConfirm();
+  const { user } = useAuth();
   const {
     data: eng,
     isLoading: engLoading,
@@ -46,9 +49,12 @@ export function EngagementSettingsPage() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
-  // Only engagement admins (and site admins, whom the server reports as admin
-  // here) may delete; the server enforces this too.
-  const canDelete = eng?.role === 'admin';
+  // Details, membership, and deletion need the engagement admin role; tags and
+  // categories need write. Site admins pass both. The server enforces this too.
+  const isEngAdmin = canAdmin(user, eng);
+  const isEngWriter = canWrite(user, eng);
+  // Read-only pattern: inputs disable along with their save buttons.
+  const adminOnlyTitle = isEngAdmin ? undefined : ADMIN_ONLY_TITLE;
 
   const [name, setName] = useState('');
   const [status, setStatus] = useState<EngagementStatus>('active');
@@ -159,13 +165,21 @@ export function EngagementSettingsPage() {
         ) : (
           <>
             <Field label="Name" htmlFor="eng-name">
-              <Input id="eng-name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input
+                id="eng-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={!isEngAdmin}
+                title={adminOnlyTitle}
+              />
             </Field>
             <Field label="Status" htmlFor="eng-status">
               <Select
                 id="eng-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as EngagementStatus)}
+                disabled={!isEngAdmin}
+                title={adminOnlyTitle}
               >
                 <option value="active">Active</option>
                 <option value="complete">Complete</option>
@@ -179,6 +193,8 @@ export function EngagementSettingsPage() {
                   type="date"
                   value={startedAt}
                   onChange={(e) => setStartedAt(e.target.value)}
+                  disabled={!isEngAdmin}
+                  title={adminOnlyTitle}
                 />
               </Field>
               <Field label="Projected end" htmlFor="eng-projected" hint="Target date (optional)">
@@ -187,6 +203,8 @@ export function EngagementSettingsPage() {
                   type="date"
                   value={projectedEndAt}
                   onChange={(e) => setProjectedEndAt(e.target.value)}
+                  disabled={!isEngAdmin}
+                  title={adminOnlyTitle}
                 />
               </Field>
               <Field
@@ -199,10 +217,17 @@ export function EngagementSettingsPage() {
                   type="date"
                   value={actualEndAt}
                   onChange={(e) => setActualEndAt(e.target.value)}
+                  disabled={!isEngAdmin}
+                  title={adminOnlyTitle}
                 />
               </Field>
             </div>
-            <Button onClick={saveDetails} loading={update.isPending}>
+            <Button
+              onClick={saveDetails}
+              loading={update.isPending}
+              disabled={!isEngAdmin}
+              title={isEngAdmin ? undefined : ADMIN_ONLY_TITLE}
+            >
               Save
             </Button>
           </>
@@ -241,10 +266,13 @@ export function EngagementSettingsPage() {
                   <Td className="capitalize">{m.role}</Td>
                   <Td className="text-right">
                     <button
+                      type="button"
                       onClick={() =>
                         confirmRemoveMember(m.user.slug, `${m.user.firstName} ${m.user.lastName}`)
                       }
-                      className="text-muted hover:text-danger"
+                      disabled={!isEngAdmin}
+                      title={isEngAdmin ? undefined : ADMIN_ONLY_TITLE}
+                      className="text-muted hover:text-danger disabled:opacity-50"
                       aria-label={`Remove ${m.user.firstName} ${m.user.lastName}`}
                     >
                       ✕
@@ -267,6 +295,8 @@ export function EngagementSettingsPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="user@example.com"
+                disabled={!isEngAdmin}
+                title={adminOnlyTitle}
               />
             </Field>
             <Field label="Role" htmlFor="m-role">
@@ -275,13 +305,20 @@ export function EngagementSettingsPage() {
                 value={role}
                 onChange={(e) => setRole(e.target.value as EngagementRole)}
                 className="w-32"
+                disabled={!isEngAdmin}
+                title={adminOnlyTitle}
               >
                 <option value="read">Read</option>
                 <option value="write">Write</option>
                 <option value="admin">Admin</option>
               </Select>
             </Field>
-            <Button type="submit" disabled={!emailValid} loading={addMember.isPending}>
+            <Button
+              type="submit"
+              disabled={!isEngAdmin || !emailValid}
+              loading={addMember.isPending}
+              title={isEngAdmin ? undefined : ADMIN_ONLY_TITLE}
+            >
               Add
             </Button>
           </div>
@@ -293,15 +330,15 @@ export function EngagementSettingsPage() {
 
       <Card className="space-y-4 p-4">
         <h3 className="text-sm font-semibold text-text">Tags</h3>
-        <TagManager slug={slug} />
+        <TagManager slug={slug} readOnly={!isEngWriter} />
       </Card>
 
       <Card className="space-y-4 p-4">
         <h3 className="text-sm font-semibold text-text">Finding categories</h3>
-        <CategoryManager slug={slug} />
+        <CategoryManager slug={slug} readOnly={!isEngWriter} />
       </Card>
 
-      {canDelete && (
+      {isEngAdmin && (
         <Card className="space-y-4 border-danger/40 p-4 lg:col-span-2">
           <h3 className="text-sm font-semibold text-danger">Danger zone</h3>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

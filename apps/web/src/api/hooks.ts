@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  AdminEngagement,
+  AdminUser,
   ApiKey,
   CreateEvidenceInput,
   CreateFindingInput,
@@ -42,7 +44,10 @@ export function useCreateEngagement() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateEngagementInput) => api.post<Engagement>('/web/engagements', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['engagements'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['engagements'] });
+      qc.invalidateQueries({ queryKey: ['admin-engagements'] });
+    },
   });
 }
 
@@ -56,6 +61,7 @@ export function useUpdateEngagement(slug: string) {
     ) => api.put<Engagement>(`/web/engagements/${slug}`, patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['engagements'] });
+      qc.invalidateQueries({ queryKey: ['admin-engagements'] });
       qc.invalidateQueries({ queryKey: engKey(slug) });
     },
   });
@@ -75,9 +81,10 @@ export function useDeleteEngagement(slug: string) {
     mutationFn: () => api.del(`/web/engagements/${slug}`),
     onSuccess: () => {
       // The engagement (and its cached detail/children) is gone — drop it from
-      // the list and forget any per-engagement queries still in the cache.
+      // the lists and forget any per-engagement queries still in the cache.
       qc.removeQueries({ queryKey: engKey(slug) });
       qc.invalidateQueries({ queryKey: ['engagements'] });
+      qc.invalidateQueries({ queryKey: ['admin-engagements'] });
     },
   });
 }
@@ -133,6 +140,21 @@ export function useCreateEvidence(slug: string) {
         qc.invalidateQueries({ queryKey: ['evidence-comments', slug, parent] });
         qc.invalidateQueries({ queryKey: ['evidence', slug, parent] });
       }
+    },
+  });
+}
+
+/** Star / unstar a piece of evidence for the current user (per-user, like engagement favorites). */
+export function useToggleEvidenceStar(slug: string, uuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (starred: boolean) =>
+      api.post(`/web/engagements/${slug}/evidence/${uuid}/star`, { starred }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['timeline', slug] });
+      qc.invalidateQueries({ queryKey: ['evidence', slug, uuid] });
+      // Starred rows also appear in comment threads.
+      qc.invalidateQueries({ queryKey: ['evidence-comments', slug] });
     },
   });
 }
@@ -460,7 +482,7 @@ export function useRevokeApiKey() {
 
 // --- Admin ---
 export const useUsers = () =>
-  useQuery({ queryKey: ['admin-users'], queryFn: () => api.get<User[]>('/web/admin/users') });
+  useQuery({ queryKey: ['admin-users'], queryFn: () => api.get<AdminUser[]>('/web/admin/users') });
 
 export function useCreateUser() {
   const qc = useQueryClient();
@@ -476,5 +498,48 @@ export function useUpdateUser() {
     mutationFn: (args: { slug: string; patch: Record<string, unknown> }) =>
       api.put<User>(`/web/admin/users/${args.slug}`, args.patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+  });
+}
+
+/** Every engagement site-wide, with counts and the admin's own membership flag. */
+export const useAdminEngagements = () =>
+  useQuery({
+    queryKey: ['admin-engagements'],
+    queryFn: () => api.get<AdminEngagement[]>('/web/admin/engagements'),
+  });
+
+/** Issue a one-time recovery login link for a user (24h expiry, single use). */
+export function useGenerateRecoveryLink() {
+  return useMutation({
+    mutationFn: (slug: string) =>
+      api.post<{ recoveryUrl: string }>(`/web/admin/users/${slug}/recovery`),
+  });
+}
+
+/** Clear a user's TOTP secret so they re-enroll on next login. */
+export function useResetTotp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) =>
+      api.post<{ ok: true; hadTotp: boolean }>(`/web/admin/users/${slug}/totp-reset`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+  });
+}
+
+/** A user's API keys as seen by an admin (never includes the secret). */
+export const useUserApiKeys = (slug: string | null) =>
+  useQuery({
+    queryKey: ['admin-user-api-keys', slug],
+    queryFn: () => api.get<ApiKey[]>(`/web/admin/users/${slug}/api-keys`),
+    enabled: Boolean(slug),
+  });
+
+export function useRevokeUserApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { slug: string; accessKey: string }) =>
+      api.del(`/web/admin/users/${args.slug}/api-keys/${encodeURIComponent(args.accessKey)}`),
+    onSuccess: (_d, v) =>
+      qc.invalidateQueries({ queryKey: ['admin-user-api-keys', v.slug] }),
   });
 }

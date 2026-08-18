@@ -237,12 +237,19 @@ function ViewToggle({
 
 function FavoriteButton({ eng }: { eng: Engagement }) {
   const toggle = useToggleFavorite(eng.slug);
+  const toast = useToast();
   return (
     <button
       type="button"
       aria-label="Favorite"
-      aria-pressed={eng.favorite}
-      onClick={() => toggle.mutate(!eng.favorite)}
+      aria-pressed={Boolean(eng.favorite)}
+      disabled={toggle.isPending}
+      onClick={() =>
+        toggle.mutate(!eng.favorite, {
+          onError: (err) =>
+            toast.error(err instanceof Error ? err.message : 'Could not update favorite'),
+        })
+      }
       className={eng.favorite ? 'text-warning' : 'text-muted hover:text-warning'}
     >
       {eng.favorite ? '★' : '☆'}

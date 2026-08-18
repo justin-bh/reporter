@@ -9,6 +9,7 @@ import type { ParsedQuery } from '@reporter/shared';
 export function buildEvidenceWhere(
   q: ParsedQuery,
   engagementId: number,
+  userId: number,
 ): Prisma.EvidenceWhereInput {
   const and: Prisma.EvidenceWhereInput[] = [{ engagementId }];
 
@@ -48,6 +49,18 @@ export function buildEvidenceWhere(
     and.push({ findings: { some: {} } });
   } else if (q.withFinding === false) {
     and.push({ findings: { none: {} } });
+  }
+
+  // Starring is per-user: only the requesting user's prefs count.
+  if (q.starred === true) {
+    and.push({ userPrefs: { some: { userId, isFavorite: true } } });
+  } else if (q.starred === false) {
+    and.push({ userPrefs: { none: { userId, isFavorite: true } } });
+  }
+
+  // Hide evidence that is a comment (linked evidence) on another piece.
+  if (q.noComments === true) {
+    and.push({ parentEvidenceId: null });
   }
 
   return { AND: and };

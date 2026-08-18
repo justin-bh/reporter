@@ -8,7 +8,7 @@ import { cn } from './cn.js';
 
 const fieldBase =
   'w-full rounded-input bg-surface border border-border text-text placeholder:text-muted ' +
-  'px-3 py-2 text-sm transition-colors focus:border-accent';
+  'px-3 py-2 text-sm transition-colors focus:border-accent disabled:opacity-50';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;

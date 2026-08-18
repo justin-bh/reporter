@@ -8,6 +8,7 @@ import {
   useTags,
   useUpdateEvidence,
 } from '../api/hooks.js';
+import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { EvidenceContent } from '../components/evidence/EvidenceContent.js';
 import { EvidenceMeta } from '../components/evidence/EvidenceMeta.js';
 import { EvidenceEntryRow } from '../components/evidence/EvidenceEntryRow.js';
@@ -22,6 +23,7 @@ export function EvidenceDetailPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { data: evidence, isLoading, isError, refetch } = useEvidence(slug, uuid);
+  const { canWrite } = useEngagementPermissions(slug);
   const { data: tags } = useTags(slug);
   const comments = useEvidenceComments(slug, uuid);
   const update = useUpdateEvidence(slug);
@@ -96,7 +98,13 @@ export function EvidenceDetailPage() {
                 <h3 className="text-sm font-semibold text-text">
                   Comments <span className="font-normal text-muted">(Linked Evidence)</span>
                 </h3>
-                <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setAdding(true)}
+                  disabled={!canWrite}
+                  title={canWrite ? undefined : READ_ONLY_TITLE}
+                >
                   Add comment
                 </Button>
               </div>
@@ -130,10 +138,18 @@ export function EvidenceDetailPage() {
                 id="d-desc"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
               />
             </Field>
             <Field label="Tags">
-              <TagPicker tags={tags ?? []} selectedIds={tagIds} onChange={setTagIds} />
+              <TagPicker
+                tags={tags ?? []}
+                selectedIds={tagIds}
+                onChange={setTagIds}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
+              />
             </Field>
             <div className="flex justify-between">
               <Button
@@ -141,10 +157,18 @@ export function EvidenceDetailPage() {
                 size="sm"
                 onClick={() => setDeleting(true)}
                 loading={del.isPending}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
               >
                 Delete
               </Button>
-              <Button size="sm" onClick={save} loading={update.isPending}>
+              <Button
+                size="sm"
+                onClick={save}
+                loading={update.isPending}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
+              >
                 Save changes
               </Button>
             </div>

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { Spinner } from '@reporter/ui';
 import { useAuth } from './auth.js';
 import { LoginPage } from './pages/LoginPage.js';
+import { RecoveryLoginPage } from './pages/RecoveryLoginPage.js';
 import { SetupPage } from './pages/SetupPage.js';
 import { AppLayout } from './components/AppLayout.js';
 import { EngagementLayout } from './components/EngagementLayout.js';
@@ -34,6 +35,7 @@ export function App() {
       <Routes>
         {flags?.needsSetup && <Route path="/setup" element={<SetupPage />} />}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/login/recovery/:code" element={<RecoveryLoginPage />} />
         <Route
           path="*"
           element={<Navigate to={flags?.needsSetup ? '/setup' : '/login'} replace />}
