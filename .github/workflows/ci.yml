@@ -30,9 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm version comes from package.json's `packageManager` field; setting
+      # `version` here too makes action-setup@v4 fail on the duplicate.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:

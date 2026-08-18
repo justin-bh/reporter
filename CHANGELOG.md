@@ -129,6 +129,11 @@ with `pnpm run version:bump <major|minor|patch>`.
   with body text stored the text but the detail view only showed the short
   description. The detail view now renders the description as a caption above the
   full body; a description-only note shows its text directly.
+- **CI and release workflows install pnpm again.** `pnpm/action-setup@v4` began
+  failing when both the action's `version` input and package.json's
+  `packageManager` field are set (every CI run since Aug 14 died in setup, before
+  any code ran). The workflows now omit the redundant `version` input and let the
+  action read `packageManager`.
 - **`docker compose build` for the server image no longer fails compiling
   `node-pty`.** The desktop app's `dbus-next` dependency pulls in an optional
   `usocket`, which pinned `node-gyp@7.1.2` into the lockfile. That old node-gyp
