@@ -51,9 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await qc.invalidateQueries({ queryKey: ['flags'] });
     },
     logout: async () => {
-      await api.post('/web/logout');
-      qc.clear();
-      await qc.invalidateQueries({ queryKey: ['me'] });
+      try {
+        await api.post('/web/logout');
+      } finally {
+        // Pin the unauthenticated state synchronously: set `me` to null so the
+        // router swaps to the public tree (which redirects everything to /login)
+        // before any protected query can refetch and flash a 401 error, then drop
+        // all other cached data. `flags` is public and stays so App doesn't have
+        // to reload it. This runs even if the logout request fails so the user is
+        // never left in a half-signed-out state.
+        qc.setQueryData(['me'], null);
+        qc.removeQueries({
+          predicate: (q) => q.queryKey[0] !== 'me' && q.queryKey[0] !== 'flags',
+        });
+      }
     },
   };
 

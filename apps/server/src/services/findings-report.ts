@@ -23,6 +23,10 @@ interface GatheredEvidence {
   contentSubtype: string | null;
   occurredAt: Date;
   fullBlobKey: string | null;
+  /** Attack Path step caption for this link (empty for plain attached evidence). */
+  caption: string;
+  /** Which bucket the link is in: Attack Path (true) vs Attached Evidence (false). */
+  inPath: boolean;
 }
 
 interface GatheredFinding {
@@ -34,7 +38,6 @@ interface GatheredFinding {
   cvssVector: string | null;
   cvssScore: number | null;
   readyToReport: boolean;
-  ticketLink: string | null;
   position: number;
   evidence: GatheredEvidence[];
 }
@@ -65,8 +68,10 @@ async function gather(
     where: { engagementId: eng.id, ...(opts.includeAll ? {} : { readyToReport: true }) },
     include: {
       category: true,
+      // Attack Path first (inPath=true), then Attached Evidence, each ordered by
+      // its own position. The export/report split the flat list back by `inPath`.
       evidence: {
-        orderBy: [{ position: 'asc' }, { evidenceId: 'asc' }],
+        orderBy: [{ inPath: 'desc' }, { position: 'asc' }, { evidenceId: 'asc' }],
         include: { evidence: true },
       },
     },
@@ -82,7 +87,6 @@ async function gather(
     cvssVector: f.cvssVector,
     cvssScore: f.cvssScore,
     readyToReport: f.readyToReport,
-    ticketLink: f.ticketLink,
     position: f.position,
     evidence: f.evidence.map((link) => ({
       uuid: link.evidence.uuid,
@@ -91,6 +95,8 @@ async function gather(
       contentSubtype: link.evidence.contentSubtype,
       occurredAt: link.evidence.occurredAt,
       fullBlobKey: link.evidence.fullBlobKey,
+      caption: link.caption,
+      inPath: link.inPath,
     })),
   }));
 }
@@ -117,6 +123,8 @@ export async function buildFindingsExport(
         contentType: e.contentType as (typeof evidence)[number]['contentType'],
         contentSubtype: e.contentSubtype,
         occurredAt: e.occurredAt.toISOString(),
+        caption: e.caption,
+        inPath: e.inPath,
       };
       if (opts.includeEvidenceContent && e.fullBlobKey) {
         const buf = await app.blobs.getBuffer(e.fullBlobKey).catch(() => null);
@@ -133,7 +141,6 @@ export async function buildFindingsExport(
       cvssVector: f.cvssVector,
       cvssScore: f.cvssScore,
       readyToReport: f.readyToReport,
-      ticketLink: f.ticketLink,
       position: f.position,
       evidence,
     });
@@ -220,6 +227,20 @@ async function renderEvidence(
   return `<div class="ev"><p class="ev-note">${caption}</p></div>`;
 }
 
+/** Render one numbered Attack Path step: its caption (if any) then its evidence. */
+async function renderPathStep(
+  app: FastifyInstance,
+  e: GatheredEvidence,
+  step: number,
+  budget: { remaining: number },
+): Promise<string> {
+  const captionHtml = e.caption
+    ? `<p class="step-caption">${esc(e.caption)}</p>`
+    : '';
+  const evidenceHtml = await renderEvidence(app, e, budget);
+  return `<div class="step"><p class="step-label">Step ${step}</p>${captionHtml}${evidenceHtml}</div>`;
+}
+
 export async function buildReportHtml(
   app: FastifyInstance,
   eng: EngagementRef,
@@ -242,22 +263,42 @@ export async function buildReportHtml(
   const sections: string[] = [];
   for (let i = 0; i < findings.length; i++) {
     const f = findings[i]!;
+    // Split into the two buckets. `gather` already orders Attack Path first, each
+    // bucket by its own position, so filtering preserves the intended order.
+    const pathEvidence = f.evidence.filter((e) => e.inPath);
+    const attachedEvidence = f.evidence.filter((e) => !e.inPath);
+
     // Render evidence sequentially so at most one blob is held in memory at once.
-    const parts: string[] = [];
-    for (const e of f.evidence) parts.push(await renderEvidence(app, e, budget));
-    const evidenceHtml =
-      f.evidence.length === 0 ? '<p class="muted">No evidence attached.</p>' : parts.join('\n');
+    let pathHtml = '';
+    if (pathEvidence.length > 0) {
+      const steps: string[] = [];
+      for (let s = 0; s < pathEvidence.length; s++) {
+        steps.push(await renderPathStep(app, pathEvidence[s]!, s + 1, budget));
+      }
+      pathHtml = `<h3>Attack Path (${pathEvidence.length})</h3><ol class="path">${steps.join('\n')}</ol>`;
+    }
+
+    const attachedParts: string[] = [];
+    for (const e of attachedEvidence) attachedParts.push(await renderEvidence(app, e, budget));
+    // Only omit the Attached Evidence section when there's an Attack Path to show
+    // instead; a finding with no evidence at all still gets the "no evidence" note.
+    const attachedHtml =
+      attachedEvidence.length > 0
+        ? `<h3>Attached Evidence (${attachedEvidence.length})</h3>${attachedParts.join('\n')}`
+        : pathEvidence.length === 0
+          ? '<p class="muted">No evidence attached.</p>'
+          : '';
+
     const meta: string[] = [];
     if (f.category) meta.push(`<strong>Category:</strong> ${esc(f.category)}`);
     if (f.cvssVector) meta.push(`<strong>CVSS:</strong> <code>${esc(f.cvssVector)}</code>`);
-    if (f.ticketLink) meta.push(`<strong>Ticket:</strong> ${esc(f.ticketLink)}`);
     sections.push(`
       <section class="finding">
         <h2><span class="num">${i + 1}.</span> ${esc(f.title)} ${severityPill(f.severity, f.cvssScore)}</h2>
         ${meta.length ? `<p class="meta">${meta.join(' &nbsp;·&nbsp; ')}</p>` : ''}
         <div class="desc">${esc(f.description) || '<span class="muted">No description.</span>'}</div>
-        <h3>Evidence (${f.evidence.length})</h3>
-        ${evidenceHtml}
+        ${pathHtml}
+        ${attachedHtml}
       </section>`);
   }
 
@@ -288,6 +329,10 @@ export async function buildReportHtml(
   .ev-lang { background: #eee; border-radius: 4px; padding: 0 6px; font-size: 11px; }
   .ev-code { background: #f6f6f6; border: 1px solid #eee; border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   .ev-note { color: #555; }
+  .path { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+  .step { border-left: 2px solid #ddd; padding: 0 0 4px 14px; margin: 0 0 16px; page-break-inside: avoid; }
+  .step-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #888; font-weight: 600; margin: 0 0 4px; }
+  .step-caption { white-space: pre-wrap; margin: 0 0 8px; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 </style></head>
 <body>

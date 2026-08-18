@@ -15,7 +15,7 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
     const engs = await app.db.engagement.findMany({
       where: user.admin ? {} : { roles: { some: { userId: user.id } } },
       include: {
-        _count: { select: { evidence: true, roles: true } },
+        _count: { select: { evidence: true, roles: true, findings: true } },
         roles: { where: { userId: user.id }, select: { role: true } },
         prefs: { where: { userId: user.id }, select: { isFavorite: true } },
       },
@@ -28,6 +28,7 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         favorite: eng.prefs[0]?.isFavorite ?? false,
         numUsers: eng._count.roles,
         numEvidence: eng._count.evidence,
+        numFindings: eng._count.findings,
       }),
     );
   });
@@ -55,6 +56,7 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       favorite: false,
       numUsers: 1,
       numEvidence: 0,
+      numFindings: 0,
     });
   });
 
@@ -66,7 +68,7 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       const eng = await app.db.engagement.findUniqueOrThrow({
         where: { slug },
         include: {
-          _count: { select: { evidence: true, roles: true } },
+          _count: { select: { evidence: true, roles: true, findings: true } },
           roles: { where: { userId: req.authedUser!.id }, select: { role: true } },
           prefs: { where: { userId: req.authedUser!.id }, select: { isFavorite: true } },
         },
@@ -76,6 +78,7 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         favorite: eng.prefs[0]?.isFavorite ?? false,
         numUsers: eng._count.roles,
         numEvidence: eng._count.evidence,
+        numFindings: eng._count.findings,
       });
     },
   );
@@ -93,6 +96,33 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         .parse(req.body);
       const eng = await app.db.engagement.update({ where: { slug }, data: body });
       return serializeEngagement(eng);
+    },
+  );
+
+  // Delete an engagement and everything under it. Child rows (roles, prefs, tags,
+  // evidence, findings, saved queries and their links) cascade at the DB level;
+  // evidence blobs live outside the DB, so gather their keys first and reclaim
+  // them from the blob store once the rows are gone.
+  app.delete(
+    '/engagements/:slug',
+    { preHandler: [requireAuth, requireEngagementRole('admin')] },
+    async (req) => {
+      const { slug } = req.params as { slug: string };
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+
+      const evidence = await app.db.evidence.findMany({
+        where: { engagementId: eng.id },
+        select: { fullBlobKey: true, thumbBlobKey: true },
+      });
+
+      await app.db.engagement.delete({ where: { id: eng.id } });
+
+      for (const ev of evidence) {
+        for (const key of [ev.fullBlobKey, ev.thumbBlobKey]) {
+          if (key) await app.blobs.delete(key).catch(() => {});
+        }
+      }
+      return { ok: true };
     },
   );
 

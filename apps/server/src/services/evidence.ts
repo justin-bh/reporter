@@ -5,6 +5,7 @@ import type { CreateEvidenceInput, Evidence, ParsedQuery } from '@reporter/share
 import { buildEvidenceWhere } from '../helpers/timeline-filter.js';
 import type { Pagination } from '../helpers/pagination.js';
 import { evidenceInclude, serializeEvidence } from './serializers.js';
+import { HttpError } from '../auth/guards.js';
 
 export interface CreateEvidenceArgs {
   engagementId: number;
@@ -24,6 +25,24 @@ export async function createEvidence(
   args: CreateEvidenceArgs,
 ): Promise<Evidence> {
   const { metadata, file } = args;
+
+  // Comment linking: when parentEvidenceUuid is set this evidence is a comment on
+  // another piece of evidence. Resolve + validate it up front (before writing any
+  // blobs) so an invalid parent can't leave an orphaned blob behind. The parent
+  // must live in the same engagement and must itself be top-level — comments are
+  // one level deep.
+  let parentEvidenceId: number | null = null;
+  if (metadata.parentEvidenceUuid) {
+    const parent = await app.db.evidence.findFirst({
+      where: { uuid: metadata.parentEvidenceUuid, engagementId: args.engagementId },
+      select: { id: true, parentEvidenceId: true },
+    });
+    if (!parent) throw new HttpError(404, 'Parent evidence not found in this engagement');
+    if (parent.parentEvidenceId !== null) {
+      throw new HttpError(400, 'Cannot comment on a comment (linked evidence is one level deep)');
+    }
+    parentEvidenceId = parent.id;
+  }
 
   let fullBlobKey: string | null = null;
   let thumbBlobKey: string | null = null;
@@ -73,6 +92,7 @@ export async function createEvidence(
       contentSubtype: metadata.contentSubtype ?? null,
       fullBlobKey,
       thumbBlobKey,
+      parentEvidenceId,
       occurredAt,
       tags: { create: validTags.map((t) => ({ tagId: t.id })) },
     },

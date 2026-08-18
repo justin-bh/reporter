@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
 import {
   Button,
-  Card,
   EmptyState,
   ErrorState,
   Field,
@@ -14,10 +12,13 @@ import {
   useToast,
 } from '@reporter/ui';
 import { TAG_COLORS, defaultTagColorFor } from '@reporter/shared';
-import { useCreateTag, useDeleteTag, useTags } from '../api/hooks.js';
+import { useCreateTag, useDeleteTag, useTags } from '../../api/hooks.js';
 
-export function TagsPage() {
-  const { slug = '' } = useParams();
+/**
+ * Tag list + "new tag" form for one engagement. Presentational block meant to
+ * live inside a Settings Card. Tags are scoped to the engagement.
+ */
+export function TagManager({ slug }: { slug: string }) {
   const { data: tags, isLoading, isError, refetch } = useTags(slug);
   const create = useCreateTag(slug);
   const del = useDeleteTag(slug);
@@ -51,35 +52,32 @@ export function TagsPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div>
-        <h2 className="mb-3 text-lg font-semibold text-text">Tags</h2>
-        {isLoading ? (
-          <Spinner />
-        ) : isError ? (
-          <ErrorState description="Couldn’t load tags." onRetry={() => refetch()} />
-        ) : !tags || tags.length === 0 ? (
-          <EmptyState
-            title="No tags yet"
-            description="Create tags to organize and filter evidence."
-          />
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((t) => (
-              <span key={t.id} className="inline-flex items-center gap-1">
-                <TagChip
-                  name={t.name}
-                  colorName={t.colorName}
-                  onRemove={() => removeTag(t.id, t.name)}
-                />
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="space-y-4">
+      {isLoading ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorState description="Couldn’t load tags." onRetry={() => refetch()} />
+      ) : !tags || tags.length === 0 ? (
+        <EmptyState
+          title="No tags yet"
+          description="Create tags to organize and filter evidence."
+        />
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {tags.map((t) => (
+            <span key={t.id} className="inline-flex items-center gap-1">
+              <TagChip
+                name={t.name}
+                colorName={t.colorName}
+                onRemove={() => removeTag(t.id, t.name)}
+              />
+            </span>
+          ))}
+        </div>
+      )}
 
-      <Card className="h-fit space-y-4 p-4">
-        <h3 className="text-sm font-semibold text-text">New tag</h3>
+      <div className="space-y-3 border-t border-border pt-4">
+        <p className="text-sm font-medium text-text">New tag</p>
         <Field label="Name" htmlFor="tag-name">
           <Input
             id="tag-name"
@@ -107,7 +105,7 @@ export function TagsPage() {
         <Button onClick={add} loading={create.isPending} disabled={!name}>
           Add tag
         </Button>
-      </Card>
+      </div>
     </div>
   );
 }

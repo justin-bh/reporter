@@ -7,6 +7,8 @@ export interface RecordingMeta {
   engagementSlug: string;
   description: string;
   tagIds: number[];
+  /** When set, upload this recording as a comment on the given evidence. */
+  parentEvidenceUuid?: string;
 }
 
 /** Upload an asciicast file as terminal-recording evidence. Returns its uuid. */
@@ -24,6 +26,7 @@ export async function uploadCast(
       description: meta.description,
       tagIds: meta.tagIds,
       occurredAt: new Date().toISOString(),
+      parentEvidenceUuid: meta.parentEvidenceUuid,
     },
     { filename: basename(castPath), contentType: 'application/x-asciicast', data },
   );

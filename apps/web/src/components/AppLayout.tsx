@@ -9,8 +9,16 @@ export function AppLayout() {
   const navigate = useNavigate();
 
   async function onLogout() {
-    await logout();
-    navigate('/login');
+    // `logout()` clears local auth state even if the request fails, so ignore any
+    // error and always land the user on /login. The public route tree would
+    // redirect there on its own, but navigating makes it explicit and immediate.
+    try {
+      await logout();
+    } catch {
+      // already signed out locally; nothing more to do
+    } finally {
+      navigate('/login', { replace: true });
+    }
   }
 
   return (

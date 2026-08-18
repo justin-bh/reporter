@@ -6,6 +6,7 @@ import type {
   ConnectionResult,
   DesktopSettings,
   EngagementLite,
+  EvidenceLite,
   QueueItem,
   SettingsPatch,
   TagLite,
@@ -20,6 +21,8 @@ export interface SubmitPayload {
   filePath?: string;
   content?: string;
   contentSubtype?: string;
+  /** When set, file this capture as a comment on the given evidence. */
+  parentEvidenceUuid?: string;
 }
 
 function on(channel: string, cb: (...args: any[]) => void): () => void {
@@ -35,6 +38,8 @@ const reporter = {
   testConnection: (): Promise<ConnectionResult> => ipcRenderer.invoke(CH.testConnection),
   listEngagements: (): Promise<EngagementLite[]> => ipcRenderer.invoke(CH.listEngagements),
   listTags: (slug: string): Promise<TagLite[]> => ipcRenderer.invoke(CH.listTags, slug),
+  listEvidence: (slug: string): Promise<EvidenceLite[]> =>
+    ipcRenderer.invoke(CH.listEvidence, slug),
   setEngagement: (slug: string | null): Promise<DesktopSettings> =>
     ipcRenderer.invoke(CH.setEngagement, slug),
   getQueue: (): Promise<QueueItem[]> => ipcRenderer.invoke(CH.getQueue),

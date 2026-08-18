@@ -38,6 +38,7 @@ export async function drainQueue(onChange: () => void): Promise<void> {
             occurredAt: item.occurredAt,
             content: item.content,
             contentSubtype: item.contentSubtype,
+            parentEvidenceUuid: item.parentEvidenceUuid,
           },
           file,
         );

@@ -10,7 +10,6 @@ import { TimelinePage } from './pages/TimelinePage.js';
 import { EvidenceDetailPage } from './pages/EvidenceDetailPage.js';
 import { FindingsPage } from './pages/FindingsPage.js';
 import { FindingDetailPage } from './pages/FindingDetailPage.js';
-import { TagsPage } from './pages/TagsPage.js';
 import { QueriesPage } from './pages/QueriesPage.js';
 import { EngagementSettingsPage } from './pages/EngagementSettingsPage.js';
 import { AccountPage } from './pages/AccountPage.js';
@@ -54,7 +53,7 @@ export function App() {
           <Route path="evidence/:uuid" element={<EvidenceDetailPage />} />
           <Route path="findings" element={<FindingsPage />} />
           <Route path="findings/:uuid" element={<FindingDetailPage />} />
-          <Route path="tags" element={<TagsPage />} />
+          <Route path="tags" element={<Navigate to="../settings" replace />} />
           <Route path="queries" element={<QueriesPage />} />
           <Route path="settings" element={<EngagementSettingsPage />} />
         </Route>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Field, Input, Modal, Select, TagPicker, Textarea, useToast } from '@reporter/ui';
 import {
   EVIDENCE_TYPE_LABELS,
@@ -13,20 +13,30 @@ export function CreateEvidenceModal({
   slug,
   open,
   onClose,
+  parentEvidenceUuid,
+  title = 'Add evidence',
 }: {
   slug: string;
   open: boolean;
   onClose: () => void;
+  /** When set, the created evidence is filed as a comment on this evidence. */
+  parentEvidenceUuid?: string;
+  /** Modal + submit-button label; use "Add comment" for the comment flow. */
+  title?: string;
 }) {
   const toast = useToast();
   const { data: tags } = useTags(slug);
   const create = useCreateEvidence(slug);
+  const isComment = parentEvidenceUuid !== undefined;
 
   const [type, setType] = useState<EvidenceType>('image');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [language, setLanguage] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [tagIds, setTagIds] = useState<number[]>([]);
 
   const needsFile = type === 'image';
@@ -35,14 +45,66 @@ export function CreateEvidenceModal({
     ? Boolean(file)
     : content.trim().length > 0 || description.trim().length > 0;
 
-  function reset() {
+  const reset = useCallback(() => {
     setType('image');
     setDescription('');
     setContent('');
     setLanguage('');
     setFile(null);
+    setDragging(false);
     setTagIds([]);
-  }
+  }, []);
+
+  // Clear the form whenever the modal closes so nothing carries into the next open
+  // — important since this same modal is reused as the per-parent comment composer.
+  useEffect(() => {
+    if (!open) reset();
+  }, [open, reset]);
+
+  // Accept an image from the file picker, drag-and-drop, or a clipboard paste.
+  const selectImage = useCallback(
+    (f: File | null | undefined) => {
+      if (!f) return;
+      if (!f.type.startsWith('image/')) {
+        toast.error('Please choose an image (PNG, JPEG, GIF, or WEBP).');
+        return;
+      }
+      setFile(f);
+    },
+    [toast],
+  );
+
+  // Live object-URL preview of the chosen image; revoked when it changes/unmounts.
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  // Paste an image from the clipboard anywhere in the modal (screenshot type only).
+  useEffect(() => {
+    if (!open || type !== 'image') return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const f = item.getAsFile();
+          if (f) {
+            e.preventDefault();
+            selectImage(f);
+          }
+          break;
+        }
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [open, type, selectImage]);
 
   async function submit() {
     const metadata: CreateEvidenceInput = {
@@ -51,10 +113,11 @@ export function CreateEvidenceModal({
       tagIds,
       content: needsText ? content : undefined,
       contentSubtype: type === 'codeblock' && language ? language : undefined,
+      parentEvidenceUuid,
     };
     try {
       await create.mutateAsync({ metadata, file: needsFile && file ? file : undefined });
-      toast.success('Evidence added');
+      toast.success(isComment ? 'Comment added' : 'Evidence added');
       reset();
       onClose();
     } catch (err) {
@@ -66,7 +129,7 @@ export function CreateEvidenceModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Add evidence"
+      title={title}
       size="lg"
       footer={
         <>
@@ -74,7 +137,7 @@ export function CreateEvidenceModal({
             Cancel
           </Button>
           <Button onClick={submit} loading={create.isPending} disabled={!canSubmit}>
-            Add evidence
+            {title}
           </Button>
         </>
       }
@@ -116,13 +179,77 @@ export function CreateEvidenceModal({
 
         {needsFile ? (
           <Field label="Screenshot" htmlFor="ev-file" hint="PNG, JPEG, GIF, or WEBP.">
-            <input
-              id="ev-file"
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-muted file:mr-3 file:rounded-input file:border-0 file:bg-surface-2 file:px-3 file:py-2 file:text-text"
-            />
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Add a screenshot: click to browse, drag and drop, or paste an image"
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                selectImage(e.dataTransfer.files?.[0]);
+              }}
+              className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed p-6 text-center transition-colors ${
+                dragging
+                  ? 'border-accent bg-surface-2'
+                  : 'border-border bg-surface-2/40 hover:border-accent/60'
+              }`}
+            >
+              {previewUrl ? (
+                <>
+                  <img
+                    src={previewUrl}
+                    alt="Selected screenshot preview"
+                    className="max-h-48 w-auto rounded-input border border-border"
+                  />
+                  <p className="max-w-full truncate text-xs text-muted">
+                    {file?.name}
+                    {file ? ` · ${Math.max(1, Math.round(file.size / 1024))} KB` : ''}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-text">
+                    <span className="font-medium text-accent">Choose a file</span>, drag &amp; drop,
+                    or paste an image
+                  </p>
+                  <p className="text-xs text-muted">Press ⌘/Ctrl+V to paste a screenshot</p>
+                </>
+              )}
+              <input
+                ref={fileInputRef}
+                id="ev-file"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => selectImage(e.target.files?.[0])}
+              />
+            </div>
           </Field>
         ) : (
           <Field

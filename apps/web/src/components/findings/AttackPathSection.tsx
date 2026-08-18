@@ -1,0 +1,182 @@
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Button, Card, EmptyState, useConfirm, useToast } from '@reporter/ui';
+import type { FindingEvidence } from '@reporter/shared';
+import {
+  useDetachEvidence,
+  useReorderEvidence,
+  useUpdateFindingEvidence,
+} from '../../api/hooks.js';
+import { FindingEvidenceCard } from './FindingEvidenceCard.js';
+
+/**
+ * The ordered, captioned Attack Path bucket (inPath=true). Numbered, drag-reorderable
+ * steps with per-step captions, plus move-to-attached and detach actions.
+ */
+export function AttackPathSection({
+  slug,
+  findingUuid,
+  items,
+  onAddStep,
+}: {
+  slug: string;
+  findingUuid: string;
+  items: FindingEvidence[];
+  onAddStep: () => void;
+}) {
+  const reorder = useReorderEvidence(slug, findingUuid);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const ids = items.map((ev) => ev.uuid);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    // Reorder ONLY this bucket's uuids.
+    reorder.mutate(arrayMove(ids, from, to));
+  }
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text">Attack Path ({items.length})</h3>
+        <Button size="sm" onClick={onAddStep}>
+          Add step
+        </Button>
+      </div>
+
+      {items.length === 0 ? (
+        <EmptyState
+          title="Build the attack path"
+          description="Add evidence steps that tell the story of the attack, in order."
+          action={
+            <Button size="sm" onClick={onAddStep}>
+              Add step
+            </Button>
+          }
+        />
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={onDragEnd}
+        >
+          <SortableContext items={items.map((e) => e.uuid)} strategy={verticalListSortingStrategy}>
+            <ol className="flex flex-col">
+              {items.map((ev, i) => (
+                <SortableStep
+                  key={ev.uuid}
+                  slug={slug}
+                  findingUuid={findingUuid}
+                  ev={ev}
+                  stepNumber={i + 1}
+                  isLast={i === items.length - 1}
+                />
+              ))}
+            </ol>
+          </SortableContext>
+        </DndContext>
+      )}
+    </Card>
+  );
+}
+
+function SortableStep({
+  slug,
+  findingUuid,
+  ev,
+  stepNumber,
+  isLast,
+}: {
+  slug: string;
+  findingUuid: string;
+  ev: FindingEvidence;
+  stepNumber: number;
+  isLast: boolean;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const detach = useDetachEvidence(slug, findingUuid);
+  const update = useUpdateFindingEvidence(slug, findingUuid);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: ev.uuid,
+  });
+
+  async function onDetach() {
+    const ok = await confirm({
+      title: 'Remove step',
+      message: 'Remove this evidence from the attack path? The evidence itself is kept.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    detach.mutate(ev.uuid);
+  }
+
+  function onMove() {
+    update.mutate(
+      { evidenceUuid: ev.uuid, patch: { inPath: false } },
+      {
+        onSuccess: () => toast.success('Moved to attached evidence'),
+        onError: (err) => toast.error(err instanceof Error ? err.message : 'Move failed'),
+      },
+    );
+  }
+
+  return (
+    <li className="relative pb-2">
+      <FindingEvidenceCard
+        slug={slug}
+        ev={ev}
+        variant="path"
+        stepNumber={stepNumber}
+        drag={{
+          setNodeRef,
+          style: {
+            transform: CSS.Transform.toString(transform),
+            transition,
+            opacity: isDragging ? 0.6 : 1,
+          },
+          attributes,
+          listeners,
+          isDragging,
+        }}
+        onSaveCaption={(caption) => update.mutate({ evidenceUuid: ev.uuid, patch: { caption } })}
+        onMove={onMove}
+        onDetach={onDetach}
+        moving={update.isPending}
+      />
+      {/* Subtle sequence connector between steps: a short token-colored rule so the
+          ordered flow reads clearly in both themes. */}
+      {!isLast && (
+        <div aria-hidden className="flex flex-col items-center gap-0.5 py-1 text-muted">
+          <span className="h-3 w-px bg-border" />
+          <span className="text-xs leading-none">↓</span>
+        </div>
+      )}
+    </li>
+  );
+}

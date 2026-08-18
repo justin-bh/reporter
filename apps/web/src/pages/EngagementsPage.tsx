@@ -10,6 +10,12 @@ import {
   Input,
   Modal,
   Spinner,
+  Table,
+  Tbody,
+  Td,
+  Th,
+  Thead,
+  Tr,
   useToast,
 } from '@reporter/ui';
 import type { Engagement } from '@reporter/shared';
@@ -18,18 +24,47 @@ import { useCreateEngagement, useEngagements, useToggleFavorite } from '../api/h
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
 
+type EngagementsView = 'card' | 'table';
+const VIEW_STORAGE_KEY = 'reporter.engagementsView';
+
+/** Persist the card/table choice across visits so the preference sticks. */
+function usePersistedView(): [EngagementsView, (v: EngagementsView) => void] {
+  const [view, setView] = useState<EngagementsView>(() => {
+    try {
+      return localStorage.getItem(VIEW_STORAGE_KEY) === 'table' ? 'table' : 'card';
+    } catch {
+      return 'card';
+    }
+  });
+  const update = (v: EngagementsView) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, v);
+    } catch {
+      /* storage unavailable — keep the in-memory choice */
+    }
+  };
+  return [view, update];
+}
+
 export function EngagementsPage() {
   const { data: engagements, isLoading, isError, refetch } = useEngagements();
   const [creating, setCreating] = useState(false);
+  const [view, setView] = usePersistedView();
+
+  const hasEngagements = Boolean(engagements && engagements.length > 0);
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-text">Engagements</h1>
           <p className="text-sm text-muted">Engagements you can access.</p>
         </div>
-        <Button onClick={() => setCreating(true)}>New engagement</Button>
+        <div className="flex items-center gap-2">
+          {hasEngagements && <ViewToggle view={view} onChange={setView} />}
+          <Button onClick={() => setCreating(true)}>New engagement</Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -44,6 +79,8 @@ export function EngagementsPage() {
           description="Create your first engagement to start collecting evidence."
           action={<Button onClick={() => setCreating(true)}>New engagement</Button>}
         />
+      ) : view === 'table' ? (
+        <EngagementsTable engagements={engagements} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {engagements.map((eng) => (
@@ -57,8 +94,51 @@ export function EngagementsPage() {
   );
 }
 
-function EngagementCard({ eng }: { eng: Engagement }) {
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: EngagementsView;
+  onChange: (v: EngagementsView) => void;
+}) {
+  const options: { value: EngagementsView; label: string }[] = [
+    { value: 'card', label: 'Cards' },
+    { value: 'table', label: 'Table' },
+  ];
+  return (
+    <div className="inline-flex rounded-input border border-border p-0.5" role="group">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={view === o.value}
+          onClick={() => onChange(o.value)}
+          className={`rounded-input px-2.5 py-1 text-sm font-medium transition-colors ${
+            view === o.value ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FavoriteButton({ eng }: { eng: Engagement }) {
   const toggle = useToggleFavorite(eng.slug);
+  return (
+    <button
+      aria-label={eng.favorite ? 'Unfavorite' : 'Favorite'}
+      onClick={() => toggle.mutate(!eng.favorite)}
+      className={eng.favorite ? 'text-warning' : 'text-muted hover:text-warning'}
+    >
+      {eng.favorite ? '★' : '☆'}
+    </button>
+  );
+}
+
+function EngagementCard({ eng }: { eng: Engagement }) {
+  const findings = eng.numFindings ?? 0;
   return (
     <Card className="flex flex-col gap-3 p-4 transition-colors hover:border-accent/50">
       <div className="flex items-start justify-between gap-2">
@@ -68,21 +148,66 @@ function EngagementCard({ eng }: { eng: Engagement }) {
         >
           {eng.name}
         </Link>
-        <button
-          aria-label={eng.favorite ? 'Unfavorite' : 'Favorite'}
-          onClick={() => toggle.mutate(!eng.favorite)}
-          className={eng.favorite ? 'text-warning' : 'text-muted hover:text-warning'}
-        >
-          {eng.favorite ? '★' : '☆'}
-        </button>
+        <FavoriteButton eng={eng} />
       </div>
       <div className="flex items-center gap-2 text-xs text-muted">
         <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
         <span>{eng.numEvidence ?? 0} evidence</span>
+        {findings > 0 && (
+          <>
+            <span>·</span>
+            <span>
+              {findings} {findings === 1 ? 'finding' : 'findings'}
+            </span>
+          </>
+        )}
         <span>·</span>
         <span>{eng.numUsers ?? 0} members</span>
       </div>
     </Card>
+  );
+}
+
+function EngagementsTable({ engagements }: { engagements: Engagement[] }) {
+  return (
+    <Table>
+      <Thead>
+        <Tr>
+          <Th />
+          <Th>Name</Th>
+          <Th>Status</Th>
+          <Th className="text-right">Evidence</Th>
+          <Th className="text-right">Findings</Th>
+          <Th className="text-right">Members</Th>
+        </Tr>
+      </Thead>
+      <Tbody>
+        {engagements.map((eng) => {
+          const findings = eng.numFindings ?? 0;
+          return (
+            <Tr key={eng.slug}>
+              <Td className="w-8 text-center">
+                <FavoriteButton eng={eng} />
+              </Td>
+              <Td>
+                <Link
+                  to={`/engagements/${eng.slug}/evidence`}
+                  className="font-medium text-text hover:text-accent"
+                >
+                  {eng.name}
+                </Link>
+              </Td>
+              <Td>
+                <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
+              </Td>
+              <Td className="text-right tabular-nums">{eng.numEvidence ?? 0}</Td>
+              <Td className="text-right tabular-nums text-muted">{findings > 0 ? findings : ''}</Td>
+              <Td className="text-right tabular-nums">{eng.numUsers ?? 0}</Td>
+            </Tr>
+          );
+        })}
+      </Tbody>
+    </Table>
   );
 }
 

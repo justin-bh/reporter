@@ -7,10 +7,14 @@ import type {
   CreateTagInput,
   Evidence,
   Finding,
+  FindingCategory,
+  FindingDetail,
+  FindingEvidence,
   FindingsImportResult,
   Engagement,
   SavedQuery,
   Tag,
+  UpdateFindingEvidenceInput,
   User,
 } from '@reporter/shared';
 import { api } from './client.js';
@@ -62,6 +66,19 @@ export function useToggleFavorite(slug: string) {
   });
 }
 
+export function useDeleteEngagement(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del(`/web/engagements/${slug}`),
+    onSuccess: () => {
+      // The engagement (and its cached detail/children) is gone — drop it from
+      // the list and forget any per-engagement queries still in the cache.
+      qc.removeQueries({ queryKey: engKey(slug) });
+      qc.invalidateQueries({ queryKey: ['engagements'] });
+    },
+  });
+}
+
 // --- Evidence ---
 export const useTimeline = (slug: string, q: string, page: number) =>
   useQuery({
@@ -76,6 +93,13 @@ export const useEvidence = (slug: string, uuid: string) =>
   useQuery({
     queryKey: ['evidence', slug, uuid],
     queryFn: () => api.get<Evidence>(`/web/engagements/${slug}/evidence/${uuid}`),
+  });
+
+/** Comments (linked evidence) attached to a piece of evidence, oldest first. */
+export const useEvidenceComments = (slug: string, uuid: string) =>
+  useQuery({
+    queryKey: ['evidence-comments', slug, uuid],
+    queryFn: () => api.get<Evidence[]>(`/web/engagements/${slug}/evidence/${uuid}/comments`),
   });
 
 /** An operator as it appears on evidence (for the timeline operator filter). */
@@ -98,7 +122,15 @@ export function useCreateEvidence(slug: string) {
       if (args.file) form.append('file', args.file);
       return api.postForm<Evidence>(`/web/engagements/${slug}/evidence`, form);
     },
-    onSuccess: () => invalidateTimeline(qc, slug),
+    onSuccess: (_d, v) => {
+      invalidateTimeline(qc, slug);
+      // Adding a comment changes the parent's comment list + count.
+      const parent = v.metadata.parentEvidenceUuid;
+      if (parent) {
+        qc.invalidateQueries({ queryKey: ['evidence-comments', slug, parent] });
+        qc.invalidateQueries({ queryKey: ['evidence', slug, parent] });
+      }
+    },
   });
 }
 
@@ -117,8 +149,21 @@ export function useUpdateEvidence(slug: string) {
 export function useDeleteEvidence(slug: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (uuid: string) => api.del(`/web/engagements/${slug}/evidence/${uuid}`),
-    onSuccess: () => invalidateTimeline(qc, slug),
+    // `comments` chooses what happens to linked evidence: 'cascade' deletes them,
+    // 'orphan' (default) promotes them to top-level evidence.
+    mutationFn: (args: { uuid: string; comments?: 'cascade' | 'orphan' }) =>
+      api.del(
+        `/web/engagements/${slug}/evidence/${args.uuid}` +
+          (args.comments ? `?comments=${args.comments}` : ''),
+      ),
+    onSuccess: () => {
+      invalidateTimeline(qc, slug);
+      // Orphaned comments become top-level — refresh any cached evidence detail.
+      qc.invalidateQueries({ queryKey: ['evidence', slug] });
+      // Deleting a comment must drop it from its parent's thread; we don't know the
+      // parent here, so refresh every cached comment thread in this engagement.
+      qc.invalidateQueries({ queryKey: ['evidence-comments', slug] });
+    },
   });
 }
 
@@ -169,8 +214,7 @@ export const useFindings = (slug: string) =>
 export const useFinding = (slug: string, uuid: string) =>
   useQuery({
     queryKey: ['finding', slug, uuid],
-    queryFn: () =>
-      api.get<Finding & { evidence: Evidence[] }>(`/web/engagements/${slug}/findings/${uuid}`),
+    queryFn: () => api.get<FindingDetail>(`/web/engagements/${slug}/findings/${uuid}`),
   });
 
 export function useCreateFinding(slug: string) {
@@ -212,12 +256,74 @@ export function useImportFindings(slug: string) {
   });
 }
 
+// --- Finding categories (engagement-scoped list; categories are shared globally) ---
+export const useFindingCategories = (slug: string) =>
+  useQuery({
+    queryKey: ['finding-categories', slug],
+    queryFn: () => api.get<FindingCategory[]>(`/web/engagements/${slug}/finding-categories`),
+  });
+
+export function useCreateFindingCategory(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { category: string }) =>
+      api.post<FindingCategory>(`/web/engagements/${slug}/finding-categories`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finding-categories', slug] }),
+  });
+}
+
+export function useDeleteFindingCategory(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.del(`/web/engagements/${slug}/finding-categories/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finding-categories', slug] }),
+  });
+}
+
 export function useAttachEvidence(slug: string, uuid: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (evidenceUuids: string[]) =>
-      api.post(`/web/engagements/${slug}/findings/${uuid}/evidence`, { evidenceUuids }),
+    mutationFn: (args: { evidenceUuids: string[]; inPath: boolean }) =>
+      api.post(`/web/engagements/${slug}/findings/${uuid}/evidence`, {
+        evidenceUuids: args.evidenceUuids,
+        inPath: args.inPath,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['finding', slug, uuid] }),
+  });
+}
+
+/**
+ * Update a single evidence↔finding link (its Attack-Path `caption`, or move it
+ * between buckets via `inPath`). Caption edits patch the cached finding
+ * optimistically so the textarea doesn't flicker on every keystroke-debounced
+ * save; bucket moves fall back to a plain invalidate.
+ */
+export function useUpdateFindingEvidence(slug: string, uuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { evidenceUuid: string; patch: UpdateFindingEvidenceInput }) =>
+      api.patch<FindingEvidence>(
+        `/web/engagements/${slug}/findings/${uuid}/evidence/${args.evidenceUuid}`,
+        args.patch,
+      ),
+    onMutate: async (args) => {
+      // Only caption edits are applied optimistically; a bucket move reorders
+      // the array server-side, so we let the invalidate re-fetch it.
+      if (args.patch.caption === undefined) return { prev: undefined };
+      await qc.cancelQueries({ queryKey: ['finding', slug, uuid] });
+      const prev = qc.getQueryData<FindingWithEvidence>(['finding', slug, uuid]);
+      if (prev) {
+        const evidence = prev.evidence.map((e) =>
+          e.uuid === args.evidenceUuid ? { ...e, caption: args.patch.caption ?? e.caption } : e,
+        );
+        qc.setQueryData(['finding', slug, uuid], { ...prev, evidence });
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['finding', slug, uuid], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['finding', slug, uuid] }),
   });
 }
 
@@ -253,9 +359,16 @@ export function useReorderFindings(slug: string) {
   });
 }
 
-type FindingWithEvidence = Finding & { evidence: Evidence[] };
+type FindingWithEvidence = Finding & { evidence: FindingEvidence[] };
 
-/** Reorder the evidence attached to a finding (optimistic). */
+/**
+ * Reorder ONE bucket of a finding's evidence (Attack Path or Attached), optimistic.
+ * `orderedUuids` is only that bucket's links in their new order — the server
+ * reorders a single bucket per request. The optimistic update therefore reorders
+ * just the links whose uuid is in the submitted set and leaves the OTHER bucket's
+ * links untouched. (A previous version rebuilt the whole array from the submitted
+ * uuids, which silently dropped the other bucket from the cache.)
+ */
 export function useReorderEvidence(slug: string, uuid: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -265,10 +378,19 @@ export function useReorderEvidence(slug: string, uuid: string) {
       await qc.cancelQueries({ queryKey: ['finding', slug, uuid] });
       const prev = qc.getQueryData<FindingWithEvidence>(['finding', slug, uuid]);
       if (prev) {
+        const submitted = new Set(orderedUuids);
         const byUuid = new Map(prev.evidence.map((e) => [e.uuid, e]));
-        const evidence = orderedUuids
+        // The submitted bucket's links, in the requested new order.
+        const reordered = orderedUuids
           .map((u) => byUuid.get(u))
-          .filter((e): e is Evidence => Boolean(e));
+          .filter((e): e is FindingEvidence => Boolean(e));
+        // Walk the previous (globally path-first) array; wherever a submitted link
+        // sat, drop in the next reordered one — preserving the other bucket's items
+        // in place and keeping the overall bucket ordering stable.
+        let i = 0;
+        const evidence = prev.evidence.map((e) =>
+          submitted.has(e.uuid) ? (reordered[i++] ?? e) : e,
+        );
         qc.setQueryData(['finding', slug, uuid], { ...prev, evidence });
       }
       return { prev };

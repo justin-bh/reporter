@@ -39,6 +39,7 @@ export const engagementSchema = z.object({
   status: engagementStatusSchema,
   numUsers: z.number().int().nonnegative().optional(),
   numEvidence: z.number().int().nonnegative().optional(),
+  numFindings: z.number().int().nonnegative().optional(),
   favorite: z.boolean().optional(),
   role: engagementRoleSchema.optional(),
   createdAt: isoDateSchema,
@@ -78,8 +79,28 @@ export const evidenceSchema = z.object({
   /** Present when the evidence has a stored blob (image/recording/har). */
   hasContent: z.boolean(),
   hasThumbnail: z.boolean(),
+  /**
+   * When this evidence is a comment on another piece of evidence, the parent's
+   * uuid; otherwise null. Comments are themselves full evidence, linked to a
+   * single parent (see `createEvidenceInput.parentEvidenceUuid`).
+   */
+  parentEvidenceUuid: uuidSchema.nullable(),
+  /** How many comments (linked evidence) point at this piece of evidence. */
+  commentCount: z.number().int().nonnegative(),
 });
 export type Evidence = z.infer<typeof evidenceSchema>;
+
+/**
+ * Evidence as it appears attached to a finding: the base evidence shape plus the
+ * per-link bucket fields. `inPath` splits a finding's evidence into two buckets —
+ * the ordered, captioned Attack Path (`true`) and plain Attached Evidence
+ * (`false`); `caption` describes the step in the Attack Path.
+ */
+export const findingEvidenceSchema = evidenceSchema.extend({
+  caption: z.string(),
+  inPath: z.boolean(),
+});
+export type FindingEvidence = z.infer<typeof findingEvidenceSchema>;
 
 export const findingCategorySchema = z.object({
   id: z.number().int().positive(),
@@ -100,13 +121,23 @@ export const findingSchema = z.object({
   /** CVSS v3.1 base score (0.0–10.0), derived from the vector. */
   cvssScore: z.number().min(0).max(10).nullable(),
   readyToReport: z.boolean(),
-  ticketLink: z.string().url().nullable(),
   /** Manual sort position within the engagement's findings (ascending). */
   position: z.number().int().nonnegative(),
   numEvidence: z.number().int().nonnegative(),
   createdAt: isoDateSchema,
 });
 export type Finding = z.infer<typeof findingSchema>;
+
+/**
+ * A finding plus its attached evidence, as returned by the finding-detail route.
+ * Evidence is a flat list carrying each link's bucket (`inPath`) and `caption`;
+ * the client splits it into Attack Path (inPath=true) and Attached Evidence
+ * (inPath=false), each ordered by the link's stored position.
+ */
+export const findingDetailSchema = findingSchema.extend({
+  evidence: z.array(findingEvidenceSchema),
+});
+export type FindingDetail = z.infer<typeof findingDetailSchema>;
 
 export const apiKeySchema = z.object({
   accessKey: z.string(),
@@ -155,6 +186,12 @@ export const createEvidenceInput = z.object({
   content: z.string().optional(),
   /** Language hint for codeblock evidence. */
   contentSubtype: z.string().optional(),
+  /**
+   * When set, this evidence becomes a comment on the referenced (top-level)
+   * evidence in the same engagement — a way to link evidence together and track
+   * follow-ups/updates. The parent must not itself be a comment (one level deep).
+   */
+  parentEvidenceUuid: uuidSchema.optional(),
 });
 export type CreateEvidenceInput = z.infer<typeof createEvidenceInput>;
 
@@ -178,15 +215,40 @@ export const updateFindingInput = z.object({
   severity: severitySchema.nullable().optional(),
   cvssVector: cvssVectorSchema.nullable().optional(),
   readyToReport: z.boolean().optional(),
-  ticketLink: z.string().url().nullable().optional(),
 });
 export type UpdateFindingInput = z.infer<typeof updateFindingInput>;
 
-/** Reorder request: the full ordered list of finding (or evidence) UUIDs. */
+/**
+ * Reorder request. For findings it lists every finding in the engagement; for a
+ * finding's evidence it lists one bucket's links in their new order (the server
+ * assigns positions by array index within that bucket).
+ */
 export const reorderInput = z.object({
   orderedUuids: z.array(uuidSchema).min(1),
 });
 export type ReorderInput = z.infer<typeof reorderInput>;
+
+/**
+ * Attach one or more pieces of evidence to a finding. `inPath` picks the target
+ * bucket: the ordered Attack Path (`true`) or plain Attached Evidence (`false`,
+ * the default). New links append to the end of that bucket.
+ */
+export const attachEvidenceInput = z.object({
+  evidenceUuids: z.array(uuidSchema).min(1),
+  inPath: z.boolean().default(false),
+});
+export type AttachEvidenceInput = z.infer<typeof attachEvidenceInput>;
+
+/**
+ * Update a single evidence↔finding link. `caption` sets the Attack Path step
+ * text; changing `inPath` moves the link to the other bucket (appended to its
+ * end). Both are optional so the client can set either independently.
+ */
+export const updateFindingEvidenceInput = z.object({
+  caption: z.string().max(2000).optional(),
+  inPath: z.boolean().optional(),
+});
+export type UpdateFindingEvidenceInput = z.infer<typeof updateFindingEvidenceInput>;
 
 // ---------------------------------------------------------------------------
 // Client API responses
@@ -226,6 +288,10 @@ export const exportedEvidenceSchema = z.object({
   contentSubtype: z.string().nullable().optional(),
   occurredAt: isoDateSchema,
   contentBase64: z.string().optional(),
+  /** Attack Path step caption for this link (empty for plain attached evidence). */
+  caption: z.string().default(''),
+  /** Which bucket the link belongs to: Attack Path (true) vs Attached Evidence (false). */
+  inPath: z.boolean().default(false),
 });
 export type ExportedEvidence = z.infer<typeof exportedEvidenceSchema>;
 
@@ -243,7 +309,6 @@ export const exportedFindingSchema = z.object({
   cvssVector: z.string().nullable(),
   cvssScore: z.number().min(0).max(10).nullable(),
   readyToReport: z.boolean(),
-  ticketLink: z.string().url().nullable(),
   position: z.number().int().nonnegative(),
   evidence: z.array(exportedEvidenceSchema).max(MAX_IMPORT_EVIDENCE_PER_FINDING),
 });

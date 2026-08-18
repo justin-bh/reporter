@@ -109,6 +109,28 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // List the comments (linked evidence) attached to this piece of evidence,
+  // oldest first — a chronological thread of follow-ups/updates.
+  app.get(
+    '/engagements/:slug/evidence/:uuid/comments',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req) => {
+      const { slug, uuid } = req.params as { slug: string; uuid: string };
+      const eng = await engagementBySlug(app, slug);
+      const parent = await app.db.evidence.findFirst({
+        where: { uuid, engagementId: eng.id },
+        select: { id: true },
+      });
+      if (!parent) throw new HttpError(404, 'Evidence not found');
+      const comments = await app.db.evidence.findMany({
+        where: { parentEvidenceId: parent.id },
+        include: evidenceInclude,
+        orderBy: { occurredAt: 'asc' },
+      });
+      return comments.map((c) => serializeEvidence(c, slug));
+    },
+  );
+
   // Update description / tags / occurredAt.
   app.put(
     '/engagements/:slug/evidence/:uuid',
@@ -155,17 +177,44 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // Delete evidence. When it has comments (linked evidence), `?comments=` decides
+  // their fate: `cascade` deletes them too; `orphan` (default) promotes them to
+  // top-level evidence via the SetNull self-relation, preserving their content.
   app.delete(
     '/engagements/:slug/evidence/:uuid',
     { preHandler: [requireAuth, requireEngagementRole('write')] },
     async (req) => {
       const { slug, uuid } = req.params as { slug: string; uuid: string };
+      const mode =
+        (req.query as { comments?: string }).comments === 'cascade' ? 'cascade' : 'orphan';
       const eng = await engagementBySlug(app, slug);
       const ev = await app.db.evidence.findFirst({ where: { uuid, engagementId: eng.id } });
       if (!ev) throw new HttpError(404, 'Evidence not found');
-      await app.db.evidence.delete({ where: { id: ev.id } });
-      if (ev.fullBlobKey) await app.blobs.delete(ev.fullBlobKey).catch(() => {});
-      if (ev.thumbBlobKey) await app.blobs.delete(ev.thumbBlobKey).catch(() => {});
+
+      // Blobs to reclaim once the rows are gone: always the target's own; plus each
+      // comment's when cascading (orphaned comments keep their content).
+      const blobKeys: (string | null)[] = [ev.fullBlobKey, ev.thumbBlobKey];
+
+      if (mode === 'cascade') {
+        // Read the comments here so the rows we delete and the blobs we reclaim come
+        // from the same set. A comment created concurrently (after this read) isn't
+        // in the list; the parent delete's SetNull promotes it to top-level with its
+        // blob intact rather than leaking it.
+        const comments = await app.db.evidence.findMany({
+          where: { parentEvidenceId: ev.id },
+          select: { id: true, fullBlobKey: true, thumbBlobKey: true },
+        });
+        for (const c of comments) blobKeys.push(c.fullBlobKey, c.thumbBlobKey);
+        await app.db.$transaction([
+          app.db.evidence.deleteMany({ where: { id: { in: comments.map((c) => c.id) } } }),
+          app.db.evidence.delete({ where: { id: ev.id } }),
+        ]);
+      } else {
+        // orphan: deleting the parent nulls each comment's parentEvidenceId.
+        await app.db.evidence.delete({ where: { id: ev.id } });
+      }
+
+      for (const key of blobKeys) if (key) await app.blobs.delete(key).catch(() => {});
       return { ok: true };
     },
   );
