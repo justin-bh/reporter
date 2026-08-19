@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-19
+
 ### Removed
 
 - **Finding "Ticket Link" field.** Removed the finding ticket-link field
