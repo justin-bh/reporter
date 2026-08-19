@@ -296,6 +296,10 @@ model Evidence {
   uuid           String   @unique @default(uuid())
   engagementId    Int      @map("engagement_id")
   operatorId     Int      @map("operator_id")
+  // Short label for the evidence — the primary heading in lists, cards, and the
+  // report. Backfilled from the old description on the title migration; required
+  // on new evidence at the API/UI layer.
+  title          String   @default("")
   description    String   @default("")
   contentType    String   @map("content_type")
   contentSubtype String?  @map("content_subtype")

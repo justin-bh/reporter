@@ -106,16 +106,53 @@ async function chooseEngagement(config: TermConfig): Promise<string | null> {
   return String(slug);
 }
 
-/** Collect description + tags and upload the recording. */
+/** Non-interactive overrides supplied via CLI flags. */
+export interface UploadOverrides {
+  /** Pre-supplied title; when set the Title prompt is skipped. */
+  title?: string;
+}
+
+/**
+ * Prompt for a required Title, re-asking until the operator enters a non-empty
+ * (non-whitespace) value. Returns the trimmed title, or `null` if cancelled.
+ */
+async function promptTitle(): Promise<string | null> {
+  for (;;) {
+    const title = await p.text({
+      message: 'Title',
+      placeholder: 'Short label for this recording',
+      validate: (value) => (String(value ?? '').trim() ? undefined : 'Title is required'),
+    });
+    if (p.isCancel(title)) return null;
+    const trimmed = String(title ?? '').trim();
+    if (trimmed) return trimmed;
+    // Defensive: validate should have caught this, but re-ask rather than upload empty.
+  }
+}
+
+/** Collect title + description + tags and upload the recording. */
 export async function promptAndUpload(
   config: TermConfig,
   castPath: string,
   parentEvidenceUuid?: string,
+  overrides: UploadOverrides = {},
 ): Promise<boolean> {
   const engagementSlug = await chooseEngagement(config);
   if (!engagementSlug) return false;
   if (parentEvidenceUuid) {
     p.log.info(`Filing as a comment on evidence ${c.muted(parentEvidenceUuid)}`);
+  }
+
+  // Title is required. Use the flag value when supplied non-interactively,
+  // otherwise prompt (re-asking until it's non-empty).
+  let title: string;
+  const overrideTitle = overrides.title?.trim();
+  if (overrideTitle) {
+    title = overrideTitle;
+  } else {
+    const prompted = await promptTitle();
+    if (prompted === null) return false;
+    title = prompted;
   }
 
   const description = await p.text({
@@ -131,6 +168,7 @@ export async function promptAndUpload(
   try {
     const uuid = await uploadCast(config, castPath, {
       engagementSlug,
+      title,
       description: String(description ?? ''),
       tagIds,
       parentEvidenceUuid,
@@ -139,11 +177,12 @@ export async function promptAndUpload(
     return true;
   } catch (err) {
     spin.stop(`${sym.err} Upload failed: ${err instanceof Error ? err.message : String(err)}`);
-    // Preserve the comment link in the retry hint so a copied command re-files it
-    // as a comment rather than silently creating new top-level evidence.
+    // Preserve the comment link and title in the retry hint so a copied command
+    // re-files it as a comment (not new top-level evidence) and keeps the title.
     const commentFlag = parentEvidenceUuid ? ` --comment-on ${parentEvidenceUuid}` : '';
+    const titleFlag = ` --title "${title.replace(/"/g, '\\"')}"`;
     p.log.info(`Your recording is saved at ${c.accent(castPath)} — retry with:`);
-    p.log.info(`  ${c.muted(`reporter-term upload "${castPath}"${commentFlag}`)}`);
+    p.log.info(`  ${c.muted(`reporter-term upload "${castPath}"${titleFlag}${commentFlag}`)}`);
     return false;
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -44,11 +44,44 @@ import { useAuth } from '../auth.js';
 import { useDeleteEngagement, useEngagement, useUpdateEngagement } from '../api/hooks.js';
 import { fromDateInput, toDateInputValue } from '../lib/format.js';
 import { ADMIN_ONLY_TITLE, canAdmin, canWrite } from '../lib/permissions.js';
+import { useAutosave } from '../hooks/useAutosave.js';
+import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
 import { TagManager } from '../components/engagement/TagManager.js';
 import { CategoryManager } from '../components/engagement/CategoryManager.js';
 import { ReportContentEditors } from '../components/engagement/ReportContentEditors.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+/** The full set of engagement fields this page autosaves in one debounced patch. */
+interface SettingsForm {
+  name: string;
+  status: EngagementStatus;
+  startedAt: string;
+  projectedEndAt: string;
+  actualEndAt: string;
+  clientName: string;
+  assessmentType: string;
+  location: string;
+  scope: string;
+  executiveSummary: string;
+  methodology: string;
+  wmEnabled: boolean;
+  wmText: string;
+  wmColor: string;
+  wmOpacity: WatermarkOpacity;
+  wmLayer: WatermarkLayer;
+  scopeTargets: ScopeTarget[];
+  scopeExclusions: string[];
+  recommendations: RecommendationItem[];
+  threatModelNarrative: string;
+  threatModelDiagrams: ThreatDiagram[];
+  executionNarrative: ExecutionSubsection[];
+  providerContacts: Contact[];
+  clientContacts: Contact[];
+  softwareTested: SoftwareItem[];
+  thirdPartySoftware: SoftwareItem[];
+}
 
 export function EngagementSettingsPage() {
   const { slug = '' } = useParams();
@@ -75,66 +108,148 @@ export function EngagementSettingsPage() {
   // Read-only pattern: inputs disable along with their save buttons.
   const adminOnlyTitle = isEngAdmin ? undefined : ADMIN_ONLY_TITLE;
 
-  const [name, setName] = useState('');
-  const [status, setStatus] = useState<EngagementStatus>('active');
-  // Date fields are held as "YYYY-MM-DD" strings for the native date inputs.
-  const [startedAt, setStartedAt] = useState('');
-  const [projectedEndAt, setProjectedEndAt] = useState('');
-  const [actualEndAt, setActualEndAt] = useState('');
-  // Report metadata — held as plain strings; empty clears the field (sent as null).
-  const [clientName, setClientName] = useState('');
-  const [assessmentType, setAssessmentType] = useState('');
-  const [location, setLocation] = useState('');
-  const [scope, setScope] = useState('');
-  const [executiveSummary, setExecutiveSummary] = useState('');
-  const [methodology, setMethodology] = useState('');
-  // Watermark settings for the exported report.
-  const [wmEnabled, setWmEnabled] = useState(true);
-  const [wmText, setWmText] = useState('');
-  const [wmColor, setWmColor] = useState('#64748b');
-  const [wmOpacity, setWmOpacity] = useState<WatermarkOpacity>('medium');
-  const [wmLayer, setWmLayer] = useState<WatermarkLayer>('behind');
-  // Report v2 structured content.
-  const [scopeTargets, setScopeTargets] = useState<ScopeTarget[]>([]);
-  const [scopeExclusions, setScopeExclusions] = useState<string[]>([]);
-  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
-  const [threatModelNarrative, setThreatModelNarrative] = useState('');
-  const [threatModelDiagrams, setThreatModelDiagrams] = useState<ThreatDiagram[]>([]);
-  const [executionNarrative, setExecutionNarrative] = useState<ExecutionSubsection[]>([]);
-  const [providerContacts, setProviderContacts] = useState<Contact[]>([]);
-  const [clientContacts, setClientContacts] = useState<Contact[]>([]);
-  const [softwareTested, setSoftwareTested] = useState<SoftwareItem[]>([]);
-  const [thirdPartySoftware, setThirdPartySoftware] = useState<SoftwareItem[]>([]);
+  // All editable engagement fields live in one form object so a single debounced
+  // autosave persists the whole `updateEngagementInput` (details, report metadata,
+  // watermark, and structured report content) instead of three manual Save buttons.
+  const [form, setForm] = useState<SettingsForm>({
+    name: '',
+    status: 'active',
+    // Date fields are held as "YYYY-MM-DD" strings for the native date inputs.
+    startedAt: '',
+    projectedEndAt: '',
+    actualEndAt: '',
+    clientName: '',
+    assessmentType: '',
+    location: '',
+    scope: '',
+    executiveSummary: '',
+    methodology: '',
+    wmEnabled: true,
+    wmText: '',
+    wmColor: '#64748b',
+    wmOpacity: 'medium',
+    wmLayer: 'behind',
+    scopeTargets: [],
+    scopeExclusions: [],
+    recommendations: [],
+    threatModelNarrative: '',
+    threatModelDiagrams: [],
+    executionNarrative: [],
+    providerContacts: [],
+    clientContacts: [],
+    softwareTested: [],
+    thirdPartySoftware: [],
+  });
+  // Typed patch helper so each field's onChange stays terse.
+  const patchForm = <K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  // Seed the form once per engagement, not on every cache change — membership and
+  // favorite mutations replace the cached `eng` object, and reseeding then would
+  // clobber an in-progress edit.
+  const seededSlug = useRef<string | null>(null);
+  const [baseline, setBaseline] = useState<SettingsForm | undefined>(undefined);
   useEffect(() => {
-    if (eng) {
-      setName(eng.name);
-      setStatus(eng.status);
-      setStartedAt(toDateInputValue(eng.startedAt));
-      setProjectedEndAt(toDateInputValue(eng.projectedEndAt));
-      setActualEndAt(toDateInputValue(eng.actualEndAt));
-      setClientName(eng.clientName ?? '');
-      setAssessmentType(eng.assessmentType ?? '');
-      setLocation(eng.location ?? '');
-      setScope(eng.scope ?? '');
-      setExecutiveSummary(eng.executiveSummary ?? '');
-      setMethodology(eng.methodology ?? '');
-      setWmEnabled(eng.watermarkEnabled ?? true);
-      setWmText(eng.watermarkText ?? '');
-      setWmColor(eng.watermarkColor ?? '#64748b');
-      setWmOpacity(eng.watermarkOpacity ?? 'medium');
-      setWmLayer(eng.watermarkLayer ?? 'behind');
-      setScopeTargets(eng.scopeTargets ?? []);
-      setScopeExclusions(eng.scopeExclusions ?? []);
-      setRecommendations(eng.strategicRecommendations ?? []);
-      setThreatModelNarrative(eng.threatModelNarrative ?? '');
-      setThreatModelDiagrams(eng.threatModelDiagrams ?? []);
-      setExecutionNarrative(eng.executionNarrative ?? []);
-      setProviderContacts(eng.providerContacts ?? []);
-      setClientContacts(eng.clientContacts ?? []);
-      setSoftwareTested(eng.softwareTested ?? []);
-      setThirdPartySoftware(eng.thirdPartySoftware ?? []);
+    if (eng && seededSlug.current !== eng.slug) {
+      seededSlug.current = eng.slug;
+      const seeded: SettingsForm = {
+        name: eng.name,
+        status: eng.status,
+        startedAt: toDateInputValue(eng.startedAt),
+        projectedEndAt: toDateInputValue(eng.projectedEndAt),
+        actualEndAt: toDateInputValue(eng.actualEndAt),
+        clientName: eng.clientName ?? '',
+        assessmentType: eng.assessmentType ?? '',
+        location: eng.location ?? '',
+        scope: eng.scope ?? '',
+        executiveSummary: eng.executiveSummary ?? '',
+        methodology: eng.methodology ?? '',
+        wmEnabled: eng.watermarkEnabled ?? true,
+        wmText: eng.watermarkText ?? '',
+        wmColor: eng.watermarkColor ?? '#64748b',
+        wmOpacity: eng.watermarkOpacity ?? 'medium',
+        wmLayer: eng.watermarkLayer ?? 'behind',
+        scopeTargets: eng.scopeTargets ?? [],
+        scopeExclusions: eng.scopeExclusions ?? [],
+        recommendations: eng.strategicRecommendations ?? [],
+        threatModelNarrative: eng.threatModelNarrative ?? '',
+        threatModelDiagrams: eng.threatModelDiagrams ?? [],
+        executionNarrative: eng.executionNarrative ?? [],
+        providerContacts: eng.providerContacts ?? [],
+        clientContacts: eng.clientContacts ?? [],
+        softwareTested: eng.softwareTested ?? [],
+        thirdPartySoftware: eng.thirdPartySoftware ?? [],
+      };
+      setForm(seeded);
+      setBaseline(seeded);
     }
   }, [eng]);
+
+  // Name and start date are required; the watermark color must be a #rrggbb hex or
+  // the server 400s. A dirty-but-invalid form parks at `unsaved` and never saves.
+  const nameInvalid = form.name.trim().length === 0;
+  const startInvalid = form.startedAt.trim().length === 0;
+  const colorInvalid = !HEX_COLOR_RE.test(form.wmColor);
+  const formValid = (v: SettingsForm) =>
+    v.name.trim().length > 0 && v.startedAt.trim().length > 0 && HEX_COLOR_RE.test(v.wmColor);
+
+  const { status: saveStatus, flush } = useAutosave<SettingsForm>({
+    value: form,
+    baseline,
+    // Only engagement writers/admins can save; non-writers see disabled inputs so
+    // the form can't go dirty for them, but guard anyway.
+    isValid: (v) => isEngAdmin && isEngWriter && formValid(v),
+    save: async (v) => {
+      const orNull = (s: string) => (s.trim() === '' ? null : s);
+      const trim = (s: string) => s.trim();
+      const nonEmpty = (s: string) => trim(s) !== '';
+      await update.mutateAsync({
+        // Details
+        name: v.name,
+        status: v.status,
+        // Start date is required; only send it when the field has a value.
+        startedAt: v.startedAt ? (fromDateInput(v.startedAt) ?? undefined) : undefined,
+        // Nullable dates: an empty field clears them. The server may override
+        // actualEndAt when the status transitions (see the route handler).
+        projectedEndAt: fromDateInput(v.projectedEndAt),
+        actualEndAt: fromDateInput(v.actualEndAt),
+        // Report metadata — empty string clears the field (sent as null).
+        clientName: orNull(v.clientName),
+        assessmentType: orNull(v.assessmentType),
+        location: orNull(v.location),
+        scope: orNull(v.scope),
+        executiveSummary: orNull(v.executiveSummary),
+        methodology: orNull(v.methodology),
+        watermarkEnabled: v.wmEnabled,
+        watermarkText: orNull(v.wmText),
+        watermarkColor: v.wmColor,
+        watermarkOpacity: v.wmOpacity,
+        watermarkLayer: v.wmLayer,
+        // Structured report content — drop blank rows the same way the manual save did.
+        scopeTargets: v.scopeTargets
+          .filter((t) => nonEmpty(t.name))
+          .map((t) => ({ name: trim(t.name), subsystems: t.subsystems.filter(nonEmpty) })),
+        scopeExclusions: v.scopeExclusions.filter(nonEmpty),
+        strategicRecommendations: v.recommendations.filter((r) => nonEmpty(r.title)),
+        threatModelNarrative: nonEmpty(v.threatModelNarrative) ? v.threatModelNarrative : null,
+        threatModelDiagrams: v.threatModelDiagrams.filter((d) =>
+          d.imageDataUri.startsWith('data:image/'),
+        ),
+        executionNarrative: v.executionNarrative
+          .filter((s) => nonEmpty(s.title))
+          .map((s) => ({ ...s, evidence: s.evidence.filter((e) => e.evidenceUuid !== '') })),
+        providerContacts: v.providerContacts.filter(
+          (c) => nonEmpty(c.name) || nonEmpty(c.title) || nonEmpty(c.email),
+        ),
+        clientContacts: v.clientContacts.filter(
+          (c) => nonEmpty(c.name) || nonEmpty(c.title) || nonEmpty(c.email),
+        ),
+        softwareTested: v.softwareTested.filter((s) => nonEmpty(s.name)),
+        thirdPartySoftware: v.thirdPartySoftware.filter((s) => nonEmpty(s.name)),
+      });
+      setBaseline(v);
+    },
+  });
 
   // The members endpoint is admin-only; read-only members would just get a 403.
   // Only fetch it for engagement admins — everyone else sees a placeholder below.
@@ -187,82 +302,6 @@ export function EngagementSettingsPage() {
     if (ok) removeMember.mutate(userSlugToRemove);
   }
 
-  async function saveDetails() {
-    try {
-      await update.mutateAsync({
-        name,
-        status,
-        // Start date is required; only send it when the field has a value.
-        startedAt: startedAt ? (fromDateInput(startedAt) ?? undefined) : undefined,
-        // Nullable dates: an empty field clears them. Note the server overrides
-        // actualEndAt when the status transitions (see the route handler).
-        projectedEndAt: fromDateInput(projectedEndAt),
-        actualEndAt: fromDateInput(actualEndAt),
-      });
-      toast.success('Engagement updated');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Update failed');
-    }
-  }
-
-  async function saveReport() {
-    // Empty string clears the field: send null so the server drops it.
-    const orNull = (s: string) => (s.trim() === '' ? null : s);
-    try {
-      await update.mutateAsync({
-        clientName: orNull(clientName),
-        assessmentType: orNull(assessmentType),
-        location: orNull(location),
-        scope: orNull(scope),
-        executiveSummary: orNull(executiveSummary),
-        methodology: orNull(methodology),
-        watermarkEnabled: wmEnabled,
-        watermarkText: orNull(wmText),
-        watermarkColor: wmColor,
-        watermarkOpacity: wmOpacity,
-        watermarkLayer: wmLayer,
-      });
-      toast.success('Report details updated');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Update failed');
-    }
-  }
-
-  async function saveReportContent() {
-    const trim = (s: string) => s.trim();
-    const nonEmpty = (s: string) => trim(s) !== '';
-    try {
-      await update.mutateAsync({
-        // Drop targets/exclusions/software/contacts with no name and blank rows.
-        scopeTargets: scopeTargets
-          .filter((t) => nonEmpty(t.name))
-          .map((t) => ({ name: trim(t.name), subsystems: t.subsystems.filter(nonEmpty) })),
-        scopeExclusions: scopeExclusions.filter(nonEmpty),
-        strategicRecommendations: recommendations.filter((r) => nonEmpty(r.title)),
-        threatModelNarrative: nonEmpty(threatModelNarrative) ? threatModelNarrative : null,
-        // Diagrams without an image are placeholder slots — omit them.
-        threatModelDiagrams: threatModelDiagrams.filter((d) =>
-          d.imageDataUri.startsWith('data:image/'),
-        ),
-        executionNarrative: executionNarrative
-          .filter((s) => nonEmpty(s.title))
-          // Drop evidence refs whose uuid slot is still empty.
-          .map((s) => ({ ...s, evidence: s.evidence.filter((e) => e.evidenceUuid !== '') })),
-        providerContacts: providerContacts.filter(
-          (c) => nonEmpty(c.name) || nonEmpty(c.title) || nonEmpty(c.email),
-        ),
-        clientContacts: clientContacts.filter(
-          (c) => nonEmpty(c.name) || nonEmpty(c.title) || nonEmpty(c.email),
-        ),
-        softwareTested: softwareTested.filter((s) => nonEmpty(s.name)),
-        thirdPartySoftware: thirdPartySoftware.filter((s) => nonEmpty(s.name)),
-      });
-      toast.success('Report content updated');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Update failed');
-    }
-  }
-
   function openDelete() {
     setConfirmText('');
     setDeleteOpen(true);
@@ -282,18 +321,28 @@ export function EngagementSettingsPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card className="space-y-4 p-4">
-        <h3 className="text-sm font-semibold text-text">Details</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-text">Details</h3>
+          {isEngAdmin && <SaveStatusIndicator status={saveStatus} />}
+        </div>
         {engLoading ? (
           <Spinner />
         ) : engError ? (
           <ErrorState description="Couldn’t load this engagement." onRetry={() => refetchEng()} />
         ) : (
           <>
-            <Field label="Name" htmlFor="eng-name">
+            <Field
+              label="Name"
+              htmlFor="eng-name"
+              required
+              error={isEngAdmin && nameInvalid ? 'A name is required.' : undefined}
+            >
               <Input
                 id="eng-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={form.name}
+                onChange={(e) => patchForm('name', e.target.value)}
+                onBlur={() => void flush()}
+                invalid={isEngAdmin && nameInvalid}
                 disabled={!isEngAdmin}
                 title={adminOnlyTitle}
               />
@@ -301,8 +350,8 @@ export function EngagementSettingsPage() {
             <Field label="Status" htmlFor="eng-status">
               <Select
                 id="eng-status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as EngagementStatus)}
+                value={form.status}
+                onChange={(e) => patchForm('status', e.target.value as EngagementStatus)}
                 disabled={!isEngAdmin}
                 title={adminOnlyTitle}
               >
@@ -312,12 +361,19 @@ export function EngagementSettingsPage() {
               </Select>
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Start date" htmlFor="eng-start">
+              <Field
+                label="Start date"
+                htmlFor="eng-start"
+                required
+                error={isEngAdmin && startInvalid ? 'A start date is required.' : undefined}
+              >
                 <Input
                   id="eng-start"
                   type="date"
-                  value={startedAt}
-                  onChange={(e) => setStartedAt(e.target.value)}
+                  value={form.startedAt}
+                  onChange={(e) => patchForm('startedAt', e.target.value)}
+                  onBlur={() => void flush()}
+                  invalid={isEngAdmin && startInvalid}
                   disabled={!isEngAdmin}
                   title={adminOnlyTitle}
                 />
@@ -326,8 +382,9 @@ export function EngagementSettingsPage() {
                 <Input
                   id="eng-projected"
                   type="date"
-                  value={projectedEndAt}
-                  onChange={(e) => setProjectedEndAt(e.target.value)}
+                  value={form.projectedEndAt}
+                  onChange={(e) => patchForm('projectedEndAt', e.target.value)}
+                  onBlur={() => void flush()}
                   disabled={!isEngAdmin}
                   title={adminOnlyTitle}
                 />
@@ -340,21 +397,14 @@ export function EngagementSettingsPage() {
                 <Input
                   id="eng-actual"
                   type="date"
-                  value={actualEndAt}
-                  onChange={(e) => setActualEndAt(e.target.value)}
+                  value={form.actualEndAt}
+                  onChange={(e) => patchForm('actualEndAt', e.target.value)}
+                  onBlur={() => void flush()}
                   disabled={!isEngAdmin}
                   title={adminOnlyTitle}
                 />
               </Field>
             </div>
-            <Button
-              onClick={saveDetails}
-              loading={update.isPending}
-              disabled={!isEngAdmin}
-              title={isEngAdmin ? undefined : ADMIN_ONLY_TITLE}
-            >
-              Save
-            </Button>
           </>
         )}
       </Card>
@@ -462,18 +512,22 @@ export function EngagementSettingsPage() {
       </Card>
 
       <Card className="space-y-4 p-4 lg:col-span-2">
-        <div>
-          <h3 className="text-sm font-semibold text-text">Report details</h3>
-          <p className="mt-1 text-xs text-muted">
-            Metadata for the exported report PDF. Leave a field blank to omit it.
-          </p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-text">Report details</h3>
+            <p className="mt-1 text-xs text-muted">
+              Metadata for the exported report PDF. Leave a field blank to omit it.
+            </p>
+          </div>
+          {isEngAdmin && <SaveStatusIndicator status={saveStatus} />}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Client / organization name" htmlFor="r-client">
             <Input
               id="r-client"
-              value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
+              value={form.clientName}
+              onChange={(e) => patchForm('clientName', e.target.value)}
+              onBlur={() => void flush()}
               disabled={!isEngAdmin}
               title={adminOnlyTitle}
             />
@@ -485,8 +539,9 @@ export function EngagementSettingsPage() {
           >
             <Input
               id="r-type"
-              value={assessmentType}
-              onChange={(e) => setAssessmentType(e.target.value)}
+              value={form.assessmentType}
+              onChange={(e) => patchForm('assessmentType', e.target.value)}
+              onBlur={() => void flush()}
               disabled={!isEngAdmin}
               title={adminOnlyTitle}
             />
@@ -495,8 +550,9 @@ export function EngagementSettingsPage() {
         <Field label="Location / environment" htmlFor="r-location">
           <Input
             id="r-location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
+            value={form.location}
+            onChange={(e) => patchForm('location', e.target.value)}
+            onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}
           />
@@ -509,8 +565,9 @@ export function EngagementSettingsPage() {
           <Textarea
             id="r-scope"
             rows={3}
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
+            value={form.scope}
+            onChange={(e) => patchForm('scope', e.target.value)}
+            onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}
           />
@@ -519,8 +576,9 @@ export function EngagementSettingsPage() {
           <Textarea
             id="r-exec"
             rows={5}
-            value={executiveSummary}
-            onChange={(e) => setExecutiveSummary(e.target.value)}
+            value={form.executiveSummary}
+            onChange={(e) => patchForm('executiveSummary', e.target.value)}
+            onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}
           />
@@ -529,8 +587,9 @@ export function EngagementSettingsPage() {
           <Textarea
             id="r-method"
             rows={5}
-            value={methodology}
-            onChange={(e) => setMethodology(e.target.value)}
+            value={form.methodology}
+            onChange={(e) => patchForm('methodology', e.target.value)}
+            onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}
           />
@@ -544,36 +603,44 @@ export function EngagementSettingsPage() {
         </div>
         <Checkbox
           label="Show a watermark on the exported report"
-          checked={wmEnabled}
+          checked={form.wmEnabled}
           disabled={!isEngAdmin}
-          onChange={(e) => setWmEnabled(e.target.checked)}
+          onChange={(e) => patchForm('wmEnabled', e.target.checked)}
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Watermark text" htmlFor="wm-text" hint="Defaults to CONFIDENTIAL">
             <Input
               id="wm-text"
-              value={wmText}
+              value={form.wmText}
               placeholder="CONFIDENTIAL"
-              onChange={(e) => setWmText(e.target.value)}
-              disabled={!isEngAdmin || !wmEnabled}
+              onChange={(e) => patchForm('wmText', e.target.value)}
+              onBlur={() => void flush()}
+              disabled={!isEngAdmin || !form.wmEnabled}
               title={adminOnlyTitle}
             />
           </Field>
-          <Field label="Color" htmlFor="wm-color">
+          <Field
+            label="Color"
+            htmlFor="wm-color"
+            error={isEngAdmin && form.wmEnabled && colorInvalid ? 'Use a #rrggbb hex color.' : undefined}
+          >
             <div className="flex items-center gap-2">
               <input
                 type="color"
                 id="wm-color"
                 aria-label="Watermark color"
-                value={wmColor}
-                onChange={(e) => setWmColor(e.target.value)}
-                disabled={!isEngAdmin || !wmEnabled}
+                value={colorInvalid ? '#64748b' : form.wmColor}
+                onChange={(e) => patchForm('wmColor', e.target.value)}
+                onBlur={() => void flush()}
+                disabled={!isEngAdmin || !form.wmEnabled}
                 className="h-9 w-12 shrink-0 rounded-input border border-border bg-surface disabled:opacity-50"
               />
               <Input
-                value={wmColor}
-                onChange={(e) => setWmColor(e.target.value)}
-                disabled={!isEngAdmin || !wmEnabled}
+                value={form.wmColor}
+                onChange={(e) => patchForm('wmColor', e.target.value)}
+                onBlur={() => void flush()}
+                invalid={isEngAdmin && form.wmEnabled && colorInvalid}
+                disabled={!isEngAdmin || !form.wmEnabled}
                 title={adminOnlyTitle}
                 className="font-mono"
                 aria-label="Watermark color hex"
@@ -583,9 +650,9 @@ export function EngagementSettingsPage() {
           <Field label="Transparency" htmlFor="wm-opacity">
             <Select
               id="wm-opacity"
-              value={wmOpacity}
-              onChange={(e) => setWmOpacity(e.target.value as WatermarkOpacity)}
-              disabled={!isEngAdmin || !wmEnabled}
+              value={form.wmOpacity}
+              onChange={(e) => patchForm('wmOpacity', e.target.value as WatermarkOpacity)}
+              disabled={!isEngAdmin || !form.wmEnabled}
               title={adminOnlyTitle}
             >
               {WATERMARK_OPACITIES.map((o) => (
@@ -598,9 +665,9 @@ export function EngagementSettingsPage() {
           <Field label="Placement" htmlFor="wm-layer">
             <Select
               id="wm-layer"
-              value={wmLayer}
-              onChange={(e) => setWmLayer(e.target.value as WatermarkLayer)}
-              disabled={!isEngAdmin || !wmEnabled}
+              value={form.wmLayer}
+              onChange={(e) => patchForm('wmLayer', e.target.value as WatermarkLayer)}
+              disabled={!isEngAdmin || !form.wmEnabled}
               title={adminOnlyTitle}
             >
               {WATERMARK_LAYERS.map((l) => (
@@ -611,43 +678,34 @@ export function EngagementSettingsPage() {
             </Select>
           </Field>
         </div>
-
-        <Button
-          onClick={saveReport}
-          loading={update.isPending}
-          disabled={!isEngAdmin}
-          title={adminOnlyTitle}
-        >
-          Save report details
-        </Button>
       </Card>
 
       <ReportContentEditors
         slug={slug}
         disabled={!isEngAdmin}
         disabledTitle={adminOnlyTitle}
-        scopeTargets={scopeTargets}
-        onScopeTargets={setScopeTargets}
-        scopeExclusions={scopeExclusions}
-        onScopeExclusions={setScopeExclusions}
-        recommendations={recommendations}
-        onRecommendations={setRecommendations}
-        threatModelNarrative={threatModelNarrative}
-        onThreatModelNarrative={setThreatModelNarrative}
-        threatModelDiagrams={threatModelDiagrams}
-        onThreatModelDiagrams={setThreatModelDiagrams}
-        executionNarrative={executionNarrative}
-        onExecutionNarrative={setExecutionNarrative}
-        providerContacts={providerContacts}
-        onProviderContacts={setProviderContacts}
-        clientContacts={clientContacts}
-        onClientContacts={setClientContacts}
-        softwareTested={softwareTested}
-        onSoftwareTested={setSoftwareTested}
-        thirdPartySoftware={thirdPartySoftware}
-        onThirdPartySoftware={setThirdPartySoftware}
-        onSave={saveReportContent}
-        saving={update.isPending}
+        status={isEngAdmin ? saveStatus : 'idle'}
+        onFlush={() => void flush()}
+        scopeTargets={form.scopeTargets}
+        onScopeTargets={(v) => patchForm('scopeTargets', v)}
+        scopeExclusions={form.scopeExclusions}
+        onScopeExclusions={(v) => patchForm('scopeExclusions', v)}
+        recommendations={form.recommendations}
+        onRecommendations={(v) => patchForm('recommendations', v)}
+        threatModelNarrative={form.threatModelNarrative}
+        onThreatModelNarrative={(v) => patchForm('threatModelNarrative', v)}
+        threatModelDiagrams={form.threatModelDiagrams}
+        onThreatModelDiagrams={(v) => patchForm('threatModelDiagrams', v)}
+        executionNarrative={form.executionNarrative}
+        onExecutionNarrative={(v) => patchForm('executionNarrative', v)}
+        providerContacts={form.providerContacts}
+        onProviderContacts={(v) => patchForm('providerContacts', v)}
+        clientContacts={form.clientContacts}
+        onClientContacts={(v) => patchForm('clientContacts', v)}
+        softwareTested={form.softwareTested}
+        onSoftwareTested={(v) => patchForm('softwareTested', v)}
+        thirdPartySoftware={form.thirdPartySoftware}
+        onThirdPartySoftware={(v) => patchForm('thirdPartySoftware', v)}
       />
 
       {isEngAdmin && (

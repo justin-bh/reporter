@@ -32,13 +32,18 @@ async function setup() {
 async function createNote(
   cookie: string,
   slug: string,
-  fields: { description?: string; content?: string; parentEvidenceUuid?: string },
+  fields: { title?: string; description?: string; content?: string; parentEvidenceUuid?: string },
 ) {
   const res = await app.inject({
     method: 'POST',
     url: `/web/engagements/${slug}/evidence`,
     headers: { ...WEB_HEADERS, cookie, 'content-type': 'application/json' },
-    payload: { contentType: 'none', description: fields.description ?? '', ...fields },
+    payload: {
+      contentType: 'none',
+      title: fields.title ?? 'Note',
+      description: fields.description ?? '',
+      ...fields,
+    },
   });
   return res;
 }

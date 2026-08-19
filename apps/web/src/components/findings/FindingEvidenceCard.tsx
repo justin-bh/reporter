@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { DraggableAttributes, DraggableSyntheticListeners } from '@dnd-kit/core';
 import { Badge, Button, TagChip, Textarea } from '@reporter/ui';
 import { EVIDENCE_TYPE_LABELS, type FindingEvidence } from '@reporter/shared';
+import { evidenceHeading, evidenceSnippet } from '../../lib/evidence-label.js';
 import { formatDateTime } from '../../lib/format.js';
 import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { evidenceThumbUrl } from '../../lib/urls.js';
@@ -97,10 +98,11 @@ export function FindingEvidenceCard({
             to={`/engagements/${slug}/evidence/${ev.uuid}`}
             className="block truncate text-sm font-medium text-text hover:text-accent"
           >
-            {ev.description || (
-              <span className="text-muted">{EVIDENCE_TYPE_LABELS[ev.contentType]}</span>
-            )}
+            {evidenceHeading(ev)}
           </Link>
+          {evidenceSnippet(ev) && (
+            <p className="truncate text-xs text-muted">{evidenceSnippet(ev)}</p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge tone="neutral">{EVIDENCE_TYPE_LABELS[ev.contentType]}</Badge>
             <span>{formatDateTime(ev.occurredAt)}</span>

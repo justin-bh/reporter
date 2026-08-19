@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Spinner } from '@reporter/ui';
 import type { Evidence } from '@reporter/shared';
 import 'asciinema-player/dist/bundle/asciinema-player.css';
+import { evidenceHeading } from '../../lib/evidence-label.js';
 import { evidenceContentUrl } from '../../lib/urls.js';
 
 /**
@@ -9,22 +10,35 @@ import { evidenceContentUrl } from '../../lib/urls.js';
  * short description) plus the type-specific body. `min-w-0` lets wide bodies
  * (code, HAR JSON) scroll inside their own box instead of stretching the page.
  */
-export function EvidenceContent({ evidence, slug }: { evidence: Evidence; slug: string }) {
+export function EvidenceContent({
+  evidence,
+  slug,
+  showCaption = true,
+}: {
+  evidence: Evidence;
+  slug: string;
+  /**
+   * Show the title/heading caption above the body. On by default (picker preview,
+   * embeds). The evidence detail page turns it off because it already shows the
+   * title once, in the editable Title field above the description.
+   */
+  showCaption?: boolean;
+}) {
   // Notes and events carry their long-form text as a content blob; a caption +
   // body only makes sense once we know whether that blob exists, so they own
   // their caption logic. Every other type shows the caption above its media.
   if (evidence.contentType === 'event' || evidence.contentType === 'none') {
-    return <NoteEventViewer evidence={evidence} slug={slug} />;
+    return <NoteEventViewer evidence={evidence} slug={slug} showCaption={showCaption} />;
   }
   return (
     <div className="min-w-0 space-y-3">
-      {evidence.description && <Caption text={evidence.description} />}
+      {showCaption && <Caption text={evidenceHeading(evidence)} />}
       <MediaBody evidence={evidence} slug={slug} />
     </div>
   );
 }
 
-/** The operator's short description, shown above the body. */
+/** The evidence's primary label (title, else description, else type), above the body. */
 function Caption({ text }: { text: string }) {
   return <p className="break-words text-sm font-medium text-text">{text}</p>;
 }
@@ -47,18 +61,33 @@ function MediaBody({ evidence, slug }: { evidence: Evidence; slug: string }) {
 
 /**
  * Notes and events. Their body text is stored as a blob (from the create form's
- * "Content" field). When a body exists the description becomes a caption above
- * it; a description-only note simply shows its text as the body, so nothing the
- * operator typed is ever hidden.
+ * "Content" field). When a body blob exists the heading (title, else description)
+ * sits above it as a caption. A blob-less note shows its title (when set) as a
+ * caption above the description-as-body; without a title the description simply
+ * is the body, so nothing the operator typed is ever hidden or duplicated.
  */
-function NoteEventViewer({ evidence, slug }: { evidence: Evidence; slug: string }) {
+function NoteEventViewer({
+  evidence,
+  slug,
+  showCaption,
+}: {
+  evidence: Evidence;
+  slug: string;
+  showCaption: boolean;
+}) {
+  const hasTitle = evidence.title.trim().length > 0;
   return (
     <div className="min-w-0 space-y-3">
-      {evidence.hasContent && evidence.description && <Caption text={evidence.description} />}
       {evidence.hasContent ? (
-        <NoteBodyViewer slug={slug} uuid={evidence.uuid} />
+        <>
+          {showCaption && <Caption text={evidenceHeading(evidence)} />}
+          <NoteBodyViewer slug={slug} uuid={evidence.uuid} />
+        </>
       ) : (
-        <NoteText text={evidence.description} />
+        <>
+          {showCaption && hasTitle && <Caption text={evidence.title} />}
+          <NoteText text={evidence.description} />
+        </>
       )}
     </div>
   );

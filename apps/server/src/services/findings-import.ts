@@ -147,6 +147,7 @@ export async function importFindings(
           operatorId,
           uuid: ev.uuid,
           metadata: {
+            title: ev.title,
             description: ev.description,
             contentType: ev.contentType,
             contentSubtype: ev.contentSubtype ?? undefined,

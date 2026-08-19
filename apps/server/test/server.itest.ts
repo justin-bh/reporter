@@ -101,7 +101,14 @@ describe('engagement role enforcement', () => {
   async function postEvidence(email: string, tagId: number) {
     const cookie = await loginCookie(app, email, 'password123');
     const { body, contentType } = buildMultipart(
-      { notes: JSON.stringify({ contentType: 'image', description: 'x', tagIds: [tagId] }) },
+      {
+        notes: JSON.stringify({
+          contentType: 'image',
+          title: 'Screenshot',
+          description: 'x',
+          tagIds: [tagId],
+        }),
+      },
       [{ field: 'file', filename: 's.png', contentType: 'image/png', data: PNG }],
     );
     return app.inject({
@@ -219,7 +226,14 @@ describe('evidence pipeline', () => {
     const cookie = await loginCookie(app, 'writer@test.local', 'password123');
 
     const { body, contentType } = buildMultipart(
-      { notes: JSON.stringify({ contentType: 'image', description: 'shot', tagIds: [tag.id] }) },
+      {
+        notes: JSON.stringify({
+          contentType: 'image',
+          title: 'Shot',
+          description: 'shot',
+          tagIds: [tag.id],
+        }),
+      },
       [{ field: 'file', filename: 's.png', contentType: 'image/png', data: PNG }],
     );
     const created = await app.inject({
@@ -393,7 +407,14 @@ describe('HMAC client API', () => {
     const { users, tag } = await setupEngagement();
     const key = await apiKeyFor(app, users.writer.id);
     const { body, contentType } = buildMultipart(
-      { notes: JSON.stringify({ contentType: 'image', description: 'via api', tagIds: [tag.id] }) },
+      {
+        notes: JSON.stringify({
+          contentType: 'image',
+          title: 'Via API',
+          description: 'via api',
+          tagIds: [tag.id],
+        }),
+      },
       [{ field: 'file', filename: 's.png', contentType: 'image/png', data: PNG }],
     );
     const auth = buildAuthHeaders(

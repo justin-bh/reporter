@@ -5,6 +5,8 @@ import { makeClient } from './client.js';
 
 export interface RecordingMeta {
   engagementSlug: string;
+  /** Short label shown as the evidence heading (required). */
+  title: string;
   description: string;
   tagIds: number[];
   /** When set, upload this recording as a comment on the given evidence. */
@@ -23,6 +25,7 @@ export async function uploadCast(
     meta.engagementSlug,
     {
       contentType: 'terminal-recording',
+      title: meta.title,
       description: meta.description,
       tagIds: meta.tagIds,
       occurredAt: new Date().toISOString(),

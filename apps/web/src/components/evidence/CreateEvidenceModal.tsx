@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Field, Input, Modal, Select, TagPicker, Textarea, useToast } from '@reporter/ui';
 import {
   EVIDENCE_TYPE_LABELS,
@@ -6,6 +6,7 @@ import {
   type EvidenceType,
 } from '@reporter/shared';
 import { useCreateEvidence, useTags } from '../../api/hooks.js';
+import { useUnsavedGuard } from '../../hooks/useUnsavedGuard.js';
 
 const CREATABLE: EvidenceType[] = ['image', 'codeblock', 'none', 'event', 'http-request-cycle'];
 
@@ -30,6 +31,7 @@ export function CreateEvidenceModal({
   const isComment = parentEvidenceUuid !== undefined;
 
   const [type, setType] = useState<EvidenceType>('image');
+  const [evTitle, setEvTitle] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [language, setLanguage] = useState('');
@@ -41,12 +43,29 @@ export function CreateEvidenceModal({
 
   const needsFile = type === 'image';
   const needsText = type !== 'image';
-  const canSubmit = needsFile
-    ? Boolean(file)
-    : content.trim().length > 0 || description.trim().length > 0;
+  // Title is required; the type-specific content/file inputs still gate submit.
+  const hasTitle = evTitle.trim().length > 0;
+  const canSubmit =
+    hasTitle &&
+    (needsFile ? Boolean(file) : content.trim().length > 0 || description.trim().length > 0);
+
+  // Dirty when the operator has entered anything beyond the default type. Used to
+  // trigger the discard-confirm on close/cancel/Esc/backdrop.
+  const isDirty = useMemo(
+    () =>
+      evTitle.trim().length > 0 ||
+      description.trim().length > 0 ||
+      content.trim().length > 0 ||
+      language.trim().length > 0 ||
+      Boolean(file) ||
+      tagIds.length > 0 ||
+      type !== 'image',
+    [evTitle, description, content, language, file, tagIds, type],
+  );
 
   const reset = useCallback(() => {
     setType('image');
+    setEvTitle('');
     setDescription('');
     setContent('');
     setLanguage('');
@@ -54,6 +73,8 @@ export function CreateEvidenceModal({
     setDragging(false);
     setTagIds([]);
   }, []);
+
+  const { requestClose } = useUnsavedGuard({ isDirty, enabled: open, onClose });
 
   // Clear the form whenever the modal closes so nothing carries into the next open
   // — important since this same modal is reused as the per-parent comment composer.
@@ -109,6 +130,7 @@ export function CreateEvidenceModal({
   async function submit() {
     const metadata: CreateEvidenceInput = {
       contentType: type,
+      title: evTitle.trim(),
       description,
       tagIds,
       content: needsText ? content : undefined,
@@ -128,12 +150,12 @@ export function CreateEvidenceModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       title={title}
       size="lg"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={requestClose}>
             Cancel
           </Button>
           <Button onClick={submit} loading={create.isPending} disabled={!canSubmit}>
@@ -169,11 +191,22 @@ export function CreateEvidenceModal({
           )}
         </div>
 
-        <Field label="Description" htmlFor="ev-desc">
+        <Field label="Title" htmlFor="ev-title" required>
           <Input
+            id="ev-title"
+            value={evTitle}
+            onChange={(e) => setEvTitle(e.target.value)}
+            placeholder="Short label shown in lists and the report"
+            autoFocus
+          />
+        </Field>
+
+        <Field label="Description" htmlFor="ev-desc" hint="Optional">
+          <Textarea
             id="ev-desc"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            rows={3}
           />
         </Field>
 

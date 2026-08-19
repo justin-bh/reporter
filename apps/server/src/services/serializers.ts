@@ -141,6 +141,7 @@ export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: stri
       firstName: e.operator.firstName,
       lastName: e.operator.lastName,
     },
+    title: e.title,
     description: e.description,
     contentType: e.contentType as Evidence['contentType'],
     originalFilename: e.originalFilename,
