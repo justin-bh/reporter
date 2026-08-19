@@ -32,7 +32,12 @@ import {
   useConfirm,
   useToast,
 } from '@reporter/ui';
-import type { Finding } from '@reporter/shared';
+import {
+  FINDING_KINDS,
+  FINDING_KIND_LABELS,
+  type Finding,
+  type FindingKind,
+} from '@reporter/shared';
 import {
   useCreateFinding,
   useDeleteFinding,
@@ -42,6 +47,7 @@ import {
 } from '../api/hooks.js';
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { ExportFindingsModal } from '../components/findings/ExportFindingsModal.js';
+import { CategorySelect } from '../components/findings/CategorySelect.js';
 
 export function FindingsPage() {
   const { slug = '' } = useParams();
@@ -243,11 +249,15 @@ function SortableFindingRow({
         <div className="min-w-0">
           <p className="truncate font-medium text-text">{f.title}</p>
           <p className="text-xs text-muted">
-            {f.category ?? 'Uncategorized'} · {f.numEvidence} evidence
+            {f.category ?? 'Uncategorized'} · Evidence ({f.numEvidence})
           </p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
-          <SeverityBadge severity={f.severity} score={f.cvssScore} />
+          {f.kind === 'strength' ? (
+            <Badge tone="success">{FINDING_KIND_LABELS.strength}</Badge>
+          ) : (
+            <SeverityBadge severity={f.severity} score={f.cvssScore} />
+          )}
           {f.readyToReport && <Badge tone="success">Ready to report</Badge>}
         </div>
       </Link>
@@ -276,14 +286,28 @@ function CreateFindingModal({
 }) {
   const toast = useToast();
   const create = useCreateFinding(slug);
+  const [kind, setKind] = useState<FindingKind>('weakness');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
 
   async function submit() {
     try {
-      await create.mutateAsync({ title, description, category: category || null });
+      await create.mutateAsync({
+        kind,
+        title,
+        description,
+        category: category || null,
+        // The schema defaults these server-side; the generated input type (the
+        // schema's *output*) lists them as required, so send explicit defaults.
+        affectedTarget: '',
+        impact: '',
+        fixEffort: 'none',
+        iso21434Refs: [],
+        unr155Refs: [],
+      });
       toast.success('Finding created');
+      setKind('weakness');
       setTitle('');
       setDescription('');
       setCategory('');
@@ -310,16 +334,32 @@ function CreateFindingModal({
       }
     >
       <div className="flex flex-col gap-4">
+        <Field
+          label="Kind"
+          htmlFor="f-kind"
+          hint="Weaknesses carry severity and remediation; strengths note good practices."
+        >
+          <div id="f-kind" role="radiogroup" aria-label="Finding kind" className="flex gap-2">
+            {FINDING_KINDS.map((k) => (
+              <Button
+                key={k}
+                type="button"
+                size="sm"
+                variant={kind === k ? 'primary' : 'secondary'}
+                role="radio"
+                aria-checked={kind === k}
+                onClick={() => setKind(k)}
+              >
+                {FINDING_KIND_LABELS[k]}
+              </Button>
+            ))}
+          </div>
+        </Field>
         <Field label="Title" htmlFor="f-title">
           <Input id="f-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         </Field>
         <Field label="Category" htmlFor="f-cat" hint="Optional">
-          <Input
-            id="f-cat"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            placeholder="Vulnerability"
-          />
+          <CategorySelect id="f-cat" slug={slug} value={category} onChange={setCategory} />
         </Field>
         <Field label="Description" htmlFor="f-desc">
           <Textarea

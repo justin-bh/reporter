@@ -78,6 +78,12 @@ export async function importFindings(
     const findingData = {
       title: f.title,
       description: f.description,
+      kind: f.kind,
+      affectedTarget: f.affectedTarget,
+      impact: f.impact,
+      fixEffort: f.fixEffort,
+      iso21434Refs: f.iso21434Refs,
+      unr155Refs: f.unr155Refs,
       remediation: f.remediation,
       categoryId: await categoryIdFor(app, f.category),
       severity: f.severity,
@@ -86,6 +92,18 @@ export async function importFindings(
       readyToReport: f.readyToReport,
       position: f.position,
     };
+
+    // Mirror the live create/update routes: a strength carries no risk rating or
+    // remediation, so never import those onto one (a crafted export can't smuggle
+    // an inconsistent strength into the weaknesses dashboard/tables).
+    if (findingData.kind === 'strength') {
+      findingData.severity = null;
+      findingData.cvssVector = null;
+      findingData.cvssScore = null;
+      findingData.fixEffort = 'none';
+      findingData.impact = '';
+      findingData.remediation = '';
+    }
 
     let findingId: number;
     if (existing) {
@@ -132,13 +150,14 @@ export async function importFindings(
             description: ev.description,
             contentType: ev.contentType,
             contentSubtype: ev.contentSubtype ?? undefined,
+            originalFilename: ev.originalFilename ?? undefined,
             occurredAt: ev.occurredAt,
             tagIds: [],
           },
           file: {
             data: Buffer.from(ev.contentBase64, 'base64'),
             mimeType: 'application/octet-stream',
-            filename: ev.uuid,
+            filename: ev.originalFilename ?? ev.uuid,
           },
         });
         evRow = await app.db.evidence.findUnique({

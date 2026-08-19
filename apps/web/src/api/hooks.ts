@@ -71,6 +71,17 @@ export function useUpdateEngagement(slug: string) {
           | 'scope'
           | 'executiveSummary'
           | 'methodology'
+          // Report v2 structured content
+          | 'scopeTargets'
+          | 'scopeExclusions'
+          | 'strategicRecommendations'
+          | 'threatModelNarrative'
+          | 'threatModelDiagrams'
+          | 'executionNarrative'
+          | 'providerContacts'
+          | 'clientContacts'
+          | 'softwareTested'
+          | 'thirdPartySoftware'
           | 'watermarkEnabled'
           | 'watermarkText'
           | 'watermarkColor'
@@ -123,6 +134,9 @@ export const useEvidence = (slug: string, uuid: string) =>
   useQuery({
     queryKey: ['evidence', slug, uuid],
     queryFn: () => api.get<Evidence>(`/web/engagements/${slug}/evidence/${uuid}`),
+    // Don't fire for a blank uuid (e.g. an unfilled execution-narrative evidence
+    // slot) — that would hit /evidence/ with an empty id segment.
+    enabled: Boolean(slug && uuid),
   });
 
 /** Comments (linked evidence) attached to a piece of evidence, oldest first. */

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import type { FastifyInstance } from 'fastify';
 import type { CreateEvidenceInput, Evidence, ParsedQuery } from '@reporter/shared';
@@ -46,10 +46,16 @@ export async function createEvidence(
 
   let fullBlobKey: string | null = null;
   let thumbBlobKey: string | null = null;
+  // Hash + size of whatever blob we store (file or inline content), computed once
+  // here so the report never has to re-read the blob just to hash it.
+  let sha256: string | null = null;
+  let sizeBytes: number | null = null;
 
   if (file) {
     fullBlobKey = randomUUID();
     await app.blobs.put(fullBlobKey, file.data);
+    sha256 = createHash('sha256').update(file.data).digest('hex');
+    sizeBytes = file.data.length;
     if (metadata.contentType === 'image') {
       try {
         // Cap decoded pixels (~40 MP, far above any legitimate screenshot) so a
@@ -67,8 +73,11 @@ export async function createEvidence(
   } else if (metadata.content !== undefined && metadata.content !== '') {
     // Inline text content (codeblock/event/note) is stored as a blob too, so all
     // evidence content is retrievable through one content endpoint.
+    const buf = Buffer.from(metadata.content, 'utf8');
     fullBlobKey = randomUUID();
-    await app.blobs.put(fullBlobKey, Buffer.from(metadata.content, 'utf8'));
+    await app.blobs.put(fullBlobKey, buf);
+    sha256 = createHash('sha256').update(buf).digest('hex');
+    sizeBytes = buf.length;
   }
 
   // Only attach tags that actually belong to this engagement.
@@ -82,6 +91,12 @@ export async function createEvidence(
 
   const occurredAt = metadata.occurredAt ? new Date(metadata.occurredAt) : new Date();
 
+  // Preserve the original filename (explicit client value wins, else the uploaded
+  // file's own name). Used to name files in the report's supporting-files ZIP and
+  // the "Files Attached" table. Truncated to the column bound.
+  const rawName = metadata.originalFilename ?? file?.filename ?? null;
+  const originalFilename = rawName ? rawName.slice(0, 255) : null;
+
   const created = await app.db.evidence.create({
     data: {
       uuid: args.uuid,
@@ -90,8 +105,11 @@ export async function createEvidence(
       description: metadata.description ?? '',
       contentType: metadata.contentType,
       contentSubtype: metadata.contentSubtype ?? null,
+      originalFilename,
       fullBlobKey,
       thumbBlobKey,
+      sha256,
+      sizeBytes,
       parentEvidenceId,
       occurredAt,
       tags: { create: validTags.map((t) => ({ tagId: t.id })) },

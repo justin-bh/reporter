@@ -1,3 +1,4 @@
+import archiver from 'archiver';
 import type { FastifyInstance } from 'fastify';
 import type { PuppeteerNode } from 'puppeteer';
 import {
@@ -7,7 +8,12 @@ import {
   type EvidenceGrouping,
 } from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
-import { buildFindingsExport, buildReportHtml } from '../../services/findings-report.js';
+import {
+  buildFindingsExport,
+  buildReportHtml,
+  gatherSupportingFiles,
+  type ReportOptions,
+} from '../../services/findings-report.js';
 import { importFindings } from '../../services/findings-import.js';
 
 function boolParam(v: unknown): boolean {
@@ -27,6 +33,57 @@ function groupParam(v: unknown): EvidenceGrouping {
 
 function stamp(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Report options parsed from the shared query params of the PDF and ZIP routes. */
+function reportOptionsFromQuery(q: Record<string, string | undefined>): ReportOptions {
+  return {
+    includeAll: boolParam(q.includeAll),
+    evidenceGroup: groupParam(q.evidenceGroup),
+    // Narrative is the default Assessment Execution view; the timeline is opt-in.
+    includeNarrative: boolParamDefaultTrue(q.includeNarrative),
+    includeTimeline: boolParam(q.includeTimeline),
+    includeAppendix: boolParamDefaultTrue(q.includeAppendix),
+  };
+}
+
+/**
+ * Render an HTML document to a PDF buffer with headless Chromium. Puppeteer is
+ * imported lazily so the server boots (and tests run) without it installed.
+ */
+async function renderPdf(app: FastifyInstance, html: string): Promise<Buffer> {
+  let puppeteer: PuppeteerNode;
+  try {
+    puppeteer = (await import('puppeteer')).default;
+  } catch (err) {
+    app.log.error({ err }, 'puppeteer unavailable');
+    throw new HttpError(501, 'PDF generation is not available on this server');
+  }
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+  try {
+    const page = await browser.newPage();
+    // Fonts load from Google Fonts when the host has network, but the render must
+    // never block on them (Docker Chromium is often offline): give the network a
+    // brief window, then fall back to the local font stacks.
+    await page.setContent(html, { waitUntil: 'load' });
+    // Runs in the browser context (not Node) — hence the `Function`-based evaluate
+    // to keep it out of tsc's Node lib.
+    const waitFonts = new Function(
+      'return Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);',
+    ) as () => Promise<unknown>;
+    await page.evaluate(waitFonts).catch(() => undefined);
+    // Page geometry (Letter, margins, running header/footer, page numbers) comes
+    // entirely from the document's CSS @page + margin boxes.
+    const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true });
+    return Buffer.from(pdf);
+  } finally {
+    await browser.close();
+  }
 }
 
 /** Findings export: portable JSON and a rendered PDF report. */
@@ -71,8 +128,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // PDF report, rendered from HTML by headless Chromium. Puppeteer is imported
-  // lazily so the server boots (and tests run) without it installed/available.
+  // PDF report, rendered from HTML by headless Chromium.
   app.get(
     '/engagements/:slug/findings/report.pdf',
     { preHandler: [requireAuth, requireEngagementRole('read')] },
@@ -80,51 +136,57 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const { slug } = req.params as { slug: string };
       const q = req.query as Record<string, string | undefined>;
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
-      const html = await buildReportHtml(app, eng, new Date(), {
-        includeAll: boolParam(q.includeAll),
-        evidenceGroup: groupParam(q.evidenceGroup),
-        includeTimeline: boolParamDefaultTrue(q.includeTimeline),
-        includeAppendix: boolParamDefaultTrue(q.includeAppendix),
-      });
+      const html = await buildReportHtml(app, eng, new Date(), reportOptionsFromQuery(q));
+      const pdf = await renderPdf(app, html);
+      reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `attachment; filename="${slug}-findings-${stamp()}.pdf"`);
+      return reply.send(pdf);
+    },
+  );
 
-      let puppeteer: PuppeteerNode;
-      try {
-        puppeteer = (await import('puppeteer')).default;
-      } catch (err) {
-        app.log.error({ err }, 'puppeteer unavailable');
-        return reply.status(501).send({ error: 'PDF generation is not available on this server' });
-      }
+  // ZIP bundle: the PDF report plus every supporting file (non-screenshot
+  // evidence — terminal recordings, HTTP cycles, uploaded files, etc.) so the
+  // client can download the report and its raw evidence together. The bundle's
+  // supporting-files match the report's "Files Attached" table exactly.
+  app.get(
+    '/engagements/:slug/findings/report.zip',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
 
-      const browser = await puppeteer.launch({
-        headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-      try {
-        const page = await browser.newPage();
-        // Fonts load from Google Fonts when the host has network, but the render
-        // must never block on them (Docker Chromium is often offline): give the
-        // network a brief window, then fall back to the local font stacks.
-        await page.setContent(html, { waitUntil: 'load' });
-        // Runs in the browser context (not Node) — hence the `Function`-based
-        // evaluate to keep it out of tsc's Node lib.
-        const waitFonts = new Function(
-          'return Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);',
-        ) as () => Promise<unknown>;
-        await page.evaluate(waitFonts).catch(() => undefined);
-        // Page geometry (Letter, margins, running header/footer, page numbers)
-        // comes entirely from the document's CSS @page + margin boxes.
-        const pdf = await page.pdf({
-          printBackground: true,
-          preferCSSPageSize: true,
-        });
-        reply
-          .header('Content-Type', 'application/pdf')
-          .header('Content-Disposition', `attachment; filename="${slug}-findings-${stamp()}.pdf"`);
-        return reply.send(Buffer.from(pdf));
-      } finally {
-        await browser.close();
+      // Compute the supporting-file set once (names + hashes) and reuse it for
+      // both the report's Files Attached table and the ZIP entries.
+      const files = await gatherSupportingFiles(app, eng);
+      const html = await buildReportHtml(app, eng, new Date(), reportOptionsFromQuery(q), files);
+      const pdf = await renderPdf(app, html);
+
+      const base = `${slug}-report-${stamp()}`;
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('warning', (err: unknown) => app.log.warn({ err }, 'zip warning'));
+      archive.on('error', (err: unknown) => app.log.error({ err }, 'zip error'));
+
+      reply
+        .header('Content-Type', 'application/zip')
+        .header('Content-Disposition', `attachment; filename="${base}.zip"`);
+      // Begin streaming the archive to the response, then feed entries in so the
+      // archiver drains as we go (bounded memory even for large supporting files).
+      reply.send(archive);
+
+      archive.append(pdf, { name: `${base}.pdf` });
+      for (const f of files) {
+        const buf = await app.blobs.getBuffer(f.blobKey).catch(() => null);
+        if (buf) archive.append(buf, { name: `supporting-files/${f.filename}` });
       }
+      if (files.length > 0) {
+        const manifest =
+          files.map((f) => `${f.sha256}  supporting-files/${f.filename}`).join('\n') + '\n';
+        archive.append(manifest, { name: 'supporting-files/SHA256SUMS.txt' });
+      }
+      await archive.finalize();
+      return reply;
     },
   );
 }

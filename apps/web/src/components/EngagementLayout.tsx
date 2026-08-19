@@ -27,11 +27,9 @@ export function EngagementLayout() {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold text-text">{eng.name}</h1>
             <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
-            <span className="text-sm text-muted">{eng.numEvidence ?? 0} evidence</span>
+            <span className="text-sm text-muted">Evidence ({eng.numEvidence ?? 0})</span>
             {(eng.numFindings ?? 0) > 0 && (
-              <span className="text-sm text-muted">
-                {eng.numFindings} {eng.numFindings === 1 ? 'finding' : 'findings'}
-              </span>
+              <span className="text-sm text-muted">Findings ({eng.numFindings})</span>
             )}
             <span className="text-sm text-muted">Started {formatDate(eng.startedAt)}</span>
             {eng.actualEndAt ? (

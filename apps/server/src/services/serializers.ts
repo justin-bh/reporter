@@ -45,9 +45,16 @@ export function serializeEngagement(
     numUsers?: number;
     numEvidence?: number;
     numFindings?: number;
+    /**
+     * Include the structured report content (scope, recommendations, threat model +
+     * diagrams, execution narrative, contacts, software). These are heavy (diagrams
+     * carry inline base64), so only the single-engagement detail response sets this;
+     * list responses omit them to stay lean.
+     */
+    includeContent?: boolean;
   } = {},
 ): Engagement {
-  return {
+  const out: Engagement = {
     slug: eng.slug,
     name: eng.name,
     status: eng.status,
@@ -72,6 +79,24 @@ export function serializeEngagement(
     numEvidence: extras.numEvidence,
     numFindings: extras.numFindings,
   };
+  if (extras.includeContent) {
+    out.scopeTargets = (eng.scopeTargets as unknown as Engagement['scopeTargets']) ?? [];
+    out.scopeExclusions = (eng.scopeExclusions as unknown as Engagement['scopeExclusions']) ?? [];
+    out.strategicRecommendations =
+      (eng.strategicRecommendations as unknown as Engagement['strategicRecommendations']) ?? [];
+    out.threatModelNarrative = eng.threatModelNarrative;
+    out.threatModelDiagrams =
+      (eng.threatModelDiagrams as unknown as Engagement['threatModelDiagrams']) ?? [];
+    out.executionNarrative =
+      (eng.executionNarrative as unknown as Engagement['executionNarrative']) ?? [];
+    out.providerContacts =
+      (eng.providerContacts as unknown as Engagement['providerContacts']) ?? [];
+    out.clientContacts = (eng.clientContacts as unknown as Engagement['clientContacts']) ?? [];
+    out.softwareTested = (eng.softwareTested as unknown as Engagement['softwareTested']) ?? [];
+    out.thirdPartySoftware =
+      (eng.thirdPartySoftware as unknown as Engagement['thirdPartySoftware']) ?? [];
+  }
+  return out;
 }
 
 /** Public API-key shape. The secret is never included (it is returned exactly once, at creation). */
@@ -118,6 +143,7 @@ export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: stri
     },
     description: e.description,
     contentType: e.contentType as Evidence['contentType'],
+    originalFilename: e.originalFilename,
     occurredAt: e.occurredAt.toISOString(),
     createdAt: e.createdAt.toISOString(),
     tags: e.tags.map((et) => serializeTag(et.tag)),
@@ -155,6 +181,12 @@ export function serializeFinding(f: FindingWithRelations, engagementSlug: string
     engagementSlug,
     title: f.title,
     description: f.description,
+    kind: f.kind,
+    affectedTarget: f.affectedTarget,
+    impact: f.impact,
+    fixEffort: f.fixEffort,
+    iso21434Refs: (f.iso21434Refs as unknown as string[]) ?? [],
+    unr155Refs: (f.unr155Refs as unknown as string[]) ?? [],
     remediation: f.remediation,
     category: f.category?.category ?? null,
     severity: f.severity,

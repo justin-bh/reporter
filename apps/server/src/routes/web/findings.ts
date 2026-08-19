@@ -65,6 +65,13 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
           engagementId: eng.id,
           title: input.title,
           description: input.description,
+          kind: input.kind,
+          affectedTarget: input.affectedTarget,
+          impact: input.impact,
+          // A strength carries no remediation effort.
+          fixEffort: input.kind === 'strength' ? 'none' : input.fixEffort,
+          iso21434Refs: input.iso21434Refs,
+          unr155Refs: input.unr155Refs,
           categoryId: await categoryIdFor(app, input.category),
           position: (max._max.position ?? -1) + 1,
         },
@@ -114,6 +121,12 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       const data: {
         title?: string;
         description?: string;
+        kind?: 'weakness' | 'strength';
+        affectedTarget?: string;
+        impact?: string;
+        fixEffort?: 'none' | 'low' | 'medium' | 'high';
+        iso21434Refs?: string[];
+        unr155Refs?: string[];
         remediation?: string;
         readyToReport?: boolean;
         categoryId?: number | null;
@@ -123,6 +136,12 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       } = {
         title: body.title ?? undefined,
         description: body.description ?? undefined,
+        kind: body.kind ?? undefined,
+        affectedTarget: body.affectedTarget ?? undefined,
+        impact: body.impact ?? undefined,
+        fixEffort: body.fixEffort ?? undefined,
+        iso21434Refs: body.iso21434Refs ?? undefined,
+        unr155Refs: body.unr155Refs ?? undefined,
         remediation: body.remediation ?? undefined,
         readyToReport: body.readyToReport ?? undefined,
         categoryId:
@@ -150,6 +169,20 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         data.severity = body.severity;
         data.cvssVector = null;
         data.cvssScore = null;
+      }
+
+      // A strength carries no risk rating or remediation — defensively clear the
+      // weakness-only fields so none of them leak into the weaknesses dashboard,
+      // tables, or export, even on a weakness→strength switch. (The editor also
+      // hides these for strengths, but any API/import caller is covered here too.)
+      const resultingKind = body.kind ?? finding.kind;
+      if (resultingKind === 'strength') {
+        data.severity = null;
+        data.cvssVector = null;
+        data.cvssScore = null;
+        data.fixEffort = 'none';
+        data.impact = '';
+        data.remediation = '';
       }
 
       const updated = await app.db.finding.update({

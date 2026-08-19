@@ -5,6 +5,8 @@ import {
   engagementStatusSchema,
   savedQueryTypeSchema,
   severitySchema,
+  fixEffortSchema,
+  findingKindSchema,
   watermarkLayerSchema,
   watermarkOpacitySchema,
 } from './enums.js';
@@ -19,6 +21,81 @@ export const slugSchema = z
 
 export const uuidSchema = z.string().uuid();
 export const isoDateSchema = z.string().datetime({ offset: true });
+
+// ---------------------------------------------------------------------------
+// Structured report content (engagement-level; stored as JSON, edited in Settings)
+//
+// These item shapes back the JSON columns on an engagement. They are validated on
+// write (updateEngagementInput) and returned on the engagement-detail read shape.
+// Rendered into the exported PDF; each list defaults to empty.
+// ---------------------------------------------------------------------------
+
+/** A strategic recommendation shown in the report (numbered R1, R2, …). */
+export const recommendationItemSchema = z.object({
+  title: z.string().min(1).max(255),
+  description: z.string().max(10_000).default(''),
+});
+export type RecommendationItem = z.infer<typeof recommendationItemSchema>;
+
+/** A scope target and its in-scope subsystems (rendered as the Service Scope). */
+export const scopeTargetSchema = z.object({
+  name: z.string().min(1).max(255),
+  subsystems: z.array(z.string().max(255)).max(200).default([]),
+});
+export type ScopeTarget = z.infer<typeof scopeTargetSchema>;
+
+/** A person listed in the report front-matter (provider or client side). Fields
+ *  are lenient (any may be blank) so contacts can be entered incrementally. */
+export const contactSchema = z.object({
+  name: z.string().max(255).default(''),
+  title: z.string().max(255).default(''),
+  email: z.string().max(320).default(''),
+});
+export type Contact = z.infer<typeof contactSchema>;
+
+/** A piece of software with its version (client software tested / 3rd-party used). */
+export const softwareItemSchema = z.object({
+  name: z.string().min(1).max(255),
+  version: z.string().max(120).default(''),
+});
+export type SoftwareItem = z.infer<typeof softwareItemSchema>;
+
+/**
+ * A threat-model diagram: an inline image data URI plus a caption. Capped at
+ * ~2 MB of base64 per image (recommend PNG/SVG ≲1600px wide) so a handful of
+ * diagrams still embed cleanly in the exported PDF.
+ */
+export const threatDiagramSchema = z.object({
+  imageDataUri: z
+    .string()
+    .max(2_800_000)
+    .regex(/^data:image\/(png|jpeg|jpg|webp|svg\+xml|gif);base64,/, 'must be an image data URI'),
+  caption: z.string().max(500).default(''),
+});
+export type ThreatDiagram = z.infer<typeof threatDiagramSchema>;
+
+/**
+ * A reference from an Assessment Execution subsection to a piece of the
+ * engagement's evidence, by uuid, with an optional caption. Resolved at render
+ * time; refs whose evidence no longer exists are skipped.
+ */
+export const executionEvidenceRefSchema = z.object({
+  evidenceUuid: uuidSchema,
+  caption: z.string().max(2000).default(''),
+});
+export type ExecutionEvidenceRef = z.infer<typeof executionEvidenceRefSchema>;
+
+/**
+ * One titled subsection of the hand-authored Assessment Execution narrative. The
+ * title groups the narrative by topic/interface (e.g. a subsystem); `evidence`
+ * embeds captured evidence into that subsection, in order.
+ */
+export const executionSubsectionSchema = z.object({
+  title: z.string().min(1).max(255),
+  body: z.string().max(20_000).default(''),
+  evidence: z.array(executionEvidenceRefSchema).max(200).default([]),
+});
+export type ExecutionSubsection = z.infer<typeof executionSubsectionSchema>;
 
 // ---------------------------------------------------------------------------
 // Entities (server → client shapes)
@@ -77,6 +154,18 @@ export const engagementSchema = z.object({
   scope: z.string().nullable().optional(),
   executiveSummary: z.string().nullable().optional(),
   methodology: z.string().nullable().optional(),
+  // Structured report content. Present on the engagement-detail read shape; omitted
+  // from lean list responses (hence optional). Each list defaults to empty server-side.
+  scopeTargets: z.array(scopeTargetSchema).optional(),
+  scopeExclusions: z.array(z.string()).optional(),
+  strategicRecommendations: z.array(recommendationItemSchema).optional(),
+  threatModelNarrative: z.string().nullable().optional(),
+  threatModelDiagrams: z.array(threatDiagramSchema).optional(),
+  executionNarrative: z.array(executionSubsectionSchema).optional(),
+  providerContacts: z.array(contactSchema).optional(),
+  clientContacts: z.array(contactSchema).optional(),
+  softwareTested: z.array(softwareItemSchema).optional(),
+  thirdPartySoftware: z.array(softwareItemSchema).optional(),
   // Per-engagement report watermark (drawn on every exported-PDF page but the cover).
   watermarkEnabled: z.boolean().optional(),
   watermarkText: z.string().nullable().optional(),
@@ -126,6 +215,8 @@ export const evidenceSchema = z.object({
   operator: userSchema.pick({ slug: true, firstName: true, lastName: true }),
   description: z.string(),
   contentType: evidenceTypeSchema,
+  /** Original uploaded filename, when known (used to name files in the report ZIP). */
+  originalFilename: z.string().nullable().optional(),
   occurredAt: isoDateSchema,
   createdAt: isoDateSchema,
   tags: z.array(tagSchema),
@@ -168,6 +259,18 @@ export const findingSchema = z.object({
   engagementSlug: slugSchema,
   title: z.string().min(1).max(255),
   description: z.string(),
+  /** Whether this finding is a weakness (default) or a security strength. */
+  kind: findingKindSchema,
+  /** System/component the finding applies to (may be empty). */
+  affectedTarget: z.string(),
+  /** Business/technical impact if exploited — distinct from the description (weaknesses). */
+  impact: z.string(),
+  /** Estimated remediation effort (weaknesses). */
+  fixEffort: fixEffortSchema,
+  /** Mapped ISO/SAE 21434 reference ids (see the standards catalog). */
+  iso21434Refs: z.array(z.string()),
+  /** Mapped UN R155 reference ids (see the standards catalog). */
+  unr155Refs: z.array(z.string()),
   /** Recommended remediation / fix guidance (may be empty). */
   remediation: z.string(),
   category: z.string().nullable(),
@@ -244,6 +347,19 @@ export const updateEngagementInput = z.object({
   scope: z.string().max(20_000).nullable().optional(),
   executiveSummary: z.string().max(20_000).nullable().optional(),
   methodology: z.string().max(20_000).nullable().optional(),
+  // Structured report content (JSON lists). Each is optional so a request can set
+  // just one; sending an empty array clears that list. Sizes are capped to bound
+  // the engagement row + PDF payload.
+  scopeTargets: z.array(scopeTargetSchema).max(100).optional(),
+  scopeExclusions: z.array(z.string().max(500)).max(100).optional(),
+  strategicRecommendations: z.array(recommendationItemSchema).max(200).optional(),
+  threatModelNarrative: z.string().max(20_000).nullable().optional(),
+  threatModelDiagrams: z.array(threatDiagramSchema).max(12).optional(),
+  executionNarrative: z.array(executionSubsectionSchema).max(100).optional(),
+  providerContacts: z.array(contactSchema).max(50).optional(),
+  clientContacts: z.array(contactSchema).max(50).optional(),
+  softwareTested: z.array(softwareItemSchema).max(200).optional(),
+  thirdPartySoftware: z.array(softwareItemSchema).max(200).optional(),
   // Report watermark. Text/color are nullable so an empty field restores the default.
   watermarkEnabled: z.boolean().optional(),
   watermarkText: z.string().max(120).nullable().optional(),
@@ -277,6 +393,10 @@ export const createEvidenceInput = z.object({
   content: z.string().optional(),
   /** Language hint for codeblock evidence. */
   contentSubtype: z.string().optional(),
+  /** Original filename of an uploaded file, when the client knows it (used to name
+   *  files in the report's supporting-files ZIP). File uploads also capture it
+   *  from the multipart part server-side. */
+  originalFilename: z.string().max(255).optional(),
   /**
    * When set, this evidence becomes a comment on the referenced (top-level)
    * evidence in the same engagement — a way to link evidence together and track
@@ -290,6 +410,13 @@ export const createFindingInput = z.object({
   title: z.string().min(1).max(255),
   description: z.string().default(''),
   category: z.string().nullable().default(null),
+  /** Weakness (default) or strength. */
+  kind: findingKindSchema.default('weakness'),
+  affectedTarget: z.string().max(255).default(''),
+  impact: z.string().max(20_000).default(''),
+  fixEffort: fixEffortSchema.default('none'),
+  iso21434Refs: z.array(z.string().max(120)).max(100).default([]),
+  unr155Refs: z.array(z.string().max(120)).max(100).default([]),
 });
 export type CreateFindingInput = z.infer<typeof createFindingInput>;
 
@@ -302,6 +429,12 @@ export type CreateFindingInput = z.infer<typeof createFindingInput>;
 export const updateFindingInput = z.object({
   title: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
+  kind: findingKindSchema.optional(),
+  affectedTarget: z.string().max(255).optional(),
+  impact: z.string().max(20_000).optional(),
+  fixEffort: fixEffortSchema.optional(),
+  iso21434Refs: z.array(z.string().max(120)).max(100).optional(),
+  unr155Refs: z.array(z.string().max(120)).max(100).optional(),
   remediation: z.string().max(20_000).optional(),
   category: z.string().nullable().optional(),
   severity: severitySchema.nullable().optional(),
@@ -368,7 +501,7 @@ export function paginated<T extends z.ZodTypeAny>(item: T) {
 // ---------------------------------------------------------------------------
 
 /** Bump when the export shape changes incompatibly; import validates it. */
-export const FINDINGS_EXPORT_VERSION = 1;
+export const FINDINGS_EXPORT_VERSION = 2;
 
 /** One evidence item inside an export. `contentBase64` is present only when the
  *  export was requested with `includeEvidenceContent` (makes it portable across
@@ -378,6 +511,7 @@ export const exportedEvidenceSchema = z.object({
   description: z.string(),
   contentType: evidenceTypeSchema,
   contentSubtype: z.string().nullable().optional(),
+  originalFilename: z.string().nullable().optional(),
   occurredAt: isoDateSchema,
   contentBase64: z.string().optional(),
   /** Attack Path step caption for this link (empty for plain attached evidence). */
@@ -399,6 +533,13 @@ export const exportedFindingSchema = z.object({
   /** Remediation guidance; defaults to empty for exports made before it existed. */
   remediation: z.string().default(''),
   category: z.string().nullable(),
+  // Report v2 fields. All default so v1 exports (pre-v2) import cleanly.
+  kind: findingKindSchema.default('weakness'),
+  affectedTarget: z.string().default(''),
+  impact: z.string().default(''),
+  fixEffort: fixEffortSchema.default('none'),
+  iso21434Refs: z.array(z.string()).default([]),
+  unr155Refs: z.array(z.string()).default([]),
   severity: severitySchema.nullable(),
   cvssVector: z.string().nullable(),
   cvssScore: z.number().min(0).max(10).nullable(),

@@ -25,9 +25,14 @@ export async function drainQueue(onChange: () => void): Promise<void> {
 
       try {
         let file: { filename: string; contentType: string; data: Buffer } | undefined;
+        // The on-disk screenshot is a `reporter-<uuid>.png` temp file, so give the
+        // upload a meaningful original filename (timestamped) rather than the uuid.
+        let originalFilename: string | undefined;
         if (item.contentType === 'image' && item.filePath) {
           const data = await readFile(item.filePath);
           file = { filename: basename(item.filePath), contentType: 'image/png', data };
+          const stamp = (item.occurredAt ?? '').replace(/[:.]/g, '-').slice(0, 19) || 'capture';
+          originalFilename = `screenshot-${stamp}.png`;
         }
         const created = await client.createEvidence(
           item.engagementSlug,
@@ -39,6 +44,7 @@ export async function drainQueue(onChange: () => void): Promise<void> {
             content: item.content,
             contentSubtype: item.contentSubtype,
             parentEvidenceUuid: item.parentEvidenceUuid,
+            originalFilename,
           },
           file,
         );

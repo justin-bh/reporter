@@ -27,9 +27,15 @@ import {
   WATERMARK_LAYER_LABELS,
   WATERMARK_OPACITIES,
   WATERMARK_OPACITY_LABELS,
+  type Contact,
   type EngagementMember,
   type EngagementRole,
   type EngagementStatus,
+  type ExecutionSubsection,
+  type RecommendationItem,
+  type ScopeTarget,
+  type SoftwareItem,
+  type ThreatDiagram,
   type WatermarkLayer,
   type WatermarkOpacity,
 } from '@reporter/shared';
@@ -40,6 +46,7 @@ import { fromDateInput, toDateInputValue } from '../lib/format.js';
 import { ADMIN_ONLY_TITLE, canAdmin, canWrite } from '../lib/permissions.js';
 import { TagManager } from '../components/engagement/TagManager.js';
 import { CategoryManager } from '../components/engagement/CategoryManager.js';
+import { ReportContentEditors } from '../components/engagement/ReportContentEditors.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -87,6 +94,17 @@ export function EngagementSettingsPage() {
   const [wmColor, setWmColor] = useState('#64748b');
   const [wmOpacity, setWmOpacity] = useState<WatermarkOpacity>('medium');
   const [wmLayer, setWmLayer] = useState<WatermarkLayer>('behind');
+  // Report v2 structured content.
+  const [scopeTargets, setScopeTargets] = useState<ScopeTarget[]>([]);
+  const [scopeExclusions, setScopeExclusions] = useState<string[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
+  const [threatModelNarrative, setThreatModelNarrative] = useState('');
+  const [threatModelDiagrams, setThreatModelDiagrams] = useState<ThreatDiagram[]>([]);
+  const [executionNarrative, setExecutionNarrative] = useState<ExecutionSubsection[]>([]);
+  const [providerContacts, setProviderContacts] = useState<Contact[]>([]);
+  const [clientContacts, setClientContacts] = useState<Contact[]>([]);
+  const [softwareTested, setSoftwareTested] = useState<SoftwareItem[]>([]);
+  const [thirdPartySoftware, setThirdPartySoftware] = useState<SoftwareItem[]>([]);
   useEffect(() => {
     if (eng) {
       setName(eng.name);
@@ -105,6 +123,16 @@ export function EngagementSettingsPage() {
       setWmColor(eng.watermarkColor ?? '#64748b');
       setWmOpacity(eng.watermarkOpacity ?? 'medium');
       setWmLayer(eng.watermarkLayer ?? 'behind');
+      setScopeTargets(eng.scopeTargets ?? []);
+      setScopeExclusions(eng.scopeExclusions ?? []);
+      setRecommendations(eng.strategicRecommendations ?? []);
+      setThreatModelNarrative(eng.threatModelNarrative ?? '');
+      setThreatModelDiagrams(eng.threatModelDiagrams ?? []);
+      setExecutionNarrative(eng.executionNarrative ?? []);
+      setProviderContacts(eng.providerContacts ?? []);
+      setClientContacts(eng.clientContacts ?? []);
+      setSoftwareTested(eng.softwareTested ?? []);
+      setThirdPartySoftware(eng.thirdPartySoftware ?? []);
     }
   }, [eng]);
 
@@ -195,6 +223,41 @@ export function EngagementSettingsPage() {
         watermarkLayer: wmLayer,
       });
       toast.success('Report details updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
+    }
+  }
+
+  async function saveReportContent() {
+    const trim = (s: string) => s.trim();
+    const nonEmpty = (s: string) => trim(s) !== '';
+    try {
+      await update.mutateAsync({
+        // Drop targets/exclusions/software/contacts with no name and blank rows.
+        scopeTargets: scopeTargets
+          .filter((t) => nonEmpty(t.name))
+          .map((t) => ({ name: trim(t.name), subsystems: t.subsystems.filter(nonEmpty) })),
+        scopeExclusions: scopeExclusions.filter(nonEmpty),
+        strategicRecommendations: recommendations.filter((r) => nonEmpty(r.title)),
+        threatModelNarrative: nonEmpty(threatModelNarrative) ? threatModelNarrative : null,
+        // Diagrams without an image are placeholder slots — omit them.
+        threatModelDiagrams: threatModelDiagrams.filter((d) =>
+          d.imageDataUri.startsWith('data:image/'),
+        ),
+        executionNarrative: executionNarrative
+          .filter((s) => nonEmpty(s.title))
+          // Drop evidence refs whose uuid slot is still empty.
+          .map((s) => ({ ...s, evidence: s.evidence.filter((e) => e.evidenceUuid !== '') })),
+        providerContacts: providerContacts.filter(
+          (c) => nonEmpty(c.name) || nonEmpty(c.title) || nonEmpty(c.email),
+        ),
+        clientContacts: clientContacts.filter(
+          (c) => nonEmpty(c.name) || nonEmpty(c.title) || nonEmpty(c.email),
+        ),
+        softwareTested: softwareTested.filter((s) => nonEmpty(s.name)),
+        thirdPartySoftware: thirdPartySoftware.filter((s) => nonEmpty(s.name)),
+      });
+      toast.success('Report content updated');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Update failed');
     }
@@ -438,7 +501,11 @@ export function EngagementSettingsPage() {
             title={adminOnlyTitle}
           />
         </Field>
-        <Field label="Scope" htmlFor="r-scope">
+        <Field
+          label="Scope notes"
+          htmlFor="r-scope"
+          hint="Optional free-text notes. Use the structured Service scope section below for the report’s scope tables."
+        >
           <Textarea
             id="r-scope"
             rows={3}
@@ -554,6 +621,34 @@ export function EngagementSettingsPage() {
           Save report details
         </Button>
       </Card>
+
+      <ReportContentEditors
+        slug={slug}
+        disabled={!isEngAdmin}
+        disabledTitle={adminOnlyTitle}
+        scopeTargets={scopeTargets}
+        onScopeTargets={setScopeTargets}
+        scopeExclusions={scopeExclusions}
+        onScopeExclusions={setScopeExclusions}
+        recommendations={recommendations}
+        onRecommendations={setRecommendations}
+        threatModelNarrative={threatModelNarrative}
+        onThreatModelNarrative={setThreatModelNarrative}
+        threatModelDiagrams={threatModelDiagrams}
+        onThreatModelDiagrams={setThreatModelDiagrams}
+        executionNarrative={executionNarrative}
+        onExecutionNarrative={setExecutionNarrative}
+        providerContacts={providerContacts}
+        onProviderContacts={setProviderContacts}
+        clientContacts={clientContacts}
+        onClientContacts={setClientContacts}
+        softwareTested={softwareTested}
+        onSoftwareTested={setSoftwareTested}
+        thirdPartySoftware={thirdPartySoftware}
+        onThirdPartySoftware={setThirdPartySoftware}
+        onSave={saveReportContent}
+        saving={update.isPending}
+      />
 
       {isEngAdmin && (
         <Card className="space-y-4 border-danger/40 p-4 lg:col-span-2">

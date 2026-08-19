@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  Badge,
   Button,
   Card,
   Checkbox,
@@ -13,19 +14,27 @@ import {
   useConfirm,
   useToast,
 } from '@reporter/ui';
-import { SEVERITIES, SEVERITY_LABELS, type Severity } from '@reporter/shared';
 import {
-  useCreateFindingCategory,
-  useDeleteFinding,
-  useFinding,
-  useFindingCategories,
-  useUpdateFinding,
-} from '../api/hooks.js';
+  FINDING_KINDS,
+  FINDING_KIND_LABELS,
+  FIX_EFFORTS,
+  FIX_EFFORT_LABELS,
+  ISO_21434_WORK_PRODUCTS,
+  SEVERITIES,
+  SEVERITY_LABELS,
+  UN_R155_REQUIREMENTS,
+  type FindingKind,
+  type FixEffort,
+  type Severity,
+} from '@reporter/shared';
+import { useDeleteFinding, useFinding, useUpdateFinding } from '../api/hooks.js';
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { CvssCalculator, type CvssResult } from '../components/findings/CvssCalculator.js';
 import { AttackPathSection } from '../components/findings/AttackPathSection.js';
 import { AttachedEvidenceSection } from '../components/findings/AttachedEvidenceSection.js';
 import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.js';
+import { CategorySelect } from '../components/findings/CategorySelect.js';
+import { StandardsPicker } from '../components/findings/StandardsPicker.js';
 
 export function FindingDetailPage() {
   const { slug = '', uuid = '' } = useParams();
@@ -36,20 +45,21 @@ export function FindingDetailPage() {
   const { canWrite } = useEngagementPermissions(slug);
   const update = useUpdateFinding(slug, uuid);
   const del = useDeleteFinding(slug);
-  const { data: categories } = useFindingCategories(slug);
-  const createCategory = useCreateFindingCategory(slug);
   // Which bucket the picker attaches into, or null when closed.
   const [pickerTarget, setPickerTarget] = useState<null | 'path' | 'attached'>(null);
   const [calc, setCalc] = useState(false);
-  // Inline "new category" affordance next to the category Select.
-  const [addingCategory, setAddingCategory] = useState(false);
-  const [newCategory, setNewCategory] = useState('');
 
   const [form, setForm] = useState({
+    kind: 'weakness' as FindingKind,
     title: '',
     description: '',
+    affectedTarget: '',
+    impact: '',
     remediation: '',
     category: '',
+    fixEffort: 'none' as FixEffort,
+    iso21434Refs: [] as string[],
+    unr155Refs: [] as string[],
     readyToReport: false,
     severity: '' as Severity | '',
     cvssVector: null as string | null,
@@ -64,10 +74,16 @@ export function FindingDetailPage() {
     if (finding && seededUuid.current !== finding.uuid) {
       seededUuid.current = finding.uuid;
       setForm({
+        kind: finding.kind,
         title: finding.title,
         description: finding.description,
+        affectedTarget: finding.affectedTarget,
+        impact: finding.impact,
         remediation: finding.remediation,
         category: finding.category ?? '',
+        fixEffort: finding.fixEffort,
+        iso21434Refs: finding.iso21434Refs,
+        unr155Refs: finding.unr155Refs,
         readyToReport: finding.readyToReport,
         severity: finding.severity ?? '',
         cvssVector: finding.cvssVector,
@@ -81,6 +97,7 @@ export function FindingDetailPage() {
 
   // Read-only pattern: inputs disable along with their save buttons.
   const readOnlyTitle = canWrite ? undefined : READ_ONLY_TITLE;
+  const isWeakness = form.kind === 'weakness';
 
   // Server pre-sorts: Attack Path (inPath=true) first, then Attached, each by position.
   const pathItems = finding.evidence.filter((e) => e.inPath);
@@ -90,19 +107,35 @@ export function FindingDetailPage() {
   async function save() {
     try {
       const patch: Record<string, unknown> = {
+        kind: form.kind,
         title: form.title,
         description: form.description,
-        remediation: form.remediation,
+        affectedTarget: form.affectedTarget,
         category: form.category || null,
         readyToReport: form.readyToReport,
+        iso21434Refs: form.iso21434Refs,
+        unr155Refs: form.unr155Refs,
       };
-      if (form.cvssVector) {
-        // A CVSS vector is set — the server derives score + severity from it.
-        patch.cvssVector = form.cvssVector;
+      if (form.kind === 'weakness') {
+        // Weaknesses carry the impact/remediation/effort and a severity or CVSS.
+        patch.impact = form.impact;
+        patch.remediation = form.remediation;
+        patch.fixEffort = form.fixEffort;
+        if (form.cvssVector) {
+          // A CVSS vector is set — the server derives score + severity from it.
+          patch.cvssVector = form.cvssVector;
+        } else {
+          // No vector: record the manual severity (or clear it) and drop any vector.
+          patch.severity = form.severity === '' ? null : form.severity;
+          patch.cvssVector = null;
+        }
       } else {
-        // No vector: record the manual severity (or clear it) and drop any vector.
-        patch.severity = form.severity === '' ? null : form.severity;
+        // Strengths have no severity/CVSS/impact/remediation/effort — clear them.
+        patch.severity = null;
         patch.cvssVector = null;
+        patch.impact = '';
+        patch.remediation = '';
+        patch.fixEffort = 'none';
       }
       await update.mutateAsync(patch);
       toast.success('Finding updated');
@@ -124,20 +157,6 @@ export function FindingDetailPage() {
       cvssScore: result.score,
     }));
     setCalc(false);
-  }
-
-  async function addCategory() {
-    const category = newCategory.trim();
-    if (!category) return;
-    try {
-      await createCategory.mutateAsync({ category });
-      setForm((prev) => ({ ...prev, category }));
-      setNewCategory('');
-      setAddingCategory(false);
-      toast.success('Category created');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create category');
-    }
   }
 
   async function removeFinding() {
@@ -177,6 +196,31 @@ export function FindingDetailPage() {
 
       {/* Finding details — top, roomy. */}
       <Card className="space-y-4 p-4">
+        <Field
+          label="Kind"
+          htmlFor="fk"
+          hint="Weaknesses carry severity and remediation; strengths note good practices."
+        >
+          <div id="fk" role="radiogroup" aria-label="Finding kind" className="flex gap-2">
+            {FINDING_KINDS.map((k) => (
+              <Button
+                key={k}
+                type="button"
+                size="sm"
+                variant={form.kind === k ? 'primary' : 'secondary'}
+                role="radio"
+                aria-checked={form.kind === k}
+                onClick={() => setForm({ ...form, kind: k })}
+                disabled={!canWrite}
+                title={readOnlyTitle}
+              >
+                {FINDING_KIND_LABELS[k]}
+              </Button>
+            ))}
+            {form.kind === 'strength' && <Badge tone="success">Strength</Badge>}
+          </div>
+        </Field>
+
         <Field label="Title" htmlFor="ft">
           <Input
             id="ft"
@@ -186,121 +230,88 @@ export function FindingDetailPage() {
             title={readOnlyTitle}
           />
         </Field>
-        <Field label="Category" htmlFor="fc">
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Category" htmlFor="fc">
+            <CategorySelect
               id="fc"
-              className="max-w-[16rem]"
+              slug={slug}
               value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              onChange={(category) => setForm((prev) => ({ ...prev, category }))}
+              disabled={!canWrite}
+            />
+          </Field>
+          <Field
+            label="Affected target"
+            htmlFor="fat"
+            hint="Component, host, or subsystem this finding concerns."
+          >
+            <Input
+              id="fat"
+              value={form.affectedTarget}
+              onChange={(e) => setForm({ ...form, affectedTarget: e.target.value })}
               disabled={!canWrite}
               title={readOnlyTitle}
-            >
-              <option value="">No category</option>
-              {/* Preserve a soft-deleted category still on this finding. */}
-              {form.category &&
-                !(categories ?? []).some((c) => c.category === form.category) && (
-                  <option value={form.category}>{form.category}</option>
-                )}
-              {(categories ?? []).map((c) => (
-                <option key={c.id} value={c.category}>
-                  {c.category}
-                </option>
-              ))}
-            </Select>
-            {addingCategory ? (
-              <span className="flex items-center gap-2">
-                <Input
-                  aria-label="New category name"
-                  className="max-w-[12rem]"
-                  autoFocus
+            />
+          </Field>
+        </div>
+
+        {isWeakness && (
+          <>
+            <Field label="Severity" htmlFor="fsev">
+              <div className="flex items-center gap-2">
+                <Select
+                  id="fsev"
+                  className="max-w-[10rem]"
+                  value={form.severity}
+                  onChange={(e) => pickSeverity(e.target.value as Severity | '')}
                   disabled={!canWrite}
                   title={readOnlyTitle}
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      void addCategory();
-                    } else if (e.key === 'Escape') {
-                      setAddingCategory(false);
-                      setNewCategory('');
-                    }
-                  }}
-                  placeholder="Category name"
-                />
+                >
+                  <option value="">Unrated</option>
+                  {SEVERITIES.map((s) => (
+                    <option key={s} value={s}>
+                      {SEVERITY_LABELS[s]}
+                    </option>
+                  ))}
+                </Select>
                 <Button
                   type="button"
                   size="sm"
-                  onClick={addCategory}
-                  loading={createCategory.isPending}
-                  disabled={!newCategory.trim()}
+                  variant="secondary"
+                  onClick={() => setCalc(true)}
+                  disabled={!canWrite}
+                  title={readOnlyTitle}
                 >
-                  Add
+                  CVSS calculator
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setAddingCategory(false);
-                    setNewCategory('');
-                  }}
-                >
-                  Cancel
-                </Button>
-              </span>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setAddingCategory(true)}
-                disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              >
-                ＋ New
-              </Button>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Severity" htmlFor="fsev">
-          <div className="flex items-center gap-2">
-            <Select
-              id="fsev"
-              className="max-w-[10rem]"
-              value={form.severity}
-              onChange={(e) => pickSeverity(e.target.value as Severity | '')}
-              disabled={!canWrite}
-              title={readOnlyTitle}
-            >
-              <option value="">Unrated</option>
-              {SEVERITIES.map((s) => (
-                <option key={s} value={s}>
-                  {SEVERITY_LABELS[s]}
-                </option>
-              ))}
-            </Select>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => setCalc(true)}
-              disabled={!canWrite}
-              title={readOnlyTitle}
-            >
-              CVSS calculator
-            </Button>
+                {form.cvssVector && (
+                  <SeverityBadge severity={form.severity || null} score={form.cvssScore} />
+                )}
+              </div>
+            </Field>
             {form.cvssVector && (
-              <SeverityBadge severity={form.severity || null} score={form.cvssScore} />
+              <p className="-mt-2 text-xs text-muted">
+                <code>{form.cvssVector}</code>
+              </p>
             )}
-          </div>
-        </Field>
-        {form.cvssVector && (
-          <p className="-mt-2 text-xs text-muted">
-            <code>{form.cvssVector}</code>
-          </p>
+            <Field label="Fix effort" htmlFor="ffe" hint="Estimated effort to remediate.">
+              <Select
+                id="ffe"
+                className="max-w-[10rem]"
+                value={form.fixEffort}
+                onChange={(e) => setForm({ ...form, fixEffort: e.target.value as FixEffort })}
+                disabled={!canWrite}
+                title={readOnlyTitle}
+              >
+                {FIX_EFFORTS.map((f) => (
+                  <option key={f} value={f}>
+                    {FIX_EFFORT_LABELS[f]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </>
         )}
 
         <Field label="Description" htmlFor="fd">
@@ -313,20 +324,64 @@ export function FindingDetailPage() {
             title={readOnlyTitle}
           />
         </Field>
-        <Field
-          label="Remediation"
-          htmlFor="frem"
-          hint="Recommended fix / guidance (shown in the report)"
-        >
-          <Textarea
-            id="frem"
-            rows={6}
-            value={form.remediation}
-            onChange={(e) => setForm({ ...form, remediation: e.target.value })}
-            disabled={!canWrite}
-            title={readOnlyTitle}
-          />
-        </Field>
+
+        {isWeakness && (
+          <>
+            <Field
+              label="Impact"
+              htmlFor="fimp"
+              hint="Business or technical impact if exploited (distinct from the description)."
+            >
+              <Textarea
+                id="fimp"
+                rows={4}
+                value={form.impact}
+                onChange={(e) => setForm({ ...form, impact: e.target.value })}
+                disabled={!canWrite}
+                title={readOnlyTitle}
+              />
+            </Field>
+            <Field
+              label="Remediation"
+              htmlFor="frem"
+              hint="Recommended fix / guidance (shown in the report)."
+            >
+              <Textarea
+                id="frem"
+                rows={6}
+                value={form.remediation}
+                onChange={(e) => setForm({ ...form, remediation: e.target.value })}
+                disabled={!canWrite}
+                title={readOnlyTitle}
+              />
+            </Field>
+          </>
+        )}
+
+        {/* Standards mapping — available for both kinds. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="ISO/SAE 21434" htmlFor="fiso" hint="Related work products / clauses.">
+            <StandardsPicker
+              catalog={ISO_21434_WORK_PRODUCTS}
+              value={form.iso21434Refs}
+              onChange={(iso21434Refs) => setForm((prev) => ({ ...prev, iso21434Refs }))}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+              label="ISO 21434 work product"
+            />
+          </Field>
+          <Field label="UN R155" htmlFor="funr" hint="Related requirements / Annex 5 entries.">
+            <StandardsPicker
+              catalog={UN_R155_REQUIREMENTS}
+              value={form.unr155Refs}
+              onChange={(unr155Refs) => setForm((prev) => ({ ...prev, unr155Refs }))}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+              label="UN R155 requirement"
+            />
+          </Field>
+        </div>
+
         <div className="flex items-center justify-between">
           <Checkbox
             label="Ready to report"
