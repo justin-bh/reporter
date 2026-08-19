@@ -449,7 +449,7 @@ describe('findings JSON export', () => {
     expect(def.statusCode).toBe(200);
     expect(def.headers['content-disposition']).toContain('attachment');
     const defBody = def.json();
-    expect(defBody.schemaVersion).toBe(2);
+    expect(defBody.schemaVersion).toBe(3);
     expect(defBody.findings).toHaveLength(1);
     expect(defBody.findings[0].title).toBe('Ready one');
     expect(defBody.findings[0].severity).toBe('high');

@@ -15,6 +15,7 @@ import type {
 
 export interface SubmitPayload {
   engagementSlug: string;
+  title: string;
   description: string;
   tagIds: number[];
   contentType: 'image' | 'codeblock' | 'none';

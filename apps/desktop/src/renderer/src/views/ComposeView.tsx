@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { defaultTagColorFor } from '@reporter/shared';
 import {
   Button,
@@ -8,12 +8,28 @@ import {
   Select,
   TagPicker,
   Textarea,
+  useConfirm,
   useToast,
 } from '@reporter/ui';
 import type { CaptureDraft, EngagementLite, EvidenceLite, TagLite } from '../../../shared/types.js';
 
-export function ComposeView({ onDone }: { onDone: () => void }) {
+/**
+ * Registers a guard so the parent can ask "is it safe to leave the compose
+ * form?" before switching views. The guard returns `true` when leaving is OK
+ * (form clean, or the user confirmed discarding) and `false` to stay.
+ */
+export type LeaveGuard = () => Promise<boolean>;
+
+export function ComposeView({
+  onDone,
+  registerLeaveGuard,
+}: {
+  onDone: () => void;
+  /** Called on mount with a guard the parent invokes before leaving compose. */
+  registerLeaveGuard?: (guard: LeaveGuard | null) => void;
+}) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<CaptureDraft | null | undefined>(undefined);
   const [engagements, setEngagements] = useState<EngagementLite[]>([]);
   const [engagementSlug, setEngagementSlug] = useState('');
@@ -21,10 +37,61 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [evidenceOptions, setEvidenceOptions] = useState<EvidenceLite[]>([]);
   const [parentEvidenceUuid, setParentEvidenceUuid] = useState('');
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [language, setLanguage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Snapshot of the initial editable form state, so "dirty" means the user
+  // actually changed something. `content` starts from the draft (a codeblock
+  // capture pre-fills it), so its baseline is the draft's content.
+  const initialContentRef = useRef('');
+
+  // Keep a live snapshot of what "dirty" means for the leave guard, which is a
+  // stable callback registered once. Reading through a ref avoids re-registering
+  // the guard (and re-running the parent's effect) on every keystroke.
+  const dirtyRef = useRef(false);
+  const submittedRef = useRef(false);
+  const isDirty =
+    !submittedRef.current &&
+    (title.trim() !== '' ||
+      description.trim() !== '' ||
+      content !== initialContentRef.current ||
+      language.trim() !== '' ||
+      tagIds.length > 0);
+  dirtyRef.current = isDirty;
+
+  const confirmDiscard = useCallback(async (): Promise<boolean> => {
+    if (!dirtyRef.current) return true;
+    return confirm({
+      title: 'Discard changes?',
+      message: 'This capture has unsaved changes. Leave without adding it as evidence?',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep editing',
+      danger: true,
+    });
+  }, [confirm]);
+
+  // Register the leave guard with the parent for the lifetime of this view.
+  useEffect(() => {
+    registerLeaveGuard?.(confirmDiscard);
+    return () => registerLeaveGuard?.(null);
+  }, [registerLeaveGuard, confirmDiscard]);
+
+  // Best-effort guard against closing the window with a dirty form. The
+  // renderer can't run an async confirm here, so fall back to the native prompt
+  // by cancelling the unload (Electron shows its own "Leave site?" dialog).
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -35,6 +102,7 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
       ]);
       setDraft(d);
       setContent(d?.content ?? '');
+      initialContentRef.current = d?.content ?? '';
       setEngagements(engs);
       setEngagementSlug(settings.currentEngagementSlug ?? engs[0]?.slug ?? '');
     })();
@@ -74,6 +142,10 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
     [engagementSlug, refreshTags],
   );
 
+  const cancel = useCallback(async () => {
+    if (await confirmDiscard()) onDone();
+  }, [confirmDiscard, onDone]);
+
   if (draft === undefined) return <p className="text-sm text-muted">Loading…</p>;
 
   if (draft === null) {
@@ -95,10 +167,15 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
       toast.error('Choose an engagement first');
       return;
     }
+    if (!title.trim()) {
+      toast.error('Add a title first');
+      return;
+    }
     setSubmitting(true);
     try {
       await window.reporter.submitDraft({
         engagementSlug,
+        title: title.trim(),
         description,
         tagIds,
         contentType: draft!.contentType,
@@ -107,6 +184,11 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
         contentSubtype: draft!.contentType === 'codeblock' && language ? language : undefined,
         parentEvidenceUuid: parentEvidenceUuid || undefined,
       });
+      // A successful submit clears the draft on the main side, so leaving is no
+      // longer "discarding" — mark clean before onDone() so the parent's leave
+      // guard doesn't prompt.
+      submittedRef.current = true;
+      dirtyRef.current = false;
       toast.success('Queued for upload');
       onDone();
     } catch (err) {
@@ -137,13 +219,18 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
         </Select>
       </Field>
 
-      <Field label="Description" htmlFor="desc">
+      <Field label="Title" htmlFor="title" required>
         <Input
-          id="desc"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          id="title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
           autoFocus
         />
+      </Field>
+
+      <Field label="Description" htmlFor="desc">
+        <Input id="desc" value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
 
       {draft.contentType === 'codeblock' && (
@@ -211,10 +298,15 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onDone}>
+        <Button size="sm" variant="ghost" onClick={cancel}>
           Cancel
         </Button>
-        <Button size="sm" onClick={submit} loading={submitting} disabled={!engagementSlug}>
+        <Button
+          size="sm"
+          onClick={submit}
+          loading={submitting}
+          disabled={!engagementSlug || !title.trim()}
+        >
           Add evidence
         </Button>
       </div>

@@ -302,6 +302,7 @@ function registerIpc(): void {
       _e,
       payload: {
         engagementSlug: string;
+        title: string;
         description: string;
         tagIds: number[];
         contentType: 'image' | 'codeblock' | 'none';
@@ -317,6 +318,7 @@ function registerIpc(): void {
         filePath: payload.filePath,
         content: payload.content,
         contentSubtype: payload.contentSubtype,
+        title: payload.title,
         description: payload.description,
         tagIds: payload.tagIds,
         parentEvidenceUuid: payload.parentEvidenceUuid,

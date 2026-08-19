@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Spinner } from '@reporter/ui';
 import type { Evidence } from '@reporter/shared';
 import 'asciinema-player/dist/bundle/asciinema-player.css';
+import { evidenceHeading } from '../../lib/evidence-label.js';
 import { evidenceContentUrl } from '../../lib/urls.js';
 
 /**
@@ -18,13 +19,13 @@ export function EvidenceContent({ evidence, slug }: { evidence: Evidence; slug: 
   }
   return (
     <div className="min-w-0 space-y-3">
-      {evidence.description && <Caption text={evidence.description} />}
+      <Caption text={evidenceHeading(evidence)} />
       <MediaBody evidence={evidence} slug={slug} />
     </div>
   );
 }
 
-/** The operator's short description, shown above the body. */
+/** The evidence's primary label (title, else description, else type), above the body. */
 function Caption({ text }: { text: string }) {
   return <p className="break-words text-sm font-medium text-text">{text}</p>;
 }
@@ -47,18 +48,25 @@ function MediaBody({ evidence, slug }: { evidence: Evidence; slug: string }) {
 
 /**
  * Notes and events. Their body text is stored as a blob (from the create form's
- * "Content" field). When a body exists the description becomes a caption above
- * it; a description-only note simply shows its text as the body, so nothing the
- * operator typed is ever hidden.
+ * "Content" field). When a body blob exists the heading (title, else description)
+ * sits above it as a caption. A blob-less note shows its title (when set) as a
+ * caption above the description-as-body; without a title the description simply
+ * is the body, so nothing the operator typed is ever hidden or duplicated.
  */
 function NoteEventViewer({ evidence, slug }: { evidence: Evidence; slug: string }) {
+  const hasTitle = evidence.title.trim().length > 0;
   return (
     <div className="min-w-0 space-y-3">
-      {evidence.hasContent && evidence.description && <Caption text={evidence.description} />}
       {evidence.hasContent ? (
-        <NoteBodyViewer slug={slug} uuid={evidence.uuid} />
+        <>
+          <Caption text={evidenceHeading(evidence)} />
+          <NoteBodyViewer slug={slug} uuid={evidence.uuid} />
+        </>
       ) : (
-        <NoteText text={evidence.description} />
+        <>
+          {hasTitle && <Caption text={evidence.title} />}
+          <NoteText text={evidence.description} />
+        </>
       )}
     </div>
   );

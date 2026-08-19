@@ -102,6 +102,7 @@ export async function createEvidence(
       uuid: args.uuid,
       engagementId: args.engagementId,
       operatorId: args.operatorId,
+      title: metadata.title ?? '',
       description: metadata.description ?? '',
       contentType: metadata.contentType,
       contentSubtype: metadata.contentSubtype ?? null,

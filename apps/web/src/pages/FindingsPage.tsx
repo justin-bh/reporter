@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   DndContext,
@@ -48,6 +48,7 @@ import {
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { ExportFindingsModal } from '../components/findings/ExportFindingsModal.js';
 import { CategorySelect } from '../components/findings/CategorySelect.js';
+import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 
 export function FindingsPage() {
   const { slug = '' } = useParams();
@@ -291,6 +292,30 @@ function CreateFindingModal({
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
 
+  // Clear the form whenever the modal closes so a discarded draft doesn't carry
+  // into the next open (and re-trigger the discard-confirm on a fresh session).
+  useEffect(() => {
+    if (!open) {
+      setKind('weakness');
+      setTitle('');
+      setDescription('');
+      setCategory('');
+    }
+  }, [open]);
+
+  // Dirty when anything's been entered beyond the default kind. Drives the
+  // discard-confirm on close/cancel/Esc/backdrop.
+  const isDirty = useMemo(
+    () =>
+      title.trim().length > 0 ||
+      description.trim().length > 0 ||
+      category.length > 0 ||
+      kind !== 'weakness',
+    [title, description, category, kind],
+  );
+
+  const { requestClose } = useUnsavedGuard({ isDirty, enabled: open, onClose });
+
   async function submit() {
     try {
       await create.mutateAsync({
@@ -320,11 +345,11 @@ function CreateFindingModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       title="New finding"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={requestClose}>
             Cancel
           </Button>
           <Button onClick={submit} loading={create.isPending} disabled={!title}>

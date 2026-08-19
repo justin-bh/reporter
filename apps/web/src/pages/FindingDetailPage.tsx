@@ -29,12 +29,31 @@ import {
 } from '@reporter/shared';
 import { useDeleteFinding, useFinding, useUpdateFinding } from '../api/hooks.js';
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
+import { useAutosave } from '../hooks/useAutosave.js';
+import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
 import { CvssCalculator, type CvssResult } from '../components/findings/CvssCalculator.js';
 import { AttackPathSection } from '../components/findings/AttackPathSection.js';
 import { AttachedEvidenceSection } from '../components/findings/AttachedEvidenceSection.js';
 import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.js';
 import { CategorySelect } from '../components/findings/CategorySelect.js';
 import { StandardsPicker } from '../components/findings/StandardsPicker.js';
+
+interface FindingForm {
+  kind: FindingKind;
+  title: string;
+  description: string;
+  affectedTarget: string;
+  impact: string;
+  remediation: string;
+  category: string;
+  fixEffort: FixEffort;
+  iso21434Refs: string[];
+  unr155Refs: string[];
+  readyToReport: boolean;
+  severity: Severity | '';
+  cvssVector: string | null;
+  cvssScore: number | null;
+}
 
 export function FindingDetailPage() {
   const { slug = '', uuid = '' } = useParams();
@@ -49,31 +68,33 @@ export function FindingDetailPage() {
   const [pickerTarget, setPickerTarget] = useState<null | 'path' | 'attached'>(null);
   const [calc, setCalc] = useState(false);
 
-  const [form, setForm] = useState({
-    kind: 'weakness' as FindingKind,
+  const [form, setForm] = useState<FindingForm>({
+    kind: 'weakness',
     title: '',
     description: '',
     affectedTarget: '',
     impact: '',
     remediation: '',
     category: '',
-    fixEffort: 'none' as FixEffort,
-    iso21434Refs: [] as string[],
-    unr155Refs: [] as string[],
+    fixEffort: 'none',
+    iso21434Refs: [],
+    unr155Refs: [],
     readyToReport: false,
-    severity: '' as Severity | '',
-    cvssVector: null as string | null,
-    cvssScore: null as number | null,
+    severity: '',
+    cvssVector: null,
+    cvssScore: null,
   });
 
   // Seed the form once per finding, not on every cache change. Optimistic
   // evidence reorder/attach/detach replace the cached `finding` object; without
   // this guard the effect would re-run and silently discard unsaved edits.
   const seededUuid = useRef<string | null>(null);
+  // Baseline the autosave diffs against; undefined until the finding loads.
+  const [baseline, setBaseline] = useState<FindingForm | undefined>(undefined);
   useEffect(() => {
     if (finding && seededUuid.current !== finding.uuid) {
       seededUuid.current = finding.uuid;
-      setForm({
+      const seeded: FindingForm = {
         kind: finding.kind,
         title: finding.title,
         description: finding.description,
@@ -88,45 +109,41 @@ export function FindingDetailPage() {
         severity: finding.severity ?? '',
         cvssVector: finding.cvssVector,
         cvssScore: finding.cvssScore,
-      });
+      };
+      setForm(seeded);
+      setBaseline(seeded);
     }
   }, [finding]);
 
-  if (isLoading) return <Spinner size={26} />;
-  if (!finding) return <p className="text-danger">Finding not found.</p>;
-
-  // Read-only pattern: inputs disable along with their save buttons.
-  const readOnlyTitle = canWrite ? undefined : READ_ONLY_TITLE;
-  const isWeakness = form.kind === 'weakness';
-
-  // Server pre-sorts: Attack Path (inPath=true) first, then Attached, each by position.
-  const pathItems = finding.evidence.filter((e) => e.inPath);
-  const attachedItems = finding.evidence.filter((e) => !e.inPath);
-  const attachedUuids = finding.evidence.map((e) => e.uuid);
-
-  async function save() {
-    try {
+  // Autosave the whole finding form. The CVSS calculator / severity picker set
+  // vector+score+severity together, which is just another form change and saves
+  // fine. Title is required; a blank title parks at `unsaved` and never saves.
+  const { status, flush } = useAutosave<FindingForm>({
+    value: form,
+    baseline,
+    isValid: (v) => v.title.trim().length > 0,
+    save: async (v) => {
       const patch: Record<string, unknown> = {
-        kind: form.kind,
-        title: form.title,
-        description: form.description,
-        affectedTarget: form.affectedTarget,
-        category: form.category || null,
-        readyToReport: form.readyToReport,
-        iso21434Refs: form.iso21434Refs,
-        unr155Refs: form.unr155Refs,
+        kind: v.kind,
+        title: v.title,
+        description: v.description,
+        affectedTarget: v.affectedTarget,
+        category: v.category || null,
+        readyToReport: v.readyToReport,
+        iso21434Refs: v.iso21434Refs,
+        unr155Refs: v.unr155Refs,
       };
-      if (form.kind === 'weakness') {
+      if (v.kind === 'weakness') {
         // Weaknesses carry the impact/remediation/effort and a severity or CVSS.
-        patch.impact = form.impact;
-        patch.remediation = form.remediation;
-        patch.fixEffort = form.fixEffort;
-        if (form.cvssVector) {
+        patch.impact = v.impact;
+        patch.remediation = v.remediation;
+        patch.fixEffort = v.fixEffort;
+        if (v.cvssVector) {
           // A CVSS vector is set — the server derives score + severity from it.
-          patch.cvssVector = form.cvssVector;
+          patch.cvssVector = v.cvssVector;
         } else {
           // No vector: record the manual severity (or clear it) and drop any vector.
-          patch.severity = form.severity === '' ? null : form.severity;
+          patch.severity = v.severity === '' ? null : v.severity;
           patch.cvssVector = null;
         }
       } else {
@@ -138,11 +155,23 @@ export function FindingDetailPage() {
         patch.fixEffort = 'none';
       }
       await update.mutateAsync(patch);
-      toast.success('Finding updated');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Update failed');
-    }
-  }
+      setBaseline(v);
+    },
+  });
+
+  const titleInvalid = form.title.trim().length === 0;
+
+  if (isLoading) return <Spinner size={26} />;
+  if (!finding) return <p className="text-danger">Finding not found.</p>;
+
+  // Read-only pattern: inputs disable when the user can't write.
+  const readOnlyTitle = canWrite ? undefined : READ_ONLY_TITLE;
+  const isWeakness = form.kind === 'weakness';
+
+  // Server pre-sorts: Attack Path (inPath=true) first, then Attached, each by position.
+  const pathItems = finding.evidence.filter((e) => e.inPath);
+  const attachedItems = finding.evidence.filter((e) => !e.inPath);
+  const attachedUuids = finding.evidence.map((e) => e.uuid);
 
   // Picking a severity manually invalidates any stored CVSS vector.
   function pickSeverity(value: Severity | '') {
@@ -221,11 +250,18 @@ export function FindingDetailPage() {
           </div>
         </Field>
 
-        <Field label="Title" htmlFor="ft">
+        <Field
+          label="Title"
+          htmlFor="ft"
+          required
+          error={canWrite && titleInvalid ? 'A title is required.' : undefined}
+        >
           <Input
             id="ft"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
+            onBlur={() => void flush()}
+            invalid={canWrite && titleInvalid}
             disabled={!canWrite}
             title={readOnlyTitle}
           />
@@ -250,6 +286,7 @@ export function FindingDetailPage() {
               id="fat"
               value={form.affectedTarget}
               onChange={(e) => setForm({ ...form, affectedTarget: e.target.value })}
+              onBlur={() => void flush()}
               disabled={!canWrite}
               title={readOnlyTitle}
             />
@@ -320,6 +357,7 @@ export function FindingDetailPage() {
             rows={6}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
+            onBlur={() => void flush()}
             disabled={!canWrite}
             title={readOnlyTitle}
           />
@@ -337,6 +375,7 @@ export function FindingDetailPage() {
                 rows={4}
                 value={form.impact}
                 onChange={(e) => setForm({ ...form, impact: e.target.value })}
+                onBlur={() => void flush()}
                 disabled={!canWrite}
                 title={readOnlyTitle}
               />
@@ -351,6 +390,7 @@ export function FindingDetailPage() {
                 rows={6}
                 value={form.remediation}
                 onChange={(e) => setForm({ ...form, remediation: e.target.value })}
+                onBlur={() => void flush()}
                 disabled={!canWrite}
                 title={readOnlyTitle}
               />
@@ -390,14 +430,7 @@ export function FindingDetailPage() {
             disabled={!canWrite}
             title={readOnlyTitle}
           />
-          <Button
-            onClick={save}
-            loading={update.isPending}
-            disabled={!canWrite}
-            title={canWrite ? undefined : READ_ONLY_TITLE}
-          >
-            Save changes
-          </Button>
+          {canWrite && <SaveStatusIndicator status={status} />}
         </div>
       </Card>
 

@@ -38,6 +38,8 @@ export interface QueueItem {
   /** Inline text (codeblock/note). */
   content?: string;
   contentSubtype?: string;
+  /** Short, required human title for the evidence. */
+  title: string;
   description: string;
   tagIds: number[];
   occurredAt: string;

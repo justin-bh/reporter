@@ -23,6 +23,7 @@ import { EvidenceContent } from '../evidence/EvidenceContent.js';
 import { TypeFilter } from '../evidence/filters/TypeFilter.js';
 import { TagsFilter } from '../evidence/filters/TagsFilter.js';
 import { DateFilter } from '../evidence/filters/DateFilter.js';
+import { evidenceHeading, evidenceSnippet } from '../../lib/evidence-label.js';
 import { formatDateTime } from '../../lib/format.js';
 import { evidenceThumbUrl } from '../../lib/urls.js';
 
@@ -309,7 +310,7 @@ function PickerRow({
       <div className="pt-1">
         <Checkbox
           label=""
-          aria-label={`Select ${ev.description || EVIDENCE_TYPE_LABELS[ev.contentType]}`}
+          aria-label={`Select ${evidenceHeading(ev)}`}
           checked={selected}
           onChange={(e) => onToggle(e.target.checked)}
         />
@@ -333,11 +334,10 @@ function PickerRow({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text">
-            {ev.description || (
-              <span className="text-muted">{EVIDENCE_TYPE_LABELS[ev.contentType]}</span>
-            )}
-          </p>
+          <p className="truncate text-sm font-medium text-text">{evidenceHeading(ev)}</p>
+          {evidenceSnippet(ev) && (
+            <p className="truncate text-xs text-muted">{evidenceSnippet(ev)}</p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
             <Badge tone="neutral">{EVIDENCE_TYPE_LABELS[ev.contentType]}</Badge>
             <span>{formatDateTime(ev.occurredAt)}</span>
@@ -363,11 +363,10 @@ function PreviewPane({ slug, ev }: { slug: string; ev: Evidence | null }) {
   }
   return (
     <div className="max-h-[26rem] min-w-0 overflow-auto rounded-card border border-border bg-surface p-3">
-      <p className="truncate text-sm font-medium text-text">
-        {ev.description || (
-          <span className="text-muted">{EVIDENCE_TYPE_LABELS[ev.contentType]}</span>
-        )}
-      </p>
+      <p className="truncate text-sm font-medium text-text">{evidenceHeading(ev)}</p>
+      {evidenceSnippet(ev) && (
+        <p className="mt-0.5 text-xs text-muted">{evidenceSnippet(ev)}</p>
+      )}
       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
         <Badge tone="neutral">{EVIDENCE_TYPE_LABELS[ev.contentType]}</Badge>
         <span>

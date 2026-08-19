@@ -27,6 +27,21 @@ function resolveCommentOn(value: string | undefined): string | undefined {
   return parsed.data;
 }
 
+/**
+ * Validate an optionally-supplied --title, exiting on an empty/whitespace value.
+ * Returns the trimmed title, or `undefined` when the flag was omitted (so the
+ * interactive prompt collects it instead).
+ */
+function resolveTitle(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    console.error(`${sym.err} --title must not be empty`);
+    process.exit(1);
+  }
+  return trimmed;
+}
+
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
 }
@@ -80,13 +95,15 @@ program
 program
   .command('upload <file>')
   .description('Upload a saved .cast recording')
+  .option('--title <title>', 'Title for the evidence (skips the Title prompt)')
   .option('--comment-on <uuid>', 'File this recording as a comment on existing evidence (UUID)')
-  .action(async (file: string, opts: { commentOn?: string }) => {
+  .action(async (file: string, opts: { title?: string; commentOn?: string }) => {
     const config = await ensureConfig();
     if (!config) return;
     const parentEvidenceUuid = resolveCommentOn(opts.commentOn);
+    const title = resolveTitle(opts.title);
     p.intro(banner());
-    await promptAndUpload(config, file, parentEvidenceUuid);
+    await promptAndUpload(config, file, parentEvidenceUuid, { title });
     p.outro('Done.');
   });
 

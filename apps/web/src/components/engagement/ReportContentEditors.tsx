@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Field, Input, Spinner, Textarea } from '@reporter/ui';
 import {
-  EVIDENCE_TYPE_LABELS,
   type Contact,
   type Evidence,
   type ExecutionEvidenceRef,
@@ -14,6 +13,9 @@ import {
 import { RepeatableList } from '../common/RepeatableList.js';
 import { EvidencePickerModal } from '../findings/EvidencePickerModal.js';
 import { useEvidence } from '../../api/hooks.js';
+import { evidenceHeading } from '../../lib/evidence-label.js';
+import { SaveStatusIndicator } from '../SaveStatusIndicator.js';
+import type { SaveStatus } from '../../hooks/useAutosave.js';
 
 // Threat-model diagram limits (mirrors the server's ~2 MB/image cap; see the
 // shared threatDiagramSchema). base64 inflates ~33%, so a ~2 MB data URI ≈ 1.5 MB
@@ -34,6 +36,8 @@ function readFileAsDataUri(file: File): Promise<string> {
 interface Common {
   disabled: boolean;
   disabledTitle?: string;
+  /** Flush the debounced autosave now (wire to text-input onBlur). */
+  onFlush?: () => void;
 }
 
 /**
@@ -66,8 +70,8 @@ export function ReportContentEditors({
   onSoftwareTested,
   thirdPartySoftware,
   onThirdPartySoftware,
-  onSave,
-  saving,
+  status,
+  onFlush,
 }: Common & {
   slug: string;
   scopeTargets: ScopeTarget[];
@@ -90,10 +94,12 @@ export function ReportContentEditors({
   onSoftwareTested: (v: SoftwareItem[]) => void;
   thirdPartySoftware: SoftwareItem[];
   onThirdPartySoftware: (v: SoftwareItem[]) => void;
-  onSave: () => void;
-  saving: boolean;
+  /** Autosave status shown in the footer (replaces the manual Save button). */
+  status: SaveStatus;
+  /** Flush the debounced autosave immediately (called on field blur). */
+  onFlush?: () => void;
 }) {
-  const common: Common = { disabled, disabledTitle };
+  const common: Common = { disabled, disabledTitle, onFlush };
 
   return (
     <>
@@ -164,11 +170,9 @@ export function ReportContentEditors({
 
       <Card className="flex items-center justify-between p-4 lg:col-span-2">
         <p className="text-sm text-muted">
-          Structured report content is saved together with the other report details.
+          Structured report content autosaves together with the other report details.
         </p>
-        <Button onClick={onSave} loading={saving} disabled={disabled} title={disabledTitle}>
-          Save report content
-        </Button>
+        {!disabled && <SaveStatusIndicator status={status} />}
       </Card>
     </>
   );
@@ -348,6 +352,7 @@ function RecommendationsEditor({
 function ThreatModelEditor({
   disabled,
   disabledTitle,
+  onFlush,
   narrative,
   onNarrative,
   diagrams,
@@ -394,6 +399,7 @@ function ThreatModelEditor({
           rows={6}
           value={narrative}
           onChange={(e) => onNarrative(e.target.value)}
+          onBlur={onFlush}
           disabled={disabled}
           title={disabledTitle}
         />
@@ -660,11 +666,7 @@ function ExecutionEvidenceRow({
           <Badge tone="warning">Missing evidence</Badge>
         ) : (
           <span className="min-w-0 truncate font-medium text-text">
-            {data?.description || (
-              <span className="text-muted">
-                {data ? EVIDENCE_TYPE_LABELS[data.contentType] : 'Evidence'}
-              </span>
-            )}
+            {data ? evidenceHeading(data) : <span className="text-muted">Evidence</span>}
           </span>
         )}
       </div>

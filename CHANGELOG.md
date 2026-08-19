@@ -8,6 +8,38 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Added
+
+- **Evidence now has a Title** (a short, required label) distinct from its
+  **Description** (longer prose). The "Add evidence" modal, the desktop capture
+  window, and the `reporter-term` recorder all now ask for both — Title is
+  required (`reporter-term` gains a `--title` flag for its `upload` command).
+- **Unsaved-changes handling across the app.** Edit-in-place detail pages
+  (**evidence**, **finding**, and **engagement settings**) now **autosave** as you
+  type — debounced, with a **"Saved"** breadcrumb toast and a live
+  *Unsaved / Saving… / Saved* status — and block the save with an inline error
+  while a required field (e.g. a blank title) is invalid. The create forms that
+  have nothing to autosave yet (**Add evidence**, **Add finding**, and the desktop
+  capture window) instead prompt **"Discard changes?"** when you try to leave a
+  dirty form, backed by a `beforeunload` guard for tab-close/reload.
+
+### Changed
+
+- Evidence is now shown by its **Title** everywhere it's listed — the timeline,
+  finding evidence cards, and the evidence picker — with a **snippet of the
+  description** underneath; the full **content** (screenshot, code block, terminal
+  recording, HAR, note body) is shown only on the **evidence detail** view. The
+  exported PDF report and evidence log likewise key off the title, with the
+  description as subtext.
+- The findings JSON export is now **schema version 3** (evidence carries its
+  `title`). Older v1/v2 exports still import cleanly (title defaults to empty).
+
+### Migration
+
+- Adds `evidence.title`. Existing evidence is migrated by copying its old
+  `description` into the new `title`, then clearing `description` — so the former
+  single label becomes the title and the description starts empty.
+
 ## [0.3.0] - 2026-08-19
 
 ### Added

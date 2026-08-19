@@ -47,6 +47,7 @@ import {
 
 interface GatheredEvidence {
   uuid: string;
+  title: string;
   description: string;
   contentType: string;
   contentSubtype: string | null;
@@ -142,6 +143,7 @@ async function gather(
     position: f.position,
     evidence: f.evidence.map((link) => ({
       uuid: link.evidence.uuid,
+      title: link.evidence.title,
       description: link.evidence.description,
       contentType: link.evidence.contentType,
       contentSubtype: link.evidence.contentSubtype,
@@ -172,6 +174,7 @@ export async function buildFindingsExport(
     for (const e of f.evidence) {
       const item: FindingsExport['findings'][number]['evidence'][number] = {
         uuid: e.uuid,
+        title: e.title,
         description: e.description,
         contentType: e.contentType as (typeof evidence)[number]['contentType'],
         contentSubtype: e.contentSubtype,
@@ -272,7 +275,9 @@ async function renderEvidence(
   e: GatheredEvidence,
   budget: Budget,
 ): Promise<string> {
-  const caption = esc(e.description || EVIDENCE_TYPE_LABELS[e.contentType as EvidenceType] || e.contentType);
+  const caption = esc(
+    e.title || e.description || EVIDENCE_TYPE_LABELS[e.contentType as EvidenceType] || e.contentType,
+  );
 
   // Never read a terminal recording — casts can be large and can't render
   // statically in a PDF. Reference it instead of pulling the blob into memory.
@@ -401,6 +406,7 @@ async function renderFinding(
 
 interface TimelineEvidence {
   uuid: string;
+  title: string;
   description: string;
   contentType: string;
   contentSubtype: string | null;
@@ -419,11 +425,15 @@ async function renderTimelineItem(
   const tags = e.tags.length
     ? `<div class="tl-tags">${e.tags.map((t) => tagChip(t.name, t.colorName)).join('')}</div>`
     : '';
+  const title = e.title.trim() ? `<p class="tl-title">${esc(e.title)}</p>` : '';
   const desc = e.description.trim() ? `<p class="tl-desc">${esc(e.description)}</p>` : '';
   const body = await renderEvidence(
     app,
     {
       uuid: e.uuid,
+      // Title/description render as the item's heading + snippet above, so the
+      // embedded body caption falls back to the content-type label.
+      title: '',
       description: '',
       contentType: e.contentType,
       contentSubtype: e.contentSubtype,
@@ -438,6 +448,7 @@ async function renderTimelineItem(
   return `
     <div class="tl-item">
       <div><span class="tl-when">${shortDateTime(e.occurredAt)}</span><span class="tl-who">${esc(e.operatorName)}</span></div>
+      ${title}
       ${desc}
       ${tags}
       <div class="tl-body">${body}</div>
@@ -533,6 +544,7 @@ function slugifyName(s: string): string {
 /** Derive a readable filename for a supporting file (original name wins). */
 function synthesizeFilename(e: {
   originalFilename: string | null;
+  title: string;
   description: string;
   contentType: string;
   contentSubtype: string | null;
@@ -541,7 +553,7 @@ function synthesizeFilename(e: {
   if (e.originalFilename && e.originalFilename.trim()) {
     return e.originalFilename.split(/[\\/]/).pop()!.trim().slice(0, 120) || e.uuid;
   }
-  const base = slugifyName(e.description) || e.contentType || 'evidence';
+  const base = slugifyName(e.title) || slugifyName(e.description) || e.contentType || 'evidence';
   let ext = EXT_BY_TYPE[e.contentType] ?? '';
   if (e.contentType === 'codeblock' && e.contentSubtype) {
     const lang = e.contentSubtype.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -565,6 +577,7 @@ export async function gatherSupportingFiles(
     orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
     select: {
       uuid: true,
+      title: true,
       description: true,
       contentType: true,
       contentSubtype: true,
@@ -1128,6 +1141,7 @@ export async function buildReportHtml(
           where: { engagementId: eng.id, uuid: { in: refUuids } },
           select: {
             uuid: true,
+            title: true,
             description: true,
             contentType: true,
             contentSubtype: true,
@@ -1139,6 +1153,7 @@ export async function buildReportHtml(
         for (const r of rows) {
           evidenceByUuid.set(r.uuid, {
             uuid: r.uuid,
+            title: r.title,
             description: r.description,
             contentType: r.contentType,
             contentSubtype: r.contentSubtype,
@@ -1167,6 +1182,7 @@ export async function buildReportHtml(
       });
       const tlItems: TimelineEvidence[] = evidence.map((e) => ({
         uuid: e.uuid,
+        title: e.title,
         description: e.description,
         contentType: e.contentType,
         contentSubtype: e.contentSubtype,

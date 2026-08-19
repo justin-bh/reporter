@@ -213,6 +213,12 @@ export const evidenceSchema = z.object({
   uuid: uuidSchema,
   engagementSlug: slugSchema,
   operator: userSchema.pick({ slug: true, firstName: true, lastName: true }),
+  /** Short label for the evidence — the primary heading shown in lists, cards, and
+   *  the report. May be empty on evidence created before titles existed (the UI then
+   *  falls back to the description, then the content-type label). */
+  title: z.string(),
+  /** Longer prose about the evidence, shown in full on the detail view and as a
+   *  snippet elsewhere. */
   description: z.string(),
   contentType: evidenceTypeSchema,
   /** Original uploaded filename, when known (used to name files in the report ZIP). */
@@ -385,6 +391,8 @@ export type CreateTagInput = z.infer<typeof createTagInput>;
  * event/none, `content` may be provided inline instead of a file.
  */
 export const createEvidenceInput = z.object({
+  /** Short label for the evidence (required). Shown as the heading everywhere. */
+  title: z.string().min(1).max(255),
   description: z.string().default(''),
   contentType: evidenceTypeSchema,
   occurredAt: isoDateSchema.optional(),
@@ -405,6 +413,19 @@ export const createEvidenceInput = z.object({
   parentEvidenceUuid: uuidSchema.optional(),
 });
 export type CreateEvidenceInput = z.infer<typeof createEvidenceInput>;
+
+/**
+ * Partial update of a piece of evidence's editable metadata. Every field is
+ * optional so the client can autosave one at a time; `title`, when present, must
+ * be non-empty (it is required on the record).
+ */
+export const updateEvidenceInput = z.object({
+  title: z.string().min(1).max(255).optional(),
+  description: z.string().optional(),
+  occurredAt: isoDateSchema.optional(),
+  tagIds: z.array(z.number().int().positive()).optional(),
+});
+export type UpdateEvidenceInput = z.infer<typeof updateEvidenceInput>;
 
 export const createFindingInput = z.object({
   title: z.string().min(1).max(255),
@@ -501,13 +522,15 @@ export function paginated<T extends z.ZodTypeAny>(item: T) {
 // ---------------------------------------------------------------------------
 
 /** Bump when the export shape changes incompatibly; import validates it. */
-export const FINDINGS_EXPORT_VERSION = 2;
+export const FINDINGS_EXPORT_VERSION = 3;
 
 /** One evidence item inside an export. `contentBase64` is present only when the
  *  export was requested with `includeEvidenceContent` (makes it portable across
  *  servers); otherwise evidence is referenced by uuid + metadata only. */
 export const exportedEvidenceSchema = z.object({
   uuid: uuidSchema,
+  /** Evidence title (report v3+); defaults to empty for exports made before it existed. */
+  title: z.string().default(''),
   description: z.string(),
   contentType: evidenceTypeSchema,
   contentSubtype: z.string().nullable().optional(),

@@ -38,6 +38,7 @@ export async function drainQueue(onChange: () => void): Promise<void> {
           item.engagementSlug,
           {
             contentType: item.contentType,
+            title: item.title,
             description: item.description,
             tagIds: item.tagIds,
             occurredAt: item.occurredAt,

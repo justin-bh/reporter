@@ -1,6 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Button, Card, ErrorState, Field, Input, Spinner, TagPicker, useToast } from '@reporter/ui';
+import {
+  Button,
+  Card,
+  ErrorState,
+  Field,
+  Input,
+  Spinner,
+  TagPicker,
+  Textarea,
+  useToast,
+} from '@reporter/ui';
 import { defaultTagColorFor } from '@reporter/shared';
 import {
   useCreateTag,
@@ -11,6 +21,8 @@ import {
   useUpdateEvidence,
 } from '../api/hooks.js';
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
+import { useAutosave } from '../hooks/useAutosave.js';
+import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
 import { EvidenceContent } from '../components/evidence/EvidenceContent.js';
 import { EvidenceMeta } from '../components/evidence/EvidenceMeta.js';
 import { EvidenceEntryRow } from '../components/evidence/EvidenceEntryRow.js';
@@ -19,6 +31,12 @@ import {
   DeleteEvidenceDialog,
   type DeleteEvidenceMode,
 } from '../components/evidence/DeleteEvidenceDialog.js';
+
+interface EvidenceForm {
+  title: string;
+  description: string;
+  tagIds: number[];
+}
 
 export function EvidenceDetailPage() {
   const { slug = '', uuid = '' } = useParams();
@@ -49,17 +67,47 @@ export function EvidenceDetailPage() {
       }
     : undefined;
 
-  const [description, setDescription] = useState('');
-  const [tagIds, setTagIds] = useState<number[]>([]);
+  const [form, setForm] = useState<EvidenceForm>({ title: '', description: '', tagIds: [] });
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Seed the form once per uuid, not on every cache change — starring or a
+  // returned mutation value replaces the cached `evidence` object, and reseeding
+  // then would clobber an in-progress edit (mirrors FindingDetailPage's guard).
+  const seededUuid = useRef<string | null>(null);
+  // Baseline is the last-saved server value the autosave compares against. It's
+  // undefined until the record loads, then tracks each accepted edit.
+  const [baseline, setBaseline] = useState<EvidenceForm | undefined>(undefined);
   useEffect(() => {
-    if (evidence) {
-      setDescription(evidence.description);
-      setTagIds(evidence.tags.map((t) => t.id));
+    if (evidence && seededUuid.current !== evidence.uuid) {
+      seededUuid.current = evidence.uuid;
+      const seeded: EvidenceForm = {
+        title: evidence.title,
+        description: evidence.description,
+        tagIds: evidence.tags.map((t) => t.id),
+      };
+      setForm(seeded);
+      setBaseline(seeded);
     }
   }, [evidence]);
+
+  const { status, flush } = useAutosave<EvidenceForm>({
+    value: form,
+    baseline,
+    isValid: (v) => v.title.trim().length > 0,
+    save: async (v) => {
+      const patch = {
+        title: v.title.trim(),
+        description: v.description,
+        tagIds: v.tagIds,
+      };
+      await update.mutateAsync({ uuid, patch });
+      // Advance the baseline so the form is considered clean at what we just saved.
+      setBaseline(v);
+    },
+  });
+
+  const titleInvalid = form.title.trim().length === 0;
 
   if (isLoading) return <Spinner size={26} />;
   if (isError)
@@ -69,15 +117,6 @@ export function EvidenceDetailPage() {
   // A comment is one level deep, so only top-level evidence hosts a comment thread.
   const isComment = evidence.parentEvidenceUuid !== null;
   const commentList = comments.data ?? [];
-
-  async function save() {
-    try {
-      await update.mutateAsync({ uuid, patch: { description, tagIds } });
-      toast.success('Evidence updated');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Update failed');
-    }
-  }
 
   async function remove(mode: DeleteEvidenceMode) {
     try {
@@ -152,12 +191,33 @@ export function EvidenceDetailPage() {
           </Card>
 
           <Card className="space-y-4 p-4">
-            <h3 className="text-sm font-semibold text-text">Edit</h3>
-            <Field label="Description" htmlFor="d-desc">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-text">Edit</h3>
+              {canWrite && <SaveStatusIndicator status={status} />}
+            </div>
+            <Field
+              label="Title"
+              htmlFor="d-title"
+              required
+              error={canWrite && titleInvalid ? 'A title is required.' : undefined}
+            >
               <Input
+                id="d-title"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                onBlur={() => void flush()}
+                invalid={canWrite && titleInvalid}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
+              />
+            </Field>
+            <Field label="Description" htmlFor="d-desc" hint="Optional">
+              <Textarea
                 id="d-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onBlur={() => void flush()}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}
               />
@@ -165,8 +225,8 @@ export function EvidenceDetailPage() {
             <Field label="Tags">
               <TagPicker
                 tags={tags ?? []}
-                selectedIds={tagIds}
-                onChange={setTagIds}
+                selectedIds={form.tagIds}
+                onChange={(tagIds) => setForm((f) => ({ ...f, tagIds }))}
                 onCreateTag={onCreateTag}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}
@@ -182,15 +242,6 @@ export function EvidenceDetailPage() {
                 title={canWrite ? undefined : READ_ONLY_TITLE}
               >
                 Delete
-              </Button>
-              <Button
-                size="sm"
-                onClick={save}
-                loading={update.isPending}
-                disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              >
-                Save changes
               </Button>
             </div>
           </Card>

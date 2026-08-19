@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { parseQuery } from '@reporter/shared';
+import { parseQuery, updateEvidenceInput } from '@reporter/shared';
 import { requireAuth, requireEngagementRole, HttpError } from '../../auth/guards.js';
 import { parsePagination } from '../../helpers/pagination.js';
 import { createEvidence, listEvidence } from '../../services/evidence.js';
@@ -161,20 +161,14 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Update description / tags / occurredAt.
+  // Update title / description / tags / occurredAt.
   app.put(
     '/engagements/:slug/evidence/:uuid',
     { preHandler: [requireAuth, requireEngagementRole('write')] },
     async (req) => {
       const { slug, uuid } = req.params as { slug: string; uuid: string };
       const eng = await engagementBySlug(app, slug);
-      const body = z
-        .object({
-          description: z.string().optional(),
-          occurredAt: z.string().datetime({ offset: true }).optional(),
-          tagIds: z.array(z.number().int().positive()).optional(),
-        })
-        .parse(req.body);
+      const body = updateEvidenceInput.parse(req.body);
 
       const ev = await app.db.evidence.findFirst({ where: { uuid, engagementId: eng.id } });
       if (!ev) throw new HttpError(404, 'Evidence not found');
@@ -183,6 +177,7 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
         await tx.evidence.update({
           where: { id: ev.id },
           data: {
+            title: body.title ?? undefined,
             description: body.description ?? undefined,
             occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
           },

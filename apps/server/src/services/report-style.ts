@@ -292,7 +292,8 @@ table.tbl td.title { color: var(--bh-black); font-weight: 500; }
 .tl-item:first-of-type { border-top: 0; }
 .tl-when { font-family: var(--font-mono); font-size: 12px; color: var(--bh-red); font-weight: 500; }
 .tl-who { font-size: 12px; color: var(--fg-3); margin-left: 8px; }
-.tl-desc { font-size: 14px; line-height: 1.55; color: var(--fg-1); margin: 6px 0 0; white-space: pre-wrap; }
+.tl-title { font-size: 14px; font-weight: 600; color: var(--fg-1); margin: 6px 0 0; }
+.tl-desc { font-size: 13px; line-height: 1.55; color: var(--fg-2); margin: 4px 0 0; white-space: pre-wrap; }
 .tl-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
 .tl-body { margin-top: 10px; }
 .group-head { font-family: var(--font-cond); font-weight: 700; font-size: 14px; letter-spacing: 0.06em;

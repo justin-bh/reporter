@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Badge, TagChip, useToast } from '@reporter/ui';
 import { EVIDENCE_TYPE_LABELS, type Evidence } from '@reporter/shared';
 import { useToggleEvidenceStar } from '../../api/hooks.js';
+import { evidenceHeading, evidenceSnippet } from '../../lib/evidence-label.js';
 import { evidenceThumbUrl } from '../../lib/urls.js';
 import { TimestampRail } from './TimestampRail.js';
 
@@ -61,9 +62,10 @@ export function EvidenceEntryRow({ slug, ev }: { slug: string; ev: Evidence }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text">
-            {ev.description || <span className="text-muted">No description</span>}
-          </p>
+          <p className="truncate text-sm font-medium text-text">{evidenceHeading(ev)}</p>
+          {evidenceSnippet(ev) && (
+            <p className="truncate text-xs text-muted">{evidenceSnippet(ev)}</p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge tone="neutral">{EVIDENCE_TYPE_LABELS[ev.contentType]}</Badge>
             <span>
