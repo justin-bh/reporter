@@ -2,11 +2,16 @@ name: Release
 
 # Builds the desktop installers on each OS's native runner (the reliable way to
 # produce a proper Windows .exe — Wine on an Apple Silicon dev box can't) plus
-# the reporter-term tarball. Triggers on a version tag, or run manually.
+# the reporter-term tarball, and attaches them to the tag's GitHub Release.
+# Triggers on a version tag, or run manually.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+
+# Required so the built-in GITHUB_TOKEN can create/update the Release and upload assets.
+permissions:
+  contents: write
 
 jobs:
   desktop:
@@ -42,6 +47,7 @@ jobs:
           # Unsigned/ad-hoc builds. Add APPLE/CSC + notarization secrets here for
           # signed releases (macOS), or WIN_CSC_LINK for Windows signing.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Run-level artifacts (handy for debugging). `error` so a glob mismatch fails loudly.
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}
@@ -50,8 +56,23 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
+            apps/desktop/release/*.tar.gz
             apps/desktop/release/*.deb
-          if-no-files-found: warn
+          if-no-files-found: error
+      # Attach the installers to the tag's GitHub Release (creates it if absent).
+      # Linux ships AppImage (universal), tar.gz (portable, zero-dep), pacman
+      # (Arch) and deb (Debian/Ubuntu) so it isn't Ubuntu-only.
+      - name: Attach installers to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.tar.gz
+            apps/desktop/release/*.deb
 
   terminal:
     runs-on: ubuntu-latest
@@ -70,3 +91,9 @@ jobs:
         with:
           name: reporter-term-tarball
           path: apps/term/*.tgz
+          if-no-files-found: error
+      - name: Attach tarball to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/term/*.tgz

@@ -7,18 +7,31 @@
  * so both describe the same findings in the same order. Evidence order follows
  * the per-finding manual order (EvidenceFinding.position).
  */
+import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
   EVIDENCE_GROUPING_LABELS,
   EVIDENCE_TYPE_LABELS,
   FINDINGS_EXPORT_VERSION,
+  FIX_EFFORT_LABELS,
   SEVERITY_LABELS,
   SEVERITY_RANK,
+  iso21434Ref,
+  unr155Ref,
   tagColor,
+  type Contact,
   type EvidenceGrouping,
   type EvidenceType,
+  type ExecutionSubsection,
   type FindingsExport,
+  type FindingKind,
+  type FixEffort,
+  type RecommendationItem,
+  type ScopeTarget,
   type Severity,
+  type SoftwareItem,
+  type StandardRef,
+  type ThreatDiagram,
 } from '@reporter/shared';
 import { evidenceContentMime } from '../routes/shared-evidence.js';
 import { getReportSettings } from './report-settings.js';
@@ -37,6 +50,7 @@ interface GatheredEvidence {
   description: string;
   contentType: string;
   contentSubtype: string | null;
+  originalFilename: string | null;
   occurredAt: Date;
   fullBlobKey: string | null;
   /** Attack Path step caption for this link (empty for plain attached evidence). */
@@ -49,6 +63,12 @@ interface GatheredFinding {
   uuid: string;
   title: string;
   description: string;
+  kind: FindingKind;
+  affectedTarget: string;
+  impact: string;
+  fixEffort: FixEffort;
+  iso21434Refs: string[];
+  unr155Refs: string[];
   remediation: string;
   category: string | null;
   severity: Severity | null;
@@ -64,7 +84,9 @@ export interface ReportOptions {
   includeAll?: boolean;
   /** How the Assessment Execution evidence timeline is organized. */
   evidenceGroup?: EvidenceGrouping;
-  /** Include the Assessment Execution (full evidence timeline) section. */
+  /** Include the hand-authored Assessment Execution narrative (default true). */
+  includeNarrative?: boolean;
+  /** Include the Assessment Execution auto evidence timeline (default false). */
   includeTimeline?: boolean;
   /** Include the Severity & CVSS reference appendix. */
   includeAppendix?: boolean;
@@ -105,6 +127,12 @@ async function gather(
     uuid: f.uuid,
     title: f.title,
     description: f.description,
+    kind: f.kind,
+    affectedTarget: f.affectedTarget,
+    impact: f.impact,
+    fixEffort: f.fixEffort,
+    iso21434Refs: (f.iso21434Refs as unknown as string[]) ?? [],
+    unr155Refs: (f.unr155Refs as unknown as string[]) ?? [],
     remediation: f.remediation,
     category: f.category?.category ?? null,
     severity: f.severity,
@@ -117,6 +145,7 @@ async function gather(
       description: link.evidence.description,
       contentType: link.evidence.contentType,
       contentSubtype: link.evidence.contentSubtype,
+      originalFilename: link.evidence.originalFilename,
       occurredAt: link.evidence.occurredAt,
       fullBlobKey: link.evidence.fullBlobKey,
       caption: link.caption,
@@ -146,6 +175,7 @@ export async function buildFindingsExport(
         description: e.description,
         contentType: e.contentType as (typeof evidence)[number]['contentType'],
         contentSubtype: e.contentSubtype,
+        originalFilename: e.originalFilename,
         occurredAt: e.occurredAt.toISOString(),
         caption: e.caption,
         inPath: e.inPath,
@@ -160,6 +190,12 @@ export async function buildFindingsExport(
       uuid: f.uuid,
       title: f.title,
       description: f.description,
+      kind: f.kind,
+      affectedTarget: f.affectedTarget,
+      impact: f.impact,
+      fixEffort: f.fixEffort,
+      iso21434Refs: f.iso21434Refs,
+      unr155Refs: f.unr155Refs,
       remediation: f.remediation,
       category: f.category,
       severity: f.severity,
@@ -278,11 +314,31 @@ async function renderPathStep(
   return `<div class="step"><p class="step-label">Step ${step}</p>${captionHtml}${evidenceHtml}</div>`;
 }
 
-/** Render one finding's detailed subsection (heading, meta, prose, evidence). */
+/** Render a finding's mapped standards references as prose lines (empty if none). */
+function standardsBlock(iso: string[], unr: string[]): string {
+  const fmt = (ids: string[], lookup: (id: string) => StandardRef | undefined): string =>
+    ids
+      .map((id) => {
+        const r = lookup(id);
+        return r ? `${esc(r.clause)} — ${esc(r.label)}` : esc(id);
+      })
+      .join('; ');
+  const parts: string[] = [];
+  if (iso.length)
+    parts.push(`<p class="pp"><strong>ISO/SAE 21434:</strong> ${fmt(iso, iso21434Ref)}</p>`);
+  if (unr.length) parts.push(`<p class="pp"><strong>UN R155:</strong> ${fmt(unr, unr155Ref)}</p>`);
+  return parts.length ? `<h4 class="sub">Standards Mapping</h4>${parts.join('')}` : '';
+}
+
+/**
+ * Render one weakness's detailed subsection (heading, meta, description, impact,
+ * standards mapping, remediation, evidence). `label` is the cross-reference id
+ * (e.g. "W1"). Strengths are summary-table only and never rendered here.
+ */
 async function renderFinding(
   app: FastifyInstance,
   f: GatheredFinding,
-  index: number,
+  label: string,
   budget: Budget,
 ): Promise<string> {
   // Split into the two buckets. `gather` already orders Attack Path first, each
@@ -292,10 +348,16 @@ async function renderFinding(
 
   const meta: string[] = [];
   meta.push(`<strong>Category:</strong> ${f.category ? esc(f.category) : 'Uncategorized'}`);
+  if (f.affectedTarget.trim())
+    meta.push(`<strong>Affected target:</strong> ${esc(f.affectedTarget)}`);
   if (f.cvssScore != null) meta.push(`<strong>CVSS:</strong> ${f.cvssScore.toFixed(1)}`);
   if (f.cvssVector) meta.push(`<code>${esc(f.cvssVector)}</code>`);
+  if (f.fixEffort && f.fixEffort !== 'none')
+    meta.push(`<strong>Fix effort:</strong> ${esc(FIX_EFFORT_LABELS[f.fixEffort])}`);
 
   const descHtml = prose(f.description) || '<p class="pp muted">No description provided.</p>';
+  const impactHtml = f.impact.trim() ? `<h4 class="sub">Impact</h4>${prose(f.impact)}` : '';
+  const standardsHtml = standardsBlock(f.iso21434Refs, f.unr155Refs);
   const remediationHtml = f.remediation.trim()
     ? `<h4 class="sub">Remediation</h4>${prose(f.remediation)}`
     : '';
@@ -322,13 +384,15 @@ async function renderFinding(
   return `
     <div class="finding">
       <div class="finding-head">
-        <span class="finding-num">${String(index).padStart(2, '0')}</span>
+        <span class="finding-num">${esc(label)}</span>
         <span class="finding-title">${esc(f.title)}</span>
         ${severityPill(f.severity, f.cvssScore)}
       </div>
       <p class="finding-meta">${meta.join('<span class="sep">·</span>')}</p>
       <h4 class="sub">Description</h4>
       ${descHtml}
+      ${impactHtml}
+      ${standardsHtml}
       ${remediationHtml}
       ${pathHtml}
       ${attachedHtml}
@@ -363,6 +427,7 @@ async function renderTimelineItem(
       description: '',
       contentType: e.contentType,
       contentSubtype: e.contentSubtype,
+      originalFilename: null,
       occurredAt: e.occurredAt,
       fullBlobKey: e.fullBlobKey,
       caption: '',
@@ -434,13 +499,323 @@ async function renderTimeline(
   return sections.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Supporting files (non-screenshot evidence) — powers the ZIP bundle and the
+// "Files Attached" table. Screenshots are embedded in the PDF, so excluded here.
+// ---------------------------------------------------------------------------
+
+export interface SupportingFileMeta {
+  /** Unique, human-friendly filename used both in the table and the ZIP entry. */
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+  contentType: string;
+  blobKey: string;
+}
+
+/** Default file extension per evidence content type (screenshots are excluded). */
+const EXT_BY_TYPE: Record<string, string> = {
+  'terminal-recording': '.cast',
+  'http-request-cycle': '.har',
+  codeblock: '.txt',
+  event: '.txt',
+  none: '.txt',
+};
+
+function slugifyName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+/** Derive a readable filename for a supporting file (original name wins). */
+function synthesizeFilename(e: {
+  originalFilename: string | null;
+  description: string;
+  contentType: string;
+  contentSubtype: string | null;
+  uuid: string;
+}): string {
+  if (e.originalFilename && e.originalFilename.trim()) {
+    return e.originalFilename.split(/[\\/]/).pop()!.trim().slice(0, 120) || e.uuid;
+  }
+  const base = slugifyName(e.description) || e.contentType || 'evidence';
+  let ext = EXT_BY_TYPE[e.contentType] ?? '';
+  if (e.contentType === 'codeblock' && e.contentSubtype) {
+    const lang = e.contentSubtype.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (lang) ext = '.' + lang.slice(0, 8);
+  }
+  return `${base}-${e.uuid.slice(0, 8)}${ext}`;
+}
+
+/**
+ * Gather the engagement's non-screenshot evidence that has stored content, name
+ * each file (deduping collisions), and compute a SHA-256 for integrity. The
+ * result feeds both the ZIP bundle and the "Files Attached" table so they list
+ * exactly the same files. Deterministic ordering keeps names stable across calls.
+ */
+export async function gatherSupportingFiles(
+  app: FastifyInstance,
+  eng: { id: number },
+): Promise<SupportingFileMeta[]> {
+  const rows = await app.db.evidence.findMany({
+    where: { engagementId: eng.id, contentType: { not: 'image' }, fullBlobKey: { not: null } },
+    orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    select: {
+      uuid: true,
+      description: true,
+      contentType: true,
+      contentSubtype: true,
+      originalFilename: true,
+      fullBlobKey: true,
+      sha256: true,
+      sizeBytes: true,
+    },
+  });
+  const used = new Set<string>();
+  const out: SupportingFileMeta[] = [];
+  for (const r of rows) {
+    if (!r.fullBlobKey) continue;
+    let sha256 = r.sha256;
+    let sizeBytes = r.sizeBytes;
+    // Stored at upload for new evidence (no blob read needed). Legacy evidence has
+    // no stored hash — compute it from the blob on demand, and skip the item if the
+    // blob can't be read so the table matches what the ZIP can actually bundle.
+    if (sha256 == null || sizeBytes == null) {
+      const buf = await app.blobs.getBuffer(r.fullBlobKey).catch(() => null);
+      if (!buf) continue;
+      sha256 = createHash('sha256').update(buf).digest('hex');
+      sizeBytes = buf.length;
+    }
+    let name = synthesizeFilename(r);
+    if (used.has(name.toLowerCase())) {
+      const dot = name.lastIndexOf('.');
+      const stem = dot > 0 ? name.slice(0, dot) : name;
+      const ext = dot > 0 ? name.slice(dot) : '';
+      let n = 2;
+      while (used.has(`${stem}-${n}${ext}`.toLowerCase())) n++;
+      name = `${stem}-${n}${ext}`;
+    }
+    used.add(name.toLowerCase());
+    out.push({
+      filename: name,
+      sha256,
+      sizeBytes,
+      contentType: r.contentType,
+      blobKey: r.fullBlobKey,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Section builders for the new report content (all reuse existing CSS classes)
+// ---------------------------------------------------------------------------
+
+/** Service Scope (target → subsystems) + Scope Exclusions, as red-header tables. */
+function renderScope(targets: ScopeTarget[], exclusions: string[]): string {
+  const parts: string[] = [];
+  const validTargets = targets.filter((t) => t.name.trim());
+  if (validTargets.length) {
+    const rows = validTargets
+      .map((t) => {
+        const subs = t.subsystems
+          .filter((s) => s.trim())
+          .map((s) => esc(s))
+          .join('<br>');
+        return `<tr><td class="title">${esc(t.name)}</td><td>${subs || '—'}</td></tr>`;
+      })
+      .join('');
+    parts.push(
+      `<h3 class="block-h">Service Scope</h3><table class="tbl"><thead><tr><th>Target</th><th>In scope</th></tr></thead><tbody>${rows}</tbody></table>`,
+    );
+  }
+  const validExclusions = exclusions.filter((s) => s.trim());
+  if (validExclusions.length) {
+    const rows = validExclusions.map((s) => `<tr><td>${esc(s)}</td></tr>`).join('');
+    parts.push(
+      `<h3 class="block-h">Scope Exclusions</h3><table class="tbl"><thead><tr><th>Out of scope</th></tr></thead><tbody>${rows}</tbody></table>`,
+    );
+  }
+  return parts.join('');
+}
+
+/** Summary of Strengths table (IDs S1, S2, …). Empty string when none. */
+function renderStrengthsTable(strengths: GatheredFinding[]): string {
+  if (strengths.length === 0) return '';
+  const rows = strengths
+    .map(
+      (f, i) => `
+      <tr>
+        <td class="num">S${i + 1}</td>
+        <td class="title">${esc(f.title)}</td>
+        <td>${esc(f.description) || esc(f.affectedTarget) || '—'}</td>
+      </tr>`,
+    )
+    .join('');
+  return `<h3 class="block-h">Summary of Strengths</h3>
+    <table class="tbl"><thead><tr><th class="num">#</th><th>Strength</th><th>Description</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/** Summary of Weaknesses table (IDs W1, W2, …) with severity + fix effort. */
+function renderWeaknessesTable(weaknesses: GatheredFinding[]): string {
+  const rows = weaknesses.length
+    ? weaknesses
+        .map(
+          (f, i) => `
+      <tr>
+        <td class="num">W${i + 1}</td>
+        <td class="title">${esc(f.title)}</td>
+        <td>${esc(f.category || 'Uncategorized')}</td>
+        <td>${severityPill(f.severity, null)}</td>
+        <td class="num">${f.cvssScore != null ? f.cvssScore.toFixed(1) : '—'}</td>
+        <td>${f.fixEffort && f.fixEffort !== 'none' ? esc(FIX_EFFORT_LABELS[f.fixEffort]) : '—'}</td>
+      </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="6" class="muted">No weaknesses to report.</td></tr>';
+  return `<h3 class="block-h">Summary of Weaknesses</h3>
+    <table class="tbl"><thead><tr><th class="num">#</th><th>Weakness</th><th>Category</th><th>Severity</th><th class="num">CVSS</th><th>Fix effort</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/** Strategic Recommendations table (IDs R1, R2, …). Empty string when none. */
+function renderRecommendationsTable(recs: RecommendationItem[]): string {
+  const valid = recs.filter((r) => r.title.trim());
+  if (valid.length === 0) return '';
+  const rows = valid
+    .map(
+      (r, i) =>
+        `<tr><td class="num">R${i + 1}</td><td class="title">${esc(r.title)}</td><td>${esc(r.description) || '—'}</td></tr>`,
+    )
+    .join('');
+  return `<h3 class="block-h">Strategic Recommendations</h3>
+    <table class="tbl"><thead><tr><th class="num">#</th><th>Recommendation</th><th>Description</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/** Standards Traceability matrix: each finding → its ISO/SAE 21434 + UN R155 clauses. */
+function renderStandardsTraceability(
+  items: { label: string; title: string; iso: string[]; unr: string[] }[],
+): string {
+  const mapped = items.filter((it) => it.iso.length || it.unr.length);
+  if (mapped.length === 0) return '';
+  const clauses = (ids: string[], lookup: (id: string) => StandardRef | undefined): string =>
+    ids.map((id) => esc(lookup(id)?.clause ?? id)).join(', ') || '—';
+  const rows = mapped
+    .map(
+      (it) => `
+      <tr>
+        <td class="num">${esc(it.label)}</td>
+        <td class="title">${esc(it.title)}</td>
+        <td>${clauses(it.iso, iso21434Ref)}</td>
+        <td>${clauses(it.unr, unr155Ref)}</td>
+      </tr>`,
+    )
+    .join('');
+  return `<h3 class="block-h">Standards Traceability</h3>
+    <p class="pp muted">Findings mapped to ISO/SAE 21434 work products and UN R155 requirements. Full titles appear on each detailed finding.</p>
+    <table class="tbl"><thead><tr><th class="num">#</th><th>Finding</th><th>ISO/SAE 21434</th><th>UN R155</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/** Threat Model narrative + diagram figures. Empty string when there's nothing. */
+function renderThreatModel(
+  narrative: string | null,
+  diagrams: ThreatDiagram[],
+  budget: Budget,
+): string {
+  const narr = narrative?.trim() ? prose(narrative) : '';
+  const figs: string[] = [];
+  diagrams.forEach((d, i) => {
+    if (!d.imageDataUri) return;
+    const approxBytes = d.imageDataUri.length;
+    if (approxBytes > budget.remaining) return; // over the shared embed budget — skip
+    budget.remaining -= approxBytes;
+    const cap = d.caption?.trim() ? esc(d.caption) : `Figure ${i + 1}`;
+    figs.push(
+      `<figure class="ev"><img src="${esc(d.imageDataUri)}" alt="${cap}" /><figcaption>${cap}</figcaption></figure>`,
+    );
+  });
+  return narr + figs.join('\n');
+}
+
+/** Provider/client contact list for the Engagement Details grid. */
+function renderContacts(contacts: Contact[]): string {
+  const valid = contacts.filter((c) => c.name.trim() || c.email.trim() || c.title.trim());
+  if (valid.length === 0) return '<div class="person"><div class="rl muted">—</div></div>';
+  return valid
+    .map((c) => {
+      const nm = esc([c.name, c.title].filter((s) => s.trim()).join(' — ')) || '—';
+      const em = c.email.trim() ? `<div class="rl">${esc(c.email)}</div>` : '';
+      return `<div class="person"><div class="nm">${nm}</div>${em}</div>`;
+    })
+    .join('');
+}
+
+/** A software (name/version) table for Supporting Information. Empty when none. */
+function renderSoftwareTable(title: string, items: SoftwareItem[]): string {
+  const valid = items.filter((s) => s.name.trim());
+  if (valid.length === 0) return '';
+  const rows = valid
+    .map((s) => `<tr><td class="title">${esc(s.name)}</td><td>${esc(s.version) || '—'}</td></tr>`)
+    .join('');
+  return `<h3 class="block-h">${esc(title)}</h3>
+    <table class="tbl"><thead><tr><th>Software</th><th>Version</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/** Files Attached table (name + SHA-256), matching the ZIP bundle exactly. */
+function renderFilesAttached(files: SupportingFileMeta[]): string {
+  if (files.length === 0) return '';
+  const rows = files
+    .map(
+      (f, i) =>
+        `<tr><td class="num">${i + 1}</td><td class="title">${esc(f.filename)}</td><td class="mono" style="word-break:break-all">${esc(f.sha256)}</td></tr>`,
+    )
+    .join('');
+  return `<h3 class="block-h">Files Attached</h3>
+    <p class="pp muted">Supporting files accompanying this report (included in the ZIP export). SHA-256 hashes are provided for integrity verification.</p>
+    <table class="tbl"><thead><tr><th class="num">#</th><th>Filename</th><th>SHA-256</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/** Hand-authored Assessment Execution narrative: titled subsections + evidence. */
+async function renderExecutionNarrative(
+  app: FastifyInstance,
+  subsections: ExecutionSubsection[],
+  evidenceByUuid: Map<string, GatheredEvidence>,
+  budget: Budget,
+): Promise<string> {
+  const parts: string[] = [];
+  for (const sub of subsections) {
+    if (!sub.title.trim()) continue;
+    const body = sub.body?.trim() ? prose(sub.body) : '';
+    const evParts: string[] = [];
+    for (const ref of sub.evidence) {
+      const ev = evidenceByUuid.get(ref.evidenceUuid);
+      if (!ev) continue; // dangling ref — the evidence was deleted
+      const cap = ref.caption?.trim() ? `<p class="step-caption">${esc(ref.caption)}</p>` : '';
+      const evHtml = await renderEvidence(app, { ...ev, caption: '' }, budget);
+      evParts.push(`<div class="step">${cap}${evHtml}</div>`);
+    }
+    const evHtml = evParts.length ? `<div class="path">${evParts.join('\n')}</div>` : '';
+    parts.push(`<h3 class="block-h">${esc(sub.title)}</h3>${body}${evHtml}`);
+  }
+  return parts.join('\n');
+}
+
 export async function buildReportHtml(
   app: FastifyInstance,
   eng: EngagementRef,
   generatedAt: Date,
   opts: ReportOptions,
+  precomputedFiles?: SupportingFileMeta[],
 ): Promise<string> {
-  const includeTimeline = opts.includeTimeline !== false;
+  // Narrative is the default Assessment Execution view; the auto timeline is opt-in.
+  const includeNarrative = opts.includeNarrative !== false;
+  const includeTimeline = opts.includeTimeline === true;
   const includeAppendix = opts.includeAppendix !== false;
   const evidenceGroup: EvidenceGrouping = opts.evidenceGroup ?? 'chronological';
 
@@ -466,10 +841,16 @@ export async function buildReportHtml(
     return a.position - b.position;
   });
 
-  // Severity distribution + key stats.
+  // Split into weaknesses (severity-ranked) and strengths (by author order).
+  const weaknesses = sorted.filter((f) => f.kind === 'weakness');
+  const strengths = [...findings]
+    .filter((f) => f.kind === 'strength')
+    .sort((a, b) => a.position - b.position);
+
+  // Severity distribution + key stats — weaknesses only (strengths carry no rating).
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, none: 0 };
-  for (const f of sorted) if (f.severity) counts[f.severity]++;
-  const scored = sorted.filter((f) => f.cvssScore != null);
+  for (const f of weaknesses) if (f.severity) counts[f.severity]++;
+  const scored = weaknesses.filter((f) => f.cvssScore != null);
   const highestCvss = scored.reduce((m, f) => Math.max(m, f.cvssScore!), 0);
   const avgCvss = scored.length
     ? scored.reduce((s, f) => s + f.cvssScore!, 0) / scored.length
@@ -477,6 +858,45 @@ export async function buildReportHtml(
   const rated = scored.length;
 
   const budget: Budget = { remaining: TOTAL_EMBED_CAP };
+
+  // Structured report content (JSON columns → typed arrays).
+  const scopeTargets = (engagement.scopeTargets as unknown as ScopeTarget[]) ?? [];
+  const scopeExclusions = (engagement.scopeExclusions as unknown as string[]) ?? [];
+  const recommendations =
+    (engagement.strategicRecommendations as unknown as RecommendationItem[]) ?? [];
+  const threatDiagrams = (engagement.threatModelDiagrams as unknown as ThreatDiagram[]) ?? [];
+  const executionSubsections =
+    (engagement.executionNarrative as unknown as ExecutionSubsection[]) ?? [];
+  const providerContacts = (engagement.providerContacts as unknown as Contact[]) ?? [];
+  const clientContacts = (engagement.clientContacts as unknown as Contact[]) ?? [];
+  const softwareTested = (engagement.softwareTested as unknown as SoftwareItem[]) ?? [];
+  const thirdPartySoftware = (engagement.thirdPartySoftware as unknown as SoftwareItem[]) ?? [];
+
+  // Supporting files (non-screenshot evidence) for the ZIP + Files Attached table.
+  const supportingFiles = precomputedFiles ?? (await gatherSupportingFiles(app, eng));
+
+  // Which optional sections render.
+  const hasThreatModel =
+    Boolean(engagement.threatModelNarrative?.trim()) || threatDiagrams.length > 0;
+  const hasNarrative = includeNarrative && executionSubsections.some((s) => s.title.trim());
+  const hasExecution = hasNarrative || includeTimeline;
+  const hasSupporting =
+    softwareTested.some((s) => s.name.trim()) ||
+    thirdPartySoftware.some((s) => s.name.trim()) ||
+    supportingFiles.length > 0;
+
+  // Section numbers advance only for rendered sections, so the TOC never drifts.
+  let secN = 0;
+  const nextNum = () => String(++secN).padStart(2, '0');
+  const numDetails = nextNum();
+  const numExec = nextNum();
+  const numFindings = nextNum();
+  const numMethod = nextNum();
+  const numThreat = hasThreatModel ? nextNum() : '';
+  const numExecution = hasExecution ? nextNum() : '';
+  const numDetailed = nextNum();
+  const numSupporting = hasSupporting ? nextNum() : '';
+  const numAppendix = includeAppendix ? nextNum() : '';
 
   // ---- Cover -------------------------------------------------------------
   const eyebrow = (engagement.assessmentType || 'Findings Report').toUpperCase();
@@ -529,6 +949,13 @@ export async function buildReportHtml(
     where: { engagementId: eng.id, parentEvidenceId: null },
   });
 
+  const providerCell = providerContacts.some((c) => c.name.trim() || c.email.trim())
+    ? `<div class="info-cell info-cell-wide"><div class="k">Provider contacts</div>${renderContacts(providerContacts)}</div>`
+    : '';
+  const clientCell = clientContacts.some((c) => c.name.trim() || c.email.trim())
+    ? `<div class="info-cell info-cell-wide"><div class="k">Client contacts</div>${renderContacts(clientContacts)}</div>`
+    : '';
+
   const detailsGrid = `
     <div class="grid2">
       <div class="info-cell"><div class="k">Client</div><div class="v">${esc(preparedFor)}</div></div>
@@ -537,38 +964,35 @@ export async function buildReportHtml(
       <div class="info-cell"><div class="k">Status</div><div class="v">${esc(statusLabel)}</div></div>
       <div class="info-cell"><div class="k">Start date</div><div class="v mono">${esc(longDate(windowStart))}</div></div>
       <div class="info-cell"><div class="k">End date</div><div class="v mono">${esc(longDate(windowEnd))}</div></div>
-      <div class="info-cell"><div class="k">Findings</div><div class="v mono">${sorted.length}</div></div>
+      <div class="info-cell"><div class="k">Findings</div><div class="v mono">${weaknesses.length + strengths.length}</div></div>
       <div class="info-cell"><div class="k">Evidence</div><div class="v mono">${totalEvidenceCount}</div></div>
+      ${providerCell}
+      ${clientCell}
       <div class="info-cell info-cell-wide"><div class="k">Team members</div>${memberRows}</div>
     </div>`;
 
-  const scopeBlock = engagement.scope?.trim()
-    ? `<h3 class="block-h">Scope</h3>${prose(engagement.scope)}`
-    : '';
-
   const detailsSection = `
     <section class="section">
-      ${sectionHead('01', 'Document Information', 'Engagement Details')}
+      ${sectionHead(numDetails, 'Document Information', 'Engagement Details')}
       ${detailsGrid}
-      ${scopeBlock}
     </section>`;
 
   // ---- Table of Contents -------------------------------------------------
   const tocRows: string[] = [];
-  let tocN = 1;
-  const toc = (title: string) => {
-    tocRows.push(tocItem(String(tocN++).padStart(2, '0'), title, false));
-  };
-  toc('Engagement Details');
-  toc('Executive Summary');
-  toc('Methodology & Approach');
-  toc('Findings Summary');
-  // Findings by title, numbered as sub-rows.
-  sorted.forEach((f, i) => {
-    tocRows.push(tocItem(`F${String(i + 1).padStart(2, '0')}`, f.title, true));
+  tocRows.push(tocItem(numDetails, 'Engagement Details', false));
+  tocRows.push(tocItem(numExec, 'Executive Summary', false));
+  tocRows.push(tocItem(numFindings, 'Assessment Findings', false));
+  tocRows.push(tocItem(numMethod, 'Methodology & Approach', false));
+  if (hasThreatModel) tocRows.push(tocItem(numThreat, 'Threat Model', false));
+  if (hasExecution) tocRows.push(tocItem(numExecution, 'Assessment Execution', false));
+  tocRows.push(tocItem(numDetailed, 'Detailed Findings', false));
+  // Detailed weaknesses by title, numbered as sub-rows (W1, W2, …).
+  weaknesses.forEach((f, i) => {
+    tocRows.push(tocItem(`W${i + 1}`, f.title, true));
   });
-  if (includeTimeline) toc('Assessment Execution');
-  if (includeAppendix) toc('Appendix: Severity & CVSS Reference');
+  if (hasSupporting) tocRows.push(tocItem(numSupporting, 'Supporting Information', false));
+  if (includeAppendix)
+    tocRows.push(tocItem(numAppendix, 'Appendix: Severity & CVSS Reference', false));
 
   const tocSection = `
     <section class="section">
@@ -576,12 +1000,18 @@ export async function buildReportHtml(
       <div class="toc">${tocRows.join('')}</div>
     </section>`;
 
-  // ---- Executive Summary (dashboard) -------------------------------------
+  // ---- Executive Summary -------------------------------------------------
   const summaryProse = engagement.executiveSummary?.trim()
     ? prose(engagement.executiveSummary)
     : '';
+  const scopeHtml =
+    scopeTargets.length || scopeExclusions.length
+      ? renderScope(scopeTargets, scopeExclusions)
+      : engagement.scope?.trim()
+        ? `<h3 class="block-h">Scope</h3>${prose(engagement.scope)}`
+        : '';
 
-  const total = sorted.length;
+  const total = weaknesses.length;
   const sevBar =
     total > 0
       ? `<div class="sev-bar">${SEV_ORDER.filter((s) => counts[s] > 0)
@@ -603,40 +1033,27 @@ export async function buildReportHtml(
 
   const statsStrip = `
     <div class="stats">
-      <div class="stat"><div class="k">Total findings</div><div class="v">${total}</div></div>
+      <div class="stat"><div class="k">Weaknesses</div><div class="v">${weaknesses.length}</div></div>
       <div class="stat"><div class="k">Highest CVSS</div><div class="v">${rated ? highestCvss.toFixed(1) : '—'}</div></div>
       <div class="stat"><div class="k">Average CVSS</div><div class="v">${rated ? avgCvss.toFixed(1) : '—'}</div></div>
       <div class="stat"><div class="k">Total evidence</div><div class="v">${totalEvidenceCount}</div></div>
       <div class="stat"><div class="k">Window</div><div class="v">${windowDays ?? '—'}<span class="u"> days</span></div></div>
     </div>`;
 
-  const glanceRows =
-    sorted.length > 0
-      ? sorted
-          .map(
-            (f, i) => `
-        <tr>
-          <td class="num">${i + 1}</td>
-          <td class="title">${esc(f.title)}</td>
-          <td>${esc(f.category || 'Uncategorized')}</td>
-          <td>${severityPill(f.severity, null)}</td>
-          <td class="num">${f.cvssScore != null ? f.cvssScore.toFixed(1) : '—'}</td>
-          <td>${f.readyToReport ? 'Ready' : 'Draft'}</td>
-        </tr>`,
-          )
-          .join('')
-      : '<tr><td colspan="6" class="muted">No findings to report.</td></tr>';
+  const execSection = `
+    <section class="section">
+      ${sectionHead(numExec, 'Overview', 'Executive Summary')}
+      ${summaryProse}
+      ${scopeHtml}
+      <h3 class="block-h">Severity Distribution</h3>
+      ${sevBar}
+      ${sevCards}
+      ${statsStrip}
+    </section>`;
 
-  const glanceTable = `
-    <h3 class="block-h">Findings at a Glance</h3>
-    <table class="tbl">
-      <thead><tr><th class="num">#</th><th>Title</th><th>Category</th><th>Severity</th><th class="num">CVSS</th><th>Status</th></tr></thead>
-      <tbody>${glanceRows}</tbody>
-    </table>`;
-
-  // Category breakdown.
+  // ---- Assessment Findings (summary tables) ------------------------------
   const catCounts = new Map<string, number>();
-  for (const f of sorted) {
+  for (const f of weaknesses) {
     const key = f.category || 'Uncategorized';
     catCounts.set(key, (catCounts.get(key) ?? 0) + 1);
   }
@@ -648,77 +1065,154 @@ export async function buildReportHtml(
     catCounts.size > 0
       ? `<h3 class="block-h">Category Breakdown</h3>
          <table class="tbl">
-           <thead><tr><th>Category</th><th class="num">Findings</th></tr></thead>
+           <thead><tr><th>Category</th><th class="num">Weaknesses</th></tr></thead>
            <tbody>${catRows}</tbody>
          </table>`
       : '';
 
-  const execSection = `
+  const traceItems = [
+    ...weaknesses.map((f, i) => ({
+      label: `W${i + 1}`,
+      title: f.title,
+      iso: f.iso21434Refs,
+      unr: f.unr155Refs,
+    })),
+    ...strengths.map((f, i) => ({
+      label: `S${i + 1}`,
+      title: f.title,
+      iso: f.iso21434Refs,
+      unr: f.unr155Refs,
+    })),
+  ];
+
+  const findingsSummarySection = `
     <section class="section">
-      ${sectionHead('02', 'Overview', 'Executive Summary')}
-      ${summaryProse}
-      <h3 class="block-h">Severity Distribution</h3>
-      ${sevBar}
-      ${sevCards}
-      ${statsStrip}
-      ${glanceTable}
+      ${sectionHead(numFindings, 'Summary', 'Assessment Findings')}
+      ${renderStrengthsTable(strengths)}
+      ${renderWeaknessesTable(weaknesses)}
+      ${renderRecommendationsTable(recommendations)}
       ${categoryTable}
+      ${renderStandardsTraceability(traceItems)}
     </section>`;
 
   // ---- Methodology & Approach --------------------------------------------
   const methodologyProse = engagement.methodology?.trim()
     ? prose(engagement.methodology)
     : `<p class="pp">This assessment followed a structured, evidence-driven methodology: reconnaissance and scoping, active testing against the in-scope surface, verification and impact analysis of each issue, and consolidation of results into the prioritized findings that follow. Every finding is supported by the captured evidence recorded during the engagement.</p>`;
-  // Scope is surfaced on the Engagement Details page whenever it is present, so
-  // it only appears here (under the methodology prose) when Details omitted it —
-  // which is exactly when it is empty, i.e. there is nothing extra to show.
   const methodSection = `
     <section class="section">
-      ${sectionHead('03', 'Approach', 'Methodology & Approach')}
+      ${sectionHead(numMethod, 'Approach', 'Methodology & Approach')}
       ${methodologyProse}
     </section>`;
 
-  // ---- Findings (detailed) -----------------------------------------------
+  // ---- Threat Model ------------------------------------------------------
+  const threatModelSection = hasThreatModel
+    ? `
+    <section class="section">
+      ${sectionHead(numThreat, 'Attack Surface', 'Threat Model')}
+      ${renderThreatModel(engagement.threatModelNarrative, threatDiagrams, budget) || '<p class="pp muted">No threat model recorded.</p>'}
+    </section>`
+    : '';
+
+  // ---- Assessment Execution (hand-authored narrative + optional timeline) --
+  let executionSection = '';
+  if (hasExecution) {
+    let narrativeHtml = '';
+    if (hasNarrative) {
+      const refUuids = [
+        ...new Set(executionSubsections.flatMap((s) => s.evidence.map((e) => e.evidenceUuid))),
+      ];
+      const evidenceByUuid = new Map<string, GatheredEvidence>();
+      if (refUuids.length) {
+        const rows = await app.db.evidence.findMany({
+          where: { engagementId: eng.id, uuid: { in: refUuids } },
+          select: {
+            uuid: true,
+            description: true,
+            contentType: true,
+            contentSubtype: true,
+            originalFilename: true,
+            occurredAt: true,
+            fullBlobKey: true,
+          },
+        });
+        for (const r of rows) {
+          evidenceByUuid.set(r.uuid, {
+            uuid: r.uuid,
+            description: r.description,
+            contentType: r.contentType,
+            contentSubtype: r.contentSubtype,
+            originalFilename: r.originalFilename,
+            occurredAt: r.occurredAt,
+            fullBlobKey: r.fullBlobKey,
+            caption: '',
+            inPath: false,
+          });
+        }
+      }
+      narrativeHtml = await renderExecutionNarrative(
+        app,
+        executionSubsections,
+        evidenceByUuid,
+        budget,
+      );
+    }
+
+    let timelineHtml = '';
+    if (includeTimeline) {
+      const evidence = await app.db.evidence.findMany({
+        where: { engagementId: eng.id, parentEvidenceId: null },
+        include: { tags: { include: { tag: true } }, operator: true },
+        orderBy: { occurredAt: 'asc' },
+      });
+      const tlItems: TimelineEvidence[] = evidence.map((e) => ({
+        uuid: e.uuid,
+        description: e.description,
+        contentType: e.contentType,
+        contentSubtype: e.contentSubtype,
+        occurredAt: e.occurredAt,
+        fullBlobKey: e.fullBlobKey,
+        operatorName: `${e.operator.firstName} ${e.operator.lastName}`.trim() || 'Unknown',
+        tags: e.tags.map((t) => ({ name: t.tag.name, colorName: t.tag.colorName })),
+      }));
+      const groupLabel = EVIDENCE_GROUPING_LABELS[evidenceGroup];
+      const body = await renderTimeline(app, tlItems, evidenceGroup, budget);
+      timelineHtml = `<h3 class="block-h">Evidence Log · ${esc(groupLabel)}</h3>${body}`;
+    }
+
+    executionSection = `
+    <section class="section">
+      ${sectionHead(numExecution, 'Walkthrough', 'Assessment Execution')}
+      ${narrativeHtml}
+      ${timelineHtml}
+    </section>`;
+  }
+
+  // ---- Detailed Findings (weaknesses) ------------------------------------
   const findingBlocks: string[] = [];
-  if (sorted.length === 0) {
-    findingBlocks.push('<p class="pp muted">No findings to report.</p>');
+  if (weaknesses.length === 0) {
+    findingBlocks.push('<p class="pp muted">No weaknesses to report.</p>');
   } else {
-    for (let i = 0; i < sorted.length; i++) {
-      findingBlocks.push(await renderFinding(app, sorted[i]!, i + 1, budget));
+    for (let i = 0; i < weaknesses.length; i++) {
+      findingBlocks.push(await renderFinding(app, weaknesses[i]!, `W${i + 1}`, budget));
     }
   }
   const findingsSection = `
     <section class="section">
-      ${sectionHead('04', 'Detailed Results', 'Findings')}
+      ${sectionHead(numDetailed, 'Detailed Results', 'Detailed Findings')}
       ${findingBlocks.join('\n')}
     </section>`;
 
-  // ---- Assessment Execution (timeline) -----------------------------------
-  let timelineSection = '';
-  if (includeTimeline) {
-    const evidence = await app.db.evidence.findMany({
-      where: { engagementId: eng.id, parentEvidenceId: null },
-      include: { tags: { include: { tag: true } }, operator: true },
-      orderBy: { occurredAt: 'asc' },
-    });
-    const tlItems: TimelineEvidence[] = evidence.map((e) => ({
-      uuid: e.uuid,
-      description: e.description,
-      contentType: e.contentType,
-      contentSubtype: e.contentSubtype,
-      occurredAt: e.occurredAt,
-      fullBlobKey: e.fullBlobKey,
-      operatorName: `${e.operator.firstName} ${e.operator.lastName}`.trim() || 'Unknown',
-      tags: e.tags.map((t) => ({ name: t.tag.name, colorName: t.tag.colorName })),
-    }));
-    const groupLabel = EVIDENCE_GROUPING_LABELS[evidenceGroup];
-    const body = await renderTimeline(app, tlItems, evidenceGroup, budget);
-    timelineSection = `
+  // ---- Supporting Information --------------------------------------------
+  const supportingSection = hasSupporting
+    ? `
     <section class="section">
-      ${sectionHead('05', `Evidence Log · ${groupLabel}`, 'Assessment Execution')}
-      ${body}
-    </section>`;
-  }
+      ${sectionHead(numSupporting, 'Reference', 'Supporting Information')}
+      ${renderSoftwareTable('Client Software Tested', softwareTested)}
+      ${renderSoftwareTable('3rd-Party Software Used', thirdPartySoftware)}
+      ${renderFilesAttached(supportingFiles)}
+    </section>`
+    : '';
 
   // ---- Appendix: Severity & CVSS Reference -------------------------------
   let appendixSection = '';
@@ -738,7 +1232,7 @@ export async function buildReportHtml(
       .join('');
     appendixSection = `
     <section class="section">
-      ${sectionHead('06', 'Reference', 'Severity & CVSS Reference')}
+      ${sectionHead(numAppendix, 'Reference', 'Severity & CVSS Reference')}
       <p class="lede">Severity ratings follow the CVSS v3.1 qualitative severity scale, derived from each finding's base score.</p>
       <table class="tbl">
         <thead><tr><th>Severity</th><th class="num">CVSS score</th><th>Description</th></tr></thead>
@@ -775,9 +1269,12 @@ ${FONT_LINKS}
   ${detailsSection}
   ${tocSection}
   ${execSection}
+  ${findingsSummarySection}
   ${methodSection}
+  ${threatModelSection}
+  ${executionSection}
   ${findingsSection}
-  ${timelineSection}
+  ${supportingSection}
   ${appendixSection}
 </body></html>`;
 }

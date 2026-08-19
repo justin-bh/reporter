@@ -83,6 +83,8 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         numUsers: eng._count.roles,
         numEvidence: eng._count.evidence,
         numFindings: eng._count.findings,
+        // The detail view (engagement settings) needs the full structured report content.
+        includeContent: true,
       });
     },
   );
@@ -110,6 +112,22 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       if (body.executiveSummary !== undefined)
         data.executiveSummary = orNull(body.executiveSummary);
       if (body.methodology !== undefined) data.methodology = orNull(body.methodology);
+      // Structured report content (JSON lists). Assign the validated array directly —
+      // an empty array clears the list. The threat-model narrative clears to null.
+      if (body.scopeTargets !== undefined) data.scopeTargets = body.scopeTargets;
+      if (body.scopeExclusions !== undefined) data.scopeExclusions = body.scopeExclusions;
+      if (body.strategicRecommendations !== undefined)
+        data.strategicRecommendations = body.strategicRecommendations;
+      if (body.threatModelNarrative !== undefined)
+        data.threatModelNarrative = orNull(body.threatModelNarrative);
+      if (body.threatModelDiagrams !== undefined)
+        data.threatModelDiagrams = body.threatModelDiagrams;
+      if (body.executionNarrative !== undefined) data.executionNarrative = body.executionNarrative;
+      if (body.providerContacts !== undefined) data.providerContacts = body.providerContacts;
+      if (body.clientContacts !== undefined) data.clientContacts = body.clientContacts;
+      if (body.softwareTested !== undefined) data.softwareTested = body.softwareTested;
+      if (body.thirdPartySoftware !== undefined)
+        data.thirdPartySoftware = body.thirdPartySoftware;
       // Watermark. Text/color clear to null (renderer then uses its defaults);
       // enabled/opacity/layer are set directly.
       if (body.watermarkEnabled !== undefined) data.watermarkEnabled = body.watermarkEnabled;
@@ -130,7 +148,9 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const eng = await app.db.engagement.update({ where: { slug }, data });
-      return serializeEngagement(eng);
+      // Return the full structured content (matching the GET detail route) so a
+      // direct consumer of the PUT response sees the fields it just set.
+      return serializeEngagement(eng, { includeContent: true });
     },
   );
 

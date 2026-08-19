@@ -8,6 +8,74 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-19
+
+### Added
+
+- **Client-ready report, greatly expanded.** The exported PDF now follows a full
+  professional pentest-report structure, all reusing the existing house style:
+  - **Front matter** gained per-engagement **provider contacts** and **client
+    contacts** (name / title / email) on the Engagement Details page.
+  - **Executive Summary** gained a structured **Service Scope** (targets →
+    subsystems) and **Scope Exclusions**.
+  - A new **Assessment Findings** section with a **Summary of Strengths** table, a
+    **Summary of Weaknesses** table (now with a **Fix effort** column), a
+    **Strategic Recommendations** table, the category breakdown, and a **Standards
+    Traceability** matrix. Findings/strengths/recommendations are cross-referenced
+    as `W#` / `S#` / `R#`.
+  - A new **Threat Model** section (narrative + uploadable diagram images).
+  - **Assessment Execution** is now a hand-authored, titled **narrative** (group
+    the walkthrough by interface/topic, with evidence embedded per subsection) —
+    shown by default; the auto evidence **timeline** is now an optional add-on.
+  - Detailed findings gained **Affected target**, **Impact** (distinct from the
+    description), **Fix effort**, and **Standards Mapping**.
+  - A new **Supporting Information** section: **Client Software Tested**,
+    **3rd-Party Software Used**, and an auto-generated **Files Attached** table
+    (non-screenshot evidence) with **SHA-256** hashes.
+  - Every one of these is editable in **Engagement Settings** (like the executive
+    summary), and round-trips through the findings JSON export/import.
+- **Findings can be a Strength or a Weakness.** A finding now has a **kind**
+  (default *weakness*) selectable when creating a finding and in the finding
+  editor. Strengths appear only in the Summary of Strengths table; the server
+  clears severity/CVSS/fix-effort/impact/remediation on a strength so it can never
+  enter the weaknesses dashboard/tables.
+- **Standards mapping (ISO/SAE 21434 & UN R155).** Each finding can be mapped to
+  one or more ISO/SAE 21434 work products (including TARA entries) and UN R155
+  requirements from a built-in catalog, shown per-finding and in the report's
+  traceability matrix.
+- **ZIP report bundle.** Alongside the PDF, the Export dialog can produce a **ZIP**
+  containing the report plus all supporting files (terminal recordings, HTTP
+  cycles, uploaded files — not screenshots, which are embedded) and a
+  `SHA256SUMS.txt`. New `GET /web/engagements/:slug/findings/report.zip`.
+- **Finding category is now a dropdown** of the engagement's existing categories,
+  with inline "add new category" — in the New-finding modal and the finding editor.
+- **Evidence records its original filename + content hash.** Uploads now persist
+  the original filename (web, client API, desktop, `reporter-term`) and a SHA-256 +
+  byte size of the stored blob, used to name and verify files in the report bundle.
+
+### Changed
+
+- **Report export options.** The Export dialog now offers **PDF** or **ZIP
+  bundle**, and the Assessment Execution narrative is included by default with the
+  evidence timeline as an opt-in toggle. `report.pdf`/`report.zip` accept
+  `includeNarrative` and `includeTimeline` query params. The findings export schema
+  is now `v2` (older `v1` exports still import).
+
+### Fixed
+
+- **Release binaries now attach to the GitHub Release.** The `Release` workflow
+  built the installers but only stored them as ephemeral workflow-run artifacts;
+  it now attaches the `.dmg` / `.exe` / `.AppImage` / `.tar.gz` / `.deb` and the
+  `reporter-term` `.tgz` to the tag's Release via `softprops/action-gh-release`,
+  adds `permissions: contents: write`, and fails loudly (`if-no-files-found:
+  error`) if a build produced nothing.
+- **Desktop Linux is no longer Ubuntu/Debian-only.** The Linux build now also
+  ships a distro-agnostic **`tar.gz`** (extract-and-run, no package manager or
+  FUSE required — works on Arch and any distro) alongside the AppImage and `.deb`.
+- **`reporter-term` releases install with npm again.** The release now attaches the
+  raw `reporter-term-<version>.tgz` (a valid npm gztar) as a Release asset, instead
+  of only the double-zipped workflow artifact that `npm install` rejected.
+
 ## [0.2.0] - 2026-08-19
 
 ### Removed

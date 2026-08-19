@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   Badge,
   Button,
@@ -49,16 +49,24 @@ export function EvidencePickerModal({
   targetInPath,
   open,
   onClose,
+  onPick,
 }: {
   slug: string;
-  findingUuid: string;
+  /** Required when attaching to a finding; unused in `onPick` selection mode. */
+  findingUuid?: string;
   attachedUuids: string[];
   targetInPath: boolean;
   open: boolean;
   onClose: () => void;
+  /**
+   * Selection mode. When provided, the modal returns the picked evidence objects
+   * to the caller (e.g. to embed as report-narrative references) instead of
+   * attaching them to a finding. `findingUuid`/`targetInPath` are ignored.
+   */
+  onPick?: (picked: Evidence[]) => void;
 }) {
   const toast = useToast();
-  const attach = useAttachEvidence(slug, findingUuid);
+  const attach = useAttachEvidence(slug, findingUuid ?? '');
   const { data: tags = [] } = useTags(slug);
 
   const [parsed, setParsed] = useState<ParsedQuery>(EMPTY_QUERY);
@@ -66,6 +74,9 @@ export function EvidencePickerModal({
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [highlighted, setHighlighted] = useState<Evidence | null>(null);
+  // Remember the full Evidence object for every uuid the user selects, across
+  // pages, so `onPick` can return complete objects even after paging away.
+  const pickedById = useRef(new Map<string, Evidence>());
 
   // Reset transient state whenever the modal (re)opens.
   useEffect(() => {
@@ -75,6 +86,7 @@ export function EvidencePickerModal({
       setSearch('');
       setSelected([]);
       setHighlighted(null);
+      pickedById.current = new Map();
     }
   }, [open]);
 
@@ -103,12 +115,24 @@ export function EvidencePickerModal({
     applyFilters({ ...parsed, text: parseQuery(search).text });
   };
 
-  const toggle = (uuid: string, checked: boolean) => {
-    setSelected((s) => (checked ? [...s, uuid] : s.filter((x) => x !== uuid)));
+  const toggle = (ev: Evidence, checked: boolean) => {
+    if (checked) pickedById.current.set(ev.uuid, ev);
+    setSelected((s) => (checked ? [...s, ev.uuid] : s.filter((x) => x !== ev.uuid)));
   };
 
   async function submit() {
     if (selected.length === 0) return;
+    // Selection mode: hand the picked evidence back to the caller. Objects are
+    // pulled from the cross-page map so multi-page selections are preserved.
+    if (onPick) {
+      const picked = selected
+        .map((uuid) => pickedById.current.get(uuid))
+        .filter((e): e is Evidence => Boolean(e));
+      onPick(picked);
+      setSelected([]);
+      onClose();
+      return;
+    }
     try {
       await attach.mutateAsync({ evidenceUuids: selected, inPath: targetInPath });
       toast.success(
@@ -123,15 +147,19 @@ export function EvidencePickerModal({
     }
   }
 
-  const title = targetInPath ? 'Add attack-path steps' : 'Attach evidence';
+  const title = onPick ? 'Add evidence' : targetInPath ? 'Add attack-path steps' : 'Attach evidence';
   const n = selected.length;
-  const submitLabel = targetInPath
+  const submitLabel = onPick
     ? n > 0
-      ? `Add ${n} step${n === 1 ? '' : 's'}`
-      : 'Add steps'
-    : n > 0
-      ? `Attach ${n}`
-      : 'Attach';
+      ? `Add ${n}`
+      : 'Add'
+    : targetInPath
+      ? n > 0
+        ? `Add ${n} step${n === 1 ? '' : 's'}`
+        : 'Add steps'
+      : n > 0
+        ? `Attach ${n}`
+        : 'Attach';
 
   return (
     <Modal
@@ -214,7 +242,7 @@ export function EvidencePickerModal({
                     ev={ev}
                     selected={selected.includes(ev.uuid)}
                     active={highlighted?.uuid === ev.uuid}
-                    onToggle={(checked) => toggle(ev.uuid, checked)}
+                    onToggle={(checked) => toggle(ev, checked)}
                     onHighlight={() => setHighlighted(ev)}
                   />
                 ))}
@@ -228,7 +256,7 @@ export function EvidencePickerModal({
         {/* Pagination */}
         <div className="flex items-center justify-between text-xs text-muted">
           <span>
-            {total} evidence · page {page} of {pageCount}
+            Evidence ({total}) · page {page} of {pageCount}
           </span>
           <div className="flex gap-2">
             <Button

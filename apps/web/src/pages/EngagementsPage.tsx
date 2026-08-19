@@ -284,17 +284,15 @@ function EngagementCard({ eng }: { eng: Engagement }) {
       </div>
       <div className="flex items-center gap-2 text-xs text-muted">
         <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
-        <span>{eng.numEvidence ?? 0} evidence</span>
+        <span>Evidence ({eng.numEvidence ?? 0})</span>
         {findings > 0 && (
           <>
             <span>·</span>
-            <span>
-              {findings} {findings === 1 ? 'finding' : 'findings'}
-            </span>
+            <span>Findings ({findings})</span>
           </>
         )}
         <span>·</span>
-        <span>{eng.numUsers ?? 0} members</span>
+        <span>Members ({eng.numUsers ?? 0})</span>
       </div>
       <div className="text-xs text-muted">
         Started {formatDate(eng.startedAt)}

@@ -42,6 +42,20 @@ enum Severity {
   critical
 }
 
+/** Estimated effort to remediate a finding. */
+enum FixEffort {
+  none
+  low
+  medium
+  high
+}
+
+/** Whether a finding records a weakness (default) or a security strength. */
+enum FindingKind {
+  weakness
+  strength
+}
+
 model User {
   id        Int       @id @default(autoincrement())
   slug      String    @unique
@@ -171,6 +185,20 @@ model Engagement {
   watermarkColor   String? @map("watermark_color")
   watermarkOpacity String  @default("medium") @map("watermark_opacity")
   watermarkLayer   String  @default("behind") @map("watermark_layer")
+  // Structured report content, all editable in Engagement Settings and rendered
+  // into the exported PDF. The list-shaped fields are JSON (jsonb) arrays whose
+  // item shapes are validated by zod in @reporter/shared and default to `[]`.
+  // `threatModelNarrative` is prose, like `executiveSummary`.
+  scopeTargets             Json    @default("[]") @map("scope_targets")
+  scopeExclusions          Json    @default("[]") @map("scope_exclusions")
+  strategicRecommendations Json    @default("[]") @map("strategic_recommendations")
+  threatModelNarrative     String? @map("threat_model_narrative")
+  threatModelDiagrams      Json    @default("[]") @map("threat_model_diagrams")
+  executionNarrative       Json    @default("[]") @map("execution_narrative")
+  providerContacts         Json    @default("[]") @map("provider_contacts")
+  clientContacts           Json    @default("[]") @map("client_contacts")
+  softwareTested           Json    @default("[]") @map("software_tested")
+  thirdPartySoftware       Json    @default("[]") @map("third_party_software")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 
@@ -271,8 +299,18 @@ model Evidence {
   description    String   @default("")
   contentType    String   @map("content_type")
   contentSubtype String?  @map("content_subtype")
+  // Original uploaded filename, when known. Used to name files in the report's
+  // supporting-files ZIP bundle and the "Files Attached" table; synthesized from
+  // the description + content type when absent (older evidence).
+  originalFilename String? @map("original_filename")
   fullBlobKey    String?  @map("full_blob_key")
   thumbBlobKey   String?  @map("thumb_blob_key")
+  // SHA-256 (hex) and byte size of the stored blob, computed once at upload. Lets
+  // the report's supporting-files table list hashes/sizes without re-reading every
+  // blob on each export. Null for evidence created before this existed (the report
+  // then falls back to hashing the blob on demand).
+  sha256         String?  @map("sha256")
+  sizeBytes      Int?     @map("size_bytes")
   // When set, this evidence is a comment (linked evidence) on another piece of
   // evidence. Enforced one level deep in the service layer. SetNull so deleting
   // a parent orphans its comments into top-level evidence rather than erroring;
@@ -326,8 +364,20 @@ model Finding {
   categoryId    Int?      @map("category_id")
   title         String
   description   String    @default("")
+  /** Whether this finding is a weakness (default) or a security strength. */
+  kind          FindingKind @default(weakness)
+  /** System/component the finding applies to (e.g. a subsystem or host). */
+  affectedTarget String   @default("") @map("affected_target")
+  /** Business/technical impact if exploited — distinct from the description. */
+  impact        String    @default("")
+  /** Estimated remediation effort (weaknesses only). */
+  fixEffort     FixEffort @default(none) @map("fix_effort")
   /** Recommended remediation / fix guidance, shown per-finding in the report. */
   remediation   String    @default("")
+  /** Mapped ISO/SAE 21434 work-product/clause reference IDs (catalog in @reporter/shared). */
+  iso21434Refs  Json      @default("[]") @map("iso21434_refs")
+  /** Mapped UN R155 requirement reference IDs (catalog in @reporter/shared). */
+  unr155Refs    Json      @default("[]") @map("unr155_refs")
   severity      Severity?
   cvssVector    String?   @map("cvss_vector")
   cvssScore     Float?    @map("cvss_score")

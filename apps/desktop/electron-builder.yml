@@ -36,8 +36,16 @@ win:
   target:
     - nsis
 linux:
+  # Broad, distro-agnostic coverage rather than Debian/Ubuntu only:
+  #   - AppImage — runs on most distros (needs FUSE / libfuse2).
+  #   - tar.gz   — zero-dependency portable build: extract and run `./reporter`
+  #                anywhere (Arch included), no package manager or FUSE required.
+  #   - deb      — Debian/Ubuntu.
+  # (A native `pacman` target for Arch can be added, but electron-builder needs
+  #  bsdtar/libarchive-tools on the runner to emit it; tar.gz already covers Arch.)
   target:
     - AppImage
+    - tar.gz
     - deb
   category: Development
   maintainer: reporter <noreply@reporter.local>

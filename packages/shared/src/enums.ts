@@ -117,3 +117,27 @@ export function severityFromScore(score: number): Severity {
   if (score >= 0.1) return 'low';
   return 'none';
 }
+
+/** Estimated effort to remediate a finding, shown per-weakness in the report. */
+export const FIX_EFFORTS = ['none', 'low', 'medium', 'high'] as const;
+export const fixEffortSchema = z.enum(FIX_EFFORTS);
+export type FixEffort = z.infer<typeof fixEffortSchema>;
+export const FIX_EFFORT_LABELS: Record<FixEffort, string> = {
+  none: 'None',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+/**
+ * Whether a finding records a security *weakness* (the default) or a *strength*.
+ * Weaknesses carry severity/CVSS and appear in the report's weaknesses tables and
+ * detailed cards; strengths are listed in a separate strengths summary table.
+ */
+export const FINDING_KINDS = ['weakness', 'strength'] as const;
+export const findingKindSchema = z.enum(FINDING_KINDS);
+export type FindingKind = z.infer<typeof findingKindSchema>;
+export const FINDING_KIND_LABELS: Record<FindingKind, string> = {
+  weakness: 'Weakness',
+  strength: 'Strength',
+};
