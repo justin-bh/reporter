@@ -31,6 +31,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Build the workspace libraries first — they resolve via their compiled
+      # dist/ (main/exports), which doesn't exist on a clean checkout, so the
+      # desktop bundle can't resolve @reporter/shared|ui|api-client without this.
+      - run: pnpm --filter "@reporter/shared" --filter "@reporter/ui" --filter "@reporter/api-client" build
       - run: pnpm --filter @reporter/desktop build
       - name: Package desktop app
         run: pnpm --filter @reporter/desktop exec electron-builder ${{ matrix.args }} --publish never
@@ -59,6 +63,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The term bundle imports the compiled dist/ of these libraries.
+      - run: pnpm --filter "@reporter/shared" --filter "@reporter/api-client" build
       - run: pnpm --filter @reporter/term run pack
       - uses: actions/upload-artifact@v4
         with:

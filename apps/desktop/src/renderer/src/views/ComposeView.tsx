@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { defaultTagColorFor } from '@reporter/shared';
 import {
   Button,
   EmptyState,
@@ -39,23 +40,39 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
     })();
   }, []);
 
+  const refreshTags = useCallback((slug: string) => {
+    window.reporter
+      .listTags(slug)
+      .then(setTags)
+      .catch(() => setTags([]));
+  }, []);
+
   useEffect(() => {
     if (!engagementSlug) {
       setTags([]);
       setEvidenceOptions([]);
       return;
     }
-    window.reporter
-      .listTags(engagementSlug)
-      .then(setTags)
-      .catch(() => setTags([]));
+    refreshTags(engagementSlug);
     window.reporter
       .listEvidence(engagementSlug)
       .then(setEvidenceOptions)
       .catch(() => setEvidenceOptions([]));
     setTagIds([]);
     setParentEvidenceUuid('');
-  }, [engagementSlug]);
+  }, [engagementSlug, refreshTags]);
+
+  const createTag = useCallback(
+    async (name: string): Promise<number> => {
+      const t = await window.reporter.createTag(engagementSlug, {
+        name,
+        colorName: defaultTagColorFor(name),
+      });
+      refreshTags(engagementSlug);
+      return t.id;
+    },
+    [engagementSlug, refreshTags],
+  );
 
   if (draft === undefined) return <p className="text-sm text-muted">Loading…</p>;
 
@@ -168,6 +185,7 @@ export function ComposeView({ onDone }: { onDone: () => void }) {
           selectedIds={tagIds}
           onChange={setTagIds}
           emptyHint="No tags in this engagement."
+          onCreateTag={engagementSlug ? createTag : undefined}
         />
       </Field>
 

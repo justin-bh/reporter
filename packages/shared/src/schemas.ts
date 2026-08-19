@@ -5,6 +5,8 @@ import {
   engagementStatusSchema,
   savedQueryTypeSchema,
   severitySchema,
+  watermarkLayerSchema,
+  watermarkOpacitySchema,
 } from './enums.js';
 import { cvssVectorSchema } from './cvss.js';
 
@@ -67,6 +69,20 @@ export const engagementSchema = z.object({
    * `active`; it can also be overridden manually. Null while still active.
    */
   actualEndAt: isoDateSchema.nullable(),
+  // Optional report metadata (surfaced on the exported findings-report PDF).
+  // Present-or-null on every engagement; edited on the Settings page.
+  clientName: z.string().nullable().optional(),
+  assessmentType: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  scope: z.string().nullable().optional(),
+  executiveSummary: z.string().nullable().optional(),
+  methodology: z.string().nullable().optional(),
+  // Per-engagement report watermark (drawn on every exported-PDF page but the cover).
+  watermarkEnabled: z.boolean().optional(),
+  watermarkText: z.string().nullable().optional(),
+  watermarkColor: z.string().nullable().optional(),
+  watermarkOpacity: watermarkOpacitySchema.optional(),
+  watermarkLayer: watermarkLayerSchema.optional(),
 });
 export type Engagement = z.infer<typeof engagementSchema>;
 
@@ -98,6 +114,9 @@ export const tagSchema = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1).max(64),
   colorName: z.string(),
+  /** How many pieces of evidence carry this tag. Present on list responses;
+   *  drives the "in use" warning when deleting a tag. */
+  usageCount: z.number().int().nonnegative().optional(),
 });
 export type Tag = z.infer<typeof tagSchema>;
 
@@ -149,6 +168,8 @@ export const findingSchema = z.object({
   engagementSlug: slugSchema,
   title: z.string().min(1).max(255),
   description: z.string(),
+  /** Recommended remediation / fix guidance (may be empty). */
+  remediation: z.string(),
   category: z.string().nullable(),
   /** Qualitative severity (CVSS v3.1 scale); null when not yet rated. */
   severity: severitySchema.nullable(),
@@ -216,6 +237,23 @@ export const updateEngagementInput = z.object({
   startedAt: isoDateSchema.optional(),
   projectedEndAt: isoDateSchema.nullable().optional(),
   actualEndAt: isoDateSchema.nullable().optional(),
+  // Report metadata. Each is nullable so an empty field clears it.
+  clientName: z.string().max(255).nullable().optional(),
+  assessmentType: z.string().max(255).nullable().optional(),
+  location: z.string().max(255).nullable().optional(),
+  scope: z.string().max(20_000).nullable().optional(),
+  executiveSummary: z.string().max(20_000).nullable().optional(),
+  methodology: z.string().max(20_000).nullable().optional(),
+  // Report watermark. Text/color are nullable so an empty field restores the default.
+  watermarkEnabled: z.boolean().optional(),
+  watermarkText: z.string().max(120).nullable().optional(),
+  watermarkColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'must be a #rrggbb hex color')
+    .nullable()
+    .optional(),
+  watermarkOpacity: watermarkOpacitySchema.optional(),
+  watermarkLayer: watermarkLayerSchema.optional(),
 });
 export type UpdateEngagementInput = z.infer<typeof updateEngagementInput>;
 
@@ -264,6 +302,7 @@ export type CreateFindingInput = z.infer<typeof createFindingInput>;
 export const updateFindingInput = z.object({
   title: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
+  remediation: z.string().max(20_000).optional(),
   category: z.string().nullable().optional(),
   severity: severitySchema.nullable().optional(),
   cvssVector: cvssVectorSchema.nullable().optional(),
@@ -357,6 +396,8 @@ export const exportedFindingSchema = z.object({
   uuid: uuidSchema,
   title: z.string().min(1).max(255),
   description: z.string(),
+  /** Remediation guidance; defaults to empty for exports made before it existed. */
+  remediation: z.string().default(''),
   category: z.string().nullable(),
   severity: severitySchema.nullable(),
   cvssVector: z.string().nullable(),
@@ -375,6 +416,40 @@ export const findingsExportSchema = z.object({
   findings: z.array(exportedFindingSchema).max(MAX_IMPORT_FINDINGS),
 });
 export type FindingsExport = z.infer<typeof findingsExportSchema>;
+
+// ---------------------------------------------------------------------------
+// Report branding (site-wide settings for generated PDFs)
+// ---------------------------------------------------------------------------
+
+/** Site-wide report branding, as returned to the web app. */
+export const reportSettingsSchema = z.object({
+  organizationName: z.string(),
+  accentColor: z.string(),
+  /** Inline data: URI for the cover logo (small PNG/SVG), or null for a text wordmark. */
+  logoDataUri: z.string().nullable(),
+  /** Optional confidentiality/footer line; null falls back to a sensible default. */
+  footerNote: z.string().nullable(),
+});
+export type ReportSettings = z.infer<typeof reportSettingsSchema>;
+
+/** Partial update of report branding (site admins only). */
+export const updateReportSettingsInput = z.object({
+  organizationName: z.string().min(1).max(120).optional(),
+  accentColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'must be a #rrggbb hex color')
+    .optional(),
+  // A data: URI (image/png|jpeg|svg+xml or webp). Capped ~1.5 MB of base64 so the
+  // logo embeds in every PDF without bloating it. null clears it (text wordmark).
+  logoDataUri: z
+    .string()
+    .max(1_500_000)
+    .regex(/^data:image\/(png|jpeg|jpg|webp|svg\+xml);base64,/, 'must be an image data URI')
+    .nullable()
+    .optional(),
+  footerNote: z.string().max(200).nullable().optional(),
+});
+export type UpdateReportSettingsInput = z.infer<typeof updateReportSettingsInput>;
 
 /** Outcome of importing a findings export into an engagement. */
 export const findingsImportResult = z.object({

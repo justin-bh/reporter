@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, ErrorState, Field, Input, Spinner, TagPicker, useToast } from '@reporter/ui';
+import { defaultTagColorFor } from '@reporter/shared';
 import {
+  useCreateTag,
   useDeleteEvidence,
   useEvidence,
   useEvidenceComments,
@@ -28,6 +30,24 @@ export function EvidenceDetailPage() {
   const comments = useEvidenceComments(slug, uuid);
   const update = useUpdateEvidence(slug);
   const del = useDeleteEvidence(slug);
+  const createTag = useCreateTag(slug);
+
+  // Inline "+ New tag" in the picker: create a tag with a name-derived color and
+  // return its id so the picker can select it. Writers only; read-only omits it.
+  const onCreateTag = canWrite
+    ? async (tagName: string) => {
+        try {
+          const t = await createTag.mutateAsync({
+            name: tagName,
+            colorName: defaultTagColorFor(tagName),
+          });
+          return t.id;
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Could not create tag');
+          throw err;
+        }
+      }
+    : undefined;
 
   const [description, setDescription] = useState('');
   const [tagIds, setTagIds] = useState<number[]>([]);
@@ -147,6 +167,7 @@ export function EvidenceDetailPage() {
                 tags={tags ?? []}
                 selectedIds={tagIds}
                 onChange={setTagIds}
+                onCreateTag={onCreateTag}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}
               />

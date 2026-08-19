@@ -35,7 +35,7 @@ const program = new Command();
 program
   .name('reporter-term')
   .description('Record terminal sessions and upload them to reporter as evidence')
-  .version('0.1.0');
+  .version('0.2.0');
 
 program
   .command('record', { isDefault: true })

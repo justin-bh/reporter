@@ -255,6 +255,20 @@ function registerIpc(): void {
     return tags.map((t) => ({ id: t.id, name: t.name, colorName: t.colorName }));
   });
 
+  ipcMain.handle(
+    CH.createTag,
+    async (
+      _e,
+      slug: string,
+      input: { name: string; colorName: string },
+    ): Promise<TagLite> => {
+      const client = makeClient();
+      if (!client) throw new Error('Server URL and API key are required.');
+      const t = await client.createTag(slug, input);
+      return { id: t.id, name: t.name, colorName: t.colorName };
+    },
+  );
+
   ipcMain.handle(CH.listEvidence, async (_e, slug: string): Promise<EvidenceLite[]> => {
     const client = makeClient();
     if (!client) return [];

@@ -14,8 +14,10 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
       const tags = await app.db.tag.findMany({
         where: { engagementId: eng.id },
         orderBy: { name: 'asc' },
+        // Count of evidence carrying each tag — drives the "in use" delete warning.
+        include: { _count: { select: { evidence: true } } },
       });
-      return tags.map(serializeTag);
+      return tags.map((t) => serializeTag(t, t._count.evidence));
     },
   );
 

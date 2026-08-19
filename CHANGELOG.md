@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-19
+
 ### Removed
 
 - **Finding "Ticket Link" field.** Removed the finding ticket-link field
@@ -16,6 +18,46 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Block Harbor house-style report PDF.** The exported findings report was
+  rebuilt into a client-ready, on-brand document: a dark **cover page** (logo /
+  wordmark, assessment type, client, prepared-by, assessment window, status), an
+  **Engagement Details** page, a **Table of Contents**, an **Executive Summary
+  dashboard** (severity distribution bar + per-severity count cards, a key-stats
+  strip, a findings-at-a-glance table, and a category breakdown), a
+  **Methodology & Approach** section, **detailed Findings** (severity-ordered,
+  each with description, remediation, CVSS, attack path and evidence), an
+  **Assessment Execution** evidence timeline (groupable chronologically, by tag,
+  or by type), and a **Severity & CVSS Reference** appendix — with a running
+  header/footer and "PAGE N OF M" page numbers. The `report.pdf` route accepts
+  `evidenceGroup`, `includeTimeline`, and `includeAppendix` query params; the
+  Export dialog surfaces the grouping and timeline options.
+- **Report metadata on engagements.** Engagements gained optional **Client /
+  organization name**, **Assessment type**, **Location**, **Scope**, **Executive
+  summary**, and **Methodology** fields, plus per-finding **Remediation** — all
+  editable in Engagement Settings / the finding editor and rendered in the
+  report. Round-trips through the findings JSON export/import.
+- **Per-engagement report watermark.** A configurable watermark is drawn on
+  every page of the exported PDF except the cover — defaulting to
+  **CONFIDENTIAL**. Engagement Settings lets you set the text, color,
+  transparency (light / medium / strong), and placement (under or above the
+  content), and toggle it off.
+- **Admin → Report branding.** A new Admin tab sets the site-wide report
+  organization name, accent color, cover logo (uploaded inline), and footer
+  note (defaulting to the Block Harbor house style). New admin-only
+  `GET`/`PUT /web/admin/report-settings`.
+- **Inline tag creation.** Tags can now be created directly from the tag picker
+  while working — in the web evidence editor, the desktop capture composer, and
+  the `reporter-term` post-recording prompt — instead of only in Settings. New
+  desktop `tags:create` IPC channel.
+- **Tag delete warning.** Deleting a tag now reports how many pieces of evidence
+  carry it and warns more strongly when it is in use (the tags list response
+  includes a `usageCount`).
+- **Engagement list: dates & default filter.** The Table view gained sortable
+  **Started** and **End** columns (so no dates are lost switching from Cards),
+  and the status filter now defaults to **active** so completed/archived
+  engagements only appear when explicitly selected.
+- **Product mark.** The teal reporter icon is now the web favicon and replaces
+  the "reporter" wordmark in the desktop app's navigation.
 - **Admin → Engagements console.** A new fourth tab in the Admin area lists
   every engagement on the server — any status, member or not — with member /
   evidence / finding counts and the created date, a name/slug text filter plus a

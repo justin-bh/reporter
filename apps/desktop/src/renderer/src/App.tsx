@@ -4,6 +4,7 @@ import { HistoryView } from './views/HistoryView.js';
 import { SettingsView } from './views/SettingsView.js';
 import { ComposeView } from './views/ComposeView.js';
 import { AboutView } from './views/AboutView.js';
+import markUrl from './assets/reporter-mark.png';
 
 type View = 'history' | 'settings' | 'compose' | 'about';
 
@@ -26,7 +27,7 @@ export function App() {
   return (
     <div className="flex h-screen flex-col bg-bg text-text">
       <header className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2">
-        <span className="font-semibold">reporter</span>
+        <img src={markUrl} alt="reporter" className="h-6 w-auto" />
         <nav className="ml-2 flex gap-1 text-sm">
           <NavBtn active={view === 'history'} onClick={() => setView('history')}>
             History

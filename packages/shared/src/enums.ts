@@ -45,6 +45,41 @@ export const savedQueryTypeSchema = z.enum(SAVED_QUERY_TYPES);
 export type SavedQueryType = z.infer<typeof savedQueryTypeSchema>;
 
 /**
+ * How the report's "Assessment Execution" evidence timeline is organized:
+ * `chronological` (a flat, time-ordered log), `tag` (grouped by evidence tag),
+ * or `type` (grouped by evidence content type).
+ */
+export const EVIDENCE_GROUPINGS = ['chronological', 'tag', 'type'] as const;
+export const evidenceGroupingSchema = z.enum(EVIDENCE_GROUPINGS);
+export type EvidenceGrouping = z.infer<typeof evidenceGroupingSchema>;
+
+/** Human labels for the report evidence groupings. */
+export const EVIDENCE_GROUPING_LABELS: Record<EvidenceGrouping, string> = {
+  chronological: 'Chronological',
+  tag: 'By tag',
+  type: 'By type',
+};
+
+/** Report watermark transparency — three fixed levels mapped to opacities by the renderer. */
+export const WATERMARK_OPACITIES = ['light', 'medium', 'strong'] as const;
+export const watermarkOpacitySchema = z.enum(WATERMARK_OPACITIES);
+export type WatermarkOpacity = z.infer<typeof watermarkOpacitySchema>;
+export const WATERMARK_OPACITY_LABELS: Record<WatermarkOpacity, string> = {
+  light: 'Light',
+  medium: 'Medium',
+  strong: 'Strong',
+};
+
+/** Whether the watermark sits under (behind) or above (front of) the page content. */
+export const WATERMARK_LAYERS = ['behind', 'front'] as const;
+export const watermarkLayerSchema = z.enum(WATERMARK_LAYERS);
+export type WatermarkLayer = z.infer<typeof watermarkLayerSchema>;
+export const WATERMARK_LAYER_LABELS: Record<WatermarkLayer, string> = {
+  behind: 'Under content',
+  front: 'Above content',
+};
+
+/**
  * Qualitative finding severity, matching the CVSS v3.1 severity rating scale.
  * Stored as the canonical, sortable severity of a finding; when a full CVSS
  * vector is present it is derived from the base score (see `severityFromScore`).

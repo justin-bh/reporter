@@ -1,9 +1,86 @@
 import { rm, stat } from 'node:fs/promises';
 import * as p from '@clack/prompts';
+import { defaultTagColorFor } from '@reporter/shared';
 import type { TermConfig } from './config.js';
 import { makeClient } from './client.js';
 import { uploadCast } from './upload.js';
 import { c, sym } from './theme.js';
+
+/** Sentinel value used to offer inline tag creation from the multiselect. */
+const CREATE_TAG = '__create_tag__';
+
+/** A tag as needed for the picker. */
+interface TagOption {
+  id: number;
+  name: string;
+}
+
+/**
+ * Let the operator select existing tags and create new ones inline. Returns the
+ * chosen tag ids, or `null` if they cancelled out of the flow entirely.
+ */
+async function pickTags(config: TermConfig, engagementSlug: string): Promise<number[] | null> {
+  let tags: TagOption[];
+  try {
+    tags = (await makeClient(config).listTags(engagementSlug)).map((t) => ({
+      id: t.id,
+      name: t.name,
+    }));
+  } catch {
+    // tags are optional — skip the picker if they can't be loaded
+    return [];
+  }
+
+  let selected: number[] = [];
+  // Loop so a "create a new tag" pick can add the tag and re-open the picker
+  // with the previous selection preserved.
+  for (;;) {
+    const picked = await p.multiselect<number | typeof CREATE_TAG>({
+      message: 'Tags (space to select, enter to confirm)',
+      options: [
+        ...tags.map((t) => ({ value: t.id, label: t.name })),
+        { value: CREATE_TAG, label: `${c.accent('➕')} Create a new tag…` },
+      ],
+      initialValues: selected,
+      required: false,
+    });
+    if (p.isCancel(picked)) return null;
+
+    const values = picked as (number | typeof CREATE_TAG)[];
+    selected = values.filter((v): v is number => v !== CREATE_TAG);
+
+    if (!values.includes(CREATE_TAG)) return selected;
+
+    // The operator asked to create a tag: prompt for a name, create it, keep going.
+    const name = await p.text({
+      message: 'New tag name',
+      placeholder: 'e.g. privilege-escalation',
+    });
+    if (p.isCancel(name)) return null;
+    const trimmed = String(name).trim();
+    if (!trimmed) continue;
+
+    const spin = p.spinner();
+    spin.start(`Creating tag ${c.accent(trimmed)}`);
+    try {
+      const created = await makeClient(config).createTag(engagementSlug, {
+        name: trimmed,
+        colorName: defaultTagColorFor(trimmed),
+      });
+      spin.stop(`${sym.ok} Created tag ${c.accent(created.name)}`);
+      if (!tags.some((t) => t.id === created.id)) {
+        tags.push({ id: created.id, name: created.name });
+      }
+      // Auto-select the freshly created tag so the operator doesn't have to hunt.
+      if (!selected.includes(created.id)) selected.push(created.id);
+    } catch (err) {
+      spin.stop(
+        `${sym.err} Couldn't create tag: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // keep going — the operator can retry with a different name or move on
+    }
+  }
+}
 
 /** Ask the operator to choose an engagement from the server. */
 async function chooseEngagement(config: TermConfig): Promise<string | null> {
@@ -47,20 +124,7 @@ export async function promptAndUpload(
   });
   if (p.isCancel(description)) return false;
 
-  let tagIds: number[] = [];
-  try {
-    const tags = await makeClient(config).listTags(engagementSlug);
-    if (tags.length > 0) {
-      const picked = await p.multiselect({
-        message: 'Tags (space to select, enter to confirm)',
-        options: tags.map((t) => ({ value: t.id, label: t.name })),
-        required: false,
-      });
-      if (!p.isCancel(picked)) tagIds = picked as number[];
-    }
-  } catch {
-    // tags are optional
-  }
+  const tagIds = (await pickTags(config, engagementSlug)) ?? [];
 
   const spin = p.spinner();
   spin.start('Uploading recording');

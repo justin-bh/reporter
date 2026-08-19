@@ -28,12 +28,15 @@ import { useCreateEngagement, useEngagements, useToggleFavorite } from '../api/h
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
 
-type SortColumn = 'name' | 'status' | 'evidence' | 'findings' | 'members';
+type SortColumn = 'name' | 'status' | 'startedAt' | 'endDate' | 'evidence' | 'findings' | 'members';
 
-// Numeric columns start descending (most first); text columns start ascending.
+// Numeric columns start descending (most first); text columns start ascending;
+// dates start with the most recent.
 const FIRST_CLICK_DIRECTION: Record<SortColumn, SortDirection> = {
   name: 'asc',
   status: 'asc',
+  startedAt: 'desc',
+  endDate: 'desc',
   evidence: 'desc',
   findings: 'desc',
   members: 'desc',
@@ -50,6 +53,15 @@ function compareBy(column: SortColumn, direction: SortDirection) {
         return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
       case 'status':
         return dir * (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+      case 'startedAt':
+        return dir * (new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+      case 'endDate': {
+        // Sort on the same value the End column renders: actual end when set,
+        // else projected end, else 0 (no end date sinks to the bottom).
+        const endOf = (e: Engagement) =>
+          new Date(e.actualEndAt ?? e.projectedEndAt ?? 0).getTime();
+        return dir * (endOf(a) - endOf(b));
+      }
       case 'evidence':
         return dir * ((a.numEvidence ?? 0) - (b.numEvidence ?? 0));
       case 'findings':
@@ -105,7 +117,7 @@ export function EngagementsPage() {
   const [creating, setCreating] = useState(false);
   const [view, setView] = usePersistedView();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<EngagementStatus | 'all'>('all');
+  const [status, setStatus] = useState<EngagementStatus | 'all'>('active');
   // Lives here (not in EngagementsTable) so the sort survives view toggles
   // and transient zero-match states unmounting the table.
   const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection } | null>(null);
@@ -332,6 +344,12 @@ function EngagementsTable({
           <SortableTh direction={directionOf('status')} onSort={() => toggleSort('status')}>
             Status
           </SortableTh>
+          <SortableTh direction={directionOf('startedAt')} onSort={() => toggleSort('startedAt')}>
+            Started
+          </SortableTh>
+          <SortableTh direction={directionOf('endDate')} onSort={() => toggleSort('endDate')}>
+            End
+          </SortableTh>
           <SortableTh
             align="right"
             direction={directionOf('evidence')}
@@ -373,6 +391,16 @@ function EngagementsTable({
               </Td>
               <Td>
                 <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
+              </Td>
+              <Td className="text-muted">{formatDate(eng.startedAt)}</Td>
+              <Td>
+                {eng.actualEndAt ? (
+                  <span className="text-muted">{formatDate(eng.actualEndAt)}</span>
+                ) : eng.projectedEndAt ? (
+                  <span className="text-muted/70">{formatDate(eng.projectedEndAt)} (projected)</span>
+                ) : (
+                  <span className="text-muted">—</span>
+                )}
               </Td>
               <Td className="text-right tabular-nums">{eng.numEvidence ?? 0}</Td>
               <Td className="text-right tabular-nums text-muted">{findings > 0 ? findings : ''}</Td>
