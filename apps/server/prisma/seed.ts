@@ -69,6 +69,13 @@ async function main() {
     await db.findingCategory.upsert({ where: { category }, create: { category }, update: {} });
   }
 
+  // --- Report branding (single row; defaults to the Block Harbor house style) ---
+  await db.reportSettings.upsert({
+    where: { id: 1 },
+    create: { id: 1, footerNote: 'Confidential' },
+    update: {},
+  });
+
   // --- Demo engagement (recreate fresh) ---
   const existing = await db.engagement.findUnique({ where: { slug: 'acme-assessment' } });
   if (existing) await db.engagement.delete({ where: { id: existing.id } });
@@ -79,6 +86,25 @@ async function main() {
       name: 'Acme Corp — External Assessment',
       // startedAt defaults to now(); give the demo a projected end ~3 weeks out.
       projectedEndAt: new Date(Date.now() + 21 * 86_400_000),
+      // Report metadata — populates the exported PDF's cover, details, and summary.
+      clientName: 'Acme Corporation',
+      assessmentType: 'External Penetration Assessment',
+      location: 'Remote — Acme production perimeter',
+      scope:
+        'External-facing web application and API surface at acme.example.com and the ' +
+        '203.0.113.0/24 network range. Testing covered authentication, access control, ' +
+        'injection, and privilege-escalation paths. The billing subdomain and any ' +
+        'destructive testing were explicitly out of scope.',
+      executiveSummary:
+        'Block Harbor conducted a time-boxed external penetration assessment of the Acme ' +
+        'production perimeter. Testing identified a critical privilege-escalation path that ' +
+        'allowed a low-privileged user to obtain root access, alongside information-disclosure ' +
+        'weaknesses that could accelerate an attacker. Overall the perimeter is well maintained, ' +
+        'but the privilege-escalation finding should be remediated as a priority.',
+      methodology:
+        'The assessment followed a gray-box methodology aligned to the OWASP Testing Guide and ' +
+        'the PTES execution phases: reconnaissance, threat modeling, vulnerability analysis, ' +
+        'exploitation, and post-exploitation. Findings are rated on the CVSS v3.1 base scale.',
       tags: { create: DEFAULT_TAGS.map((t) => ({ name: t.name, colorName: t.colorName })) },
       roles: {
         create: [
@@ -209,6 +235,11 @@ async function main() {
       title: 'Privilege escalation via sudo misconfiguration',
       description:
         'A sudo rule allowed the low-priv user to run a shell as root without a password.',
+      remediation:
+        'Remove the overly-permissive sudo rule and grant only the specific commands each ' +
+        'role requires, with NOPASSWD limited to non-interactive, non-shell binaries. Audit ' +
+        '/etc/sudoers and sudoers.d for wildcard or shell entries, and add monitoring for ' +
+        'privilege-escalation events.',
       categoryId: category?.id ?? null,
       severity: privesc.severity,
       cvssVector: privesc.vector,

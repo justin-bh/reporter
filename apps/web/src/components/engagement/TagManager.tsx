@@ -30,10 +30,14 @@ export function TagManager({ slug, readOnly = false }: { slug: string; readOnly?
   const [name, setName] = useState('');
   const [color, setColor] = useState('teal');
 
-  async function removeTag(id: number, tagName: string) {
+  async function removeTag(id: number, tagName: string, usageCount?: number) {
+    const inUse = usageCount !== undefined && usageCount > 0;
+    const message = inUse
+      ? `The tag “${tagName}” is on ${usageCount} piece${usageCount === 1 ? '' : 's'} of evidence. Deleting it removes it from all of them. This cannot be undone.`
+      : `Delete the tag “${tagName}”? It isn’t on any evidence yet.`;
     const ok = await confirm({
       title: 'Delete tag',
-      message: `Delete the tag “${tagName}”? It will be removed from all evidence in this engagement.`,
+      message,
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -70,7 +74,7 @@ export function TagManager({ slug, readOnly = false }: { slug: string; readOnly?
               <TagChip
                 name={t.name}
                 colorName={t.colorName}
-                onRemove={() => removeTag(t.id, t.name)}
+                onRemove={() => removeTag(t.id, t.name, t.usageCount)}
                 removeDisabled={readOnly}
                 removeTitle={readOnly ? READ_ONLY_TITLE : undefined}
               />

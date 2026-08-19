@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { Button, Checkbox, Modal, useToast } from '@reporter/ui';
+import { Button, Checkbox, Field, Modal, Select, useToast } from '@reporter/ui';
+import {
+  EVIDENCE_GROUPINGS,
+  EVIDENCE_GROUPING_LABELS,
+  type EvidenceGrouping,
+} from '@reporter/shared';
 import { downloadFile } from '../../lib/download.js';
 
 export function ExportFindingsModal({
@@ -14,6 +19,8 @@ export function ExportFindingsModal({
   const toast = useToast();
   const [includeAll, setIncludeAll] = useState(false);
   const [includeContent, setIncludeContent] = useState(false);
+  const [includeTimeline, setIncludeTimeline] = useState(true);
+  const [group, setGroup] = useState<EvidenceGrouping>('chronological');
   const [busy, setBusy] = useState<'pdf' | 'json' | null>(null);
 
   async function run(kind: 'pdf' | 'json') {
@@ -21,7 +28,10 @@ export function ExportFindingsModal({
     try {
       const base = `/web/engagements/${slug}/findings`;
       if (kind === 'pdf') {
-        await downloadFile(`${base}/report.pdf?includeAll=${includeAll}`, `${slug}-findings.pdf`);
+        await downloadFile(
+          `${base}/report.pdf?includeAll=${includeAll}&includeTimeline=${includeTimeline}&evidenceGroup=${group}`,
+          `${slug}-findings.pdf`,
+        );
       } else {
         await downloadFile(
           `${base}/export.json?includeAll=${includeAll}&includeEvidenceContent=${includeContent}`,
@@ -62,19 +72,52 @@ export function ExportFindingsModal({
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">
-          Exports the report-ready findings with their details and evidence. JSON can be re-imported
-          later.
+          The PDF is a full, branded report — cover page, executive summary, findings, and (when
+          enabled) the Assessment Execution timeline. JSON exports the report-ready findings and can
+          be re-imported later.
         </p>
         <Checkbox
           label="Include all findings (not only “Ready to report”)"
           checked={includeAll}
           onChange={(e) => setIncludeAll(e.target.checked)}
         />
-        <Checkbox
-          label="Embed evidence content in JSON (portable across servers, larger file)"
-          checked={includeContent}
-          onChange={(e) => setIncludeContent(e.target.checked)}
-        />
+        <div className="border-t border-border pt-4">
+          <p className="mb-3 text-sm font-medium text-text">PDF report</p>
+          <div className="flex flex-col gap-4">
+            <Checkbox
+              label="Include full evidence timeline (Assessment Execution)"
+              checked={includeTimeline}
+              onChange={(e) => setIncludeTimeline(e.target.checked)}
+            />
+            <Field
+              label="Assessment Execution grouping"
+              htmlFor="ex-group"
+              hint="How the evidence timeline is organized in the report."
+            >
+              <Select
+                id="ex-group"
+                value={group}
+                onChange={(e) => setGroup(e.target.value as EvidenceGrouping)}
+                disabled={!includeTimeline}
+                className="max-w-[16rem]"
+              >
+                {EVIDENCE_GROUPINGS.map((g) => (
+                  <option key={g} value={g}>
+                    {EVIDENCE_GROUPING_LABELS[g]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        </div>
+        <div className="border-t border-border pt-4">
+          <p className="mb-3 text-sm font-medium text-text">JSON export</p>
+          <Checkbox
+            label="Embed evidence content in JSON (portable across servers, larger file)"
+            checked={includeContent}
+            onChange={(e) => setIncludeContent(e.target.checked)}
+          />
+        </div>
       </div>
     </Modal>
   );

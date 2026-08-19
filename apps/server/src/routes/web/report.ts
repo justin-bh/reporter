@@ -1,12 +1,28 @@
 import type { FastifyInstance } from 'fastify';
 import type { PuppeteerNode } from 'puppeteer';
-import { FINDINGS_EXPORT_VERSION, findingsExportSchema } from '@reporter/shared';
+import {
+  FINDINGS_EXPORT_VERSION,
+  evidenceGroupingSchema,
+  findingsExportSchema,
+  type EvidenceGrouping,
+} from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import { buildFindingsExport, buildReportHtml } from '../../services/findings-report.js';
 import { importFindings } from '../../services/findings-import.js';
 
 function boolParam(v: unknown): boolean {
   return v === 'true' || v === '1';
+}
+
+/** Parse the query param, defaulting to true unless explicitly "false"/"0". */
+function boolParamDefaultTrue(v: unknown): boolean {
+  return !(v === 'false' || v === '0');
+}
+
+/** Parse the evidence grouping, falling back to a safe default. */
+function groupParam(v: unknown): EvidenceGrouping {
+  const parsed = evidenceGroupingSchema.safeParse(v);
+  return parsed.success ? parsed.data : 'chronological';
 }
 
 function stamp(): string {
@@ -66,6 +82,9 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const html = await buildReportHtml(app, eng, new Date(), {
         includeAll: boolParam(q.includeAll),
+        evidenceGroup: groupParam(q.evidenceGroup),
+        includeTimeline: boolParamDefaultTrue(q.includeTimeline),
+        includeAppendix: boolParamDefaultTrue(q.includeAppendix),
       });
 
       let puppeteer: PuppeteerNode;
@@ -83,16 +102,21 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       });
       try {
         const page = await browser.newPage();
+        // Fonts load from Google Fonts when the host has network, but the render
+        // must never block on them (Docker Chromium is often offline): give the
+        // network a brief window, then fall back to the local font stacks.
         await page.setContent(html, { waitUntil: 'load' });
+        // Runs in the browser context (not Node) — hence the `Function`-based
+        // evaluate to keep it out of tsc's Node lib.
+        const waitFonts = new Function(
+          'return Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);',
+        ) as () => Promise<unknown>;
+        await page.evaluate(waitFonts).catch(() => undefined);
+        // Page geometry (Letter, margins, running header/footer, page numbers)
+        // comes entirely from the document's CSS @page + margin boxes.
         const pdf = await page.pdf({
-          format: 'A4',
           printBackground: true,
-          margin: { top: '16mm', bottom: '18mm', left: '14mm', right: '14mm' },
-          displayHeaderFooter: true,
-          headerTemplate: '<span></span>',
-          footerTemplate:
-            '<div style="width:100%;font-size:8px;color:#999;padding:0 14mm;text-align:right;">' +
-            `${slug} · <span class="pageNumber"></span>/<span class="totalPages"></span></div>`,
+          preferCSSPageSize: true,
         });
         reply
           .header('Content-Type', 'application/pdf')

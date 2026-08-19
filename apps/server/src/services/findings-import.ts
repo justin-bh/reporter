@@ -78,6 +78,7 @@ export async function importFindings(
     const findingData = {
       title: f.title,
       description: f.description,
+      remediation: f.remediation,
       categoryId: await categoryIdFor(app, f.category),
       severity: f.severity,
       cvssVector: f.cvssVector,

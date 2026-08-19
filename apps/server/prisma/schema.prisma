@@ -154,6 +154,23 @@ model Engagement {
   startedAt      DateTime  @default(now()) @map("started_at")
   projectedEndAt DateTime? @map("projected_end_at")
   actualEndAt    DateTime? @map("actual_end_at")
+  // Optional report metadata. Surfaced on the exported findings-report PDF (cover,
+  // engagement-details page, executive summary, methodology). All null-until-set.
+  clientName       String? @map("client_name")
+  assessmentType   String? @map("assessment_type")
+  location         String?
+  scope            String?
+  executiveSummary String? @map("executive_summary")
+  methodology      String?
+  // Per-engagement report watermark, drawn on every page of the exported PDF
+  // except the title page. `watermarkText` null → "CONFIDENTIAL"; `watermarkColor`
+  // null → a neutral gray. Opacity is one of light|medium|strong; layer is
+  // behind|front (under vs. above the page content).
+  watermarkEnabled Boolean @default(true) @map("watermark_enabled")
+  watermarkText    String? @map("watermark_text")
+  watermarkColor   String? @map("watermark_color")
+  watermarkOpacity String  @default("medium") @map("watermark_opacity")
+  watermarkLayer   String  @default("behind") @map("watermark_layer")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 
@@ -229,6 +246,23 @@ model DefaultTag {
   @@map("default_tags")
 }
 
+/**
+ * Site-wide branding for generated report PDFs. A single row (id = 1); the
+ * service layer upserts/reads that one row. `logoDataUri` holds an inline
+ * data: URI (small PNG/SVG) so the logo embeds directly in the PDF with no
+ * blob-store round-trip. Defaults ship the Block Harbor house style.
+ */
+model ReportSettings {
+  id               Int      @id @default(1)
+  organizationName String   @default("Block Harbor") @map("organization_name")
+  accentColor      String   @default("#e82434") @map("accent_color")
+  logoDataUri      String?  @map("logo_data_uri")
+  footerNote       String?  @map("footer_note")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("report_settings")
+}
+
 model Evidence {
   id             Int      @id @default(autoincrement())
   uuid           String   @unique @default(uuid())
@@ -292,6 +326,8 @@ model Finding {
   categoryId    Int?      @map("category_id")
   title         String
   description   String    @default("")
+  /** Recommended remediation / fix guidance, shown per-finding in the report. */
+  remediation   String    @default("")
   severity      Severity?
   cvssVector    String?   @map("cvss_vector")
   cvssScore     Float?    @map("cvss_score")

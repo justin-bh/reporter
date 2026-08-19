@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -32,6 +32,7 @@ import {
   type AdminEngagement,
   type AdminUser,
   type EngagementStatus,
+  type UpdateReportSettingsInput,
 } from '@reporter/shared';
 import { api } from '../api/client.js';
 import {
@@ -39,8 +40,10 @@ import {
   useCreateUser,
   useDeleteEngagement,
   useGenerateRecoveryLink,
+  useReportSettings,
   useResetTotp,
   useRevokeUserApiKey,
+  useUpdateReportSettings,
   useUpdateUser,
   useUserApiKeys,
   useUsers,
@@ -62,12 +65,14 @@ export function AdminPage() {
           { key: 'default-tags', label: 'Default tags' },
           { key: 'categories', label: 'Finding categories' },
           { key: 'engagements', label: 'Engagements' },
+          { key: 'branding', label: 'Report branding' },
         ]}
       />
       {tab === 'users' && <UsersTab />}
       {tab === 'default-tags' && <DefaultTagsTab />}
       {tab === 'categories' && <CategoriesTab />}
       {tab === 'engagements' && <EngagementsTab />}
+      {tab === 'branding' && <ReportBrandingTab />}
     </div>
   );
 }
@@ -805,5 +810,182 @@ function AdminEngagementRow({ eng }: { eng: AdminEngagement }) {
         </div>
       </Td>
     </Tr>
+  );
+}
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+// Cap the logo well under the server's ~1.5 MB base64 limit, measured on the raw
+// file (base64 inflates ~33%, so ~1 MB of file ≈ ~1.35 MB encoded).
+const MAX_LOGO_BYTES = 1_000_000;
+const LOGO_ACCEPT = 'image/png,image/jpeg,image/svg+xml,image/webp';
+
+function readFileAsDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function ReportBrandingTab() {
+  const { data: settings, isLoading, isError, refetch } = useReportSettings();
+  const update = useUpdateReportSettings();
+  const toast = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [organizationName, setOrganizationName] = useState('');
+  const [accentColor, setAccentColor] = useState('#2563eb');
+  const [logoDataUri, setLogoDataUri] = useState<string | null>(null);
+  const [footerNote, setFooterNote] = useState('');
+
+  // Seed the form once the settings load (and again if they change on refetch).
+  useEffect(() => {
+    if (settings) {
+      setOrganizationName(settings.organizationName);
+      setAccentColor(settings.accentColor);
+      setLogoDataUri(settings.logoDataUri);
+      setFooterNote(settings.footerNote ?? '');
+    }
+  }, [settings]);
+
+  const accentValid = HEX_RE.test(accentColor);
+
+  async function onPickLogo(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_LOGO_BYTES) {
+      toast.error('Logo is too large — pick an image under 1 MB.');
+      return;
+    }
+    try {
+      setLogoDataUri(await readFileAsDataUri(file));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not read the image');
+    } finally {
+      // Allow re-selecting the same file after a clear.
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function clearLogo() {
+    setLogoDataUri(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function save() {
+    if (!organizationName.trim()) {
+      toast.error('Organization name is required.');
+      return;
+    }
+    if (!accentValid) {
+      toast.error('Accent color must be a #rrggbb hex value.');
+      return;
+    }
+    const patch: UpdateReportSettingsInput = {
+      organizationName: organizationName.trim(),
+      accentColor,
+      logoDataUri,
+      footerNote: footerNote.trim() === '' ? null : footerNote.trim(),
+    };
+    try {
+      await update.mutateAsync(patch);
+      toast.success('Report branding saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save report branding');
+    }
+  }
+
+  if (isLoading) return <Spinner />;
+  if (isError)
+    return <ErrorState description="Couldn’t load report branding." onRetry={() => refetch()} />;
+
+  return (
+    <Card className="max-w-2xl space-y-5 p-4">
+      <p className="text-sm text-muted">
+        Branding applied to the cover and footer of every exported report PDF, server-wide.
+      </p>
+
+      <Field label="Organization name" htmlFor="rb-org">
+        <Input
+          id="rb-org"
+          value={organizationName}
+          onChange={(e) => setOrganizationName(e.target.value)}
+          placeholder="Acme Security"
+        />
+      </Field>
+
+      <Field
+        label="Accent color"
+        htmlFor="rb-accent-hex"
+        hint="Used for headings and rules on the report."
+        error={accentValid ? undefined : 'Enter a #rrggbb hex color.'}
+      >
+        <div className="flex items-center gap-2">
+          <input
+            aria-label="Accent color picker"
+            type="color"
+            value={accentValid ? accentColor : '#2563eb'}
+            onChange={(e) => setAccentColor(e.target.value)}
+            className="h-9 w-12 cursor-pointer rounded-input border border-border bg-surface p-1"
+          />
+          <Input
+            id="rb-accent-hex"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            placeholder="#2563eb"
+            className="max-w-[10rem] font-mono"
+          />
+        </div>
+      </Field>
+
+      <Field
+        label="Cover logo"
+        hint="PNG, JPEG, SVG, or WebP under 1 MB. Cleared logos fall back to a text wordmark."
+      >
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex h-16 w-40 items-center justify-center overflow-hidden rounded-input border border-border bg-surface-2">
+            {logoDataUri ? (
+              <img src={logoDataUri} alt="Report logo preview" className="max-h-14 max-w-36" />
+            ) : (
+              <span className="px-2 text-sm font-semibold text-muted">
+                {organizationName.trim() || 'Wordmark'}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={LOGO_ACCEPT}
+              aria-label="Upload cover logo"
+              onChange={(e) => onPickLogo(e.target.files?.[0])}
+              className="text-sm text-muted file:mr-3 file:rounded-input file:border file:border-border file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-text hover:file:bg-surface"
+            />
+            {logoDataUri && (
+              <Button variant="ghost" size="sm" onClick={clearLogo}>
+                Remove
+              </Button>
+            )}
+          </div>
+        </div>
+      </Field>
+
+      <Field label="Footer note" htmlFor="rb-footer" hint="e.g. “Confidential”. Shown on every page.">
+        <Input
+          id="rb-footer"
+          value={footerNote}
+          onChange={(e) => setFooterNote(e.target.value)}
+          placeholder="Confidential"
+        />
+      </Field>
+
+      <Button
+        onClick={save}
+        loading={update.isPending}
+        disabled={!organizationName.trim() || !accentValid}
+      >
+        Save branding
+      </Button>
+    </Card>
   );
 }

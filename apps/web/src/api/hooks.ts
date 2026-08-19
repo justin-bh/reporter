@@ -14,9 +14,11 @@ import type {
   FindingEvidence,
   FindingsImportResult,
   Engagement,
+  ReportSettings,
   SavedQuery,
   Tag,
   UpdateFindingEvidenceInput,
+  UpdateReportSettingsInput,
   User,
 } from '@reporter/shared';
 import { api } from './client.js';
@@ -56,7 +58,25 @@ export function useUpdateEngagement(slug: string) {
   return useMutation({
     mutationFn: (
       patch: Partial<
-        Pick<Engagement, 'name' | 'status' | 'startedAt' | 'projectedEndAt' | 'actualEndAt'>
+        Pick<
+          Engagement,
+          | 'name'
+          | 'status'
+          | 'startedAt'
+          | 'projectedEndAt'
+          | 'actualEndAt'
+          | 'clientName'
+          | 'assessmentType'
+          | 'location'
+          | 'scope'
+          | 'executiveSummary'
+          | 'methodology'
+          | 'watermarkEnabled'
+          | 'watermarkText'
+          | 'watermarkColor'
+          | 'watermarkOpacity'
+          | 'watermarkLayer'
+        >
       >,
     ) => api.put<Engagement>(`/web/engagements/${slug}`, patch),
     onSuccess: () => {
@@ -541,5 +561,21 @@ export function useRevokeUserApiKey() {
       api.del(`/web/admin/users/${args.slug}/api-keys/${encodeURIComponent(args.accessKey)}`),
     onSuccess: (_d, v) =>
       qc.invalidateQueries({ queryKey: ['admin-user-api-keys', v.slug] }),
+  });
+}
+
+// --- Report branding (site-admin only) ---
+export const useReportSettings = () =>
+  useQuery({
+    queryKey: ['report-settings'],
+    queryFn: () => api.get<ReportSettings>('/web/admin/report-settings'),
+  });
+
+export function useUpdateReportSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: UpdateReportSettingsInput) =>
+      api.put<ReportSettings>('/web/admin/report-settings', patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['report-settings'] }),
   });
 }

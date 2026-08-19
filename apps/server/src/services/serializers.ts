@@ -5,6 +5,7 @@ import type {
   Finding as DbFinding,
   FindingCategory,
   Engagement as DbEngagement,
+  ReportSettings as DbReportSettings,
   SavedQuery as DbSavedQuery,
   Tag as DbTag,
   User as DbUser,
@@ -16,6 +17,7 @@ import type {
   Finding,
   Engagement,
   EngagementRole,
+  ReportSettings,
   SavedQuery,
   Tag,
   User,
@@ -53,6 +55,17 @@ export function serializeEngagement(
     startedAt: eng.startedAt.toISOString(),
     projectedEndAt: eng.projectedEndAt?.toISOString() ?? null,
     actualEndAt: eng.actualEndAt?.toISOString() ?? null,
+    clientName: eng.clientName,
+    assessmentType: eng.assessmentType,
+    location: eng.location,
+    scope: eng.scope,
+    executiveSummary: eng.executiveSummary,
+    methodology: eng.methodology,
+    watermarkEnabled: eng.watermarkEnabled,
+    watermarkText: eng.watermarkText,
+    watermarkColor: eng.watermarkColor,
+    watermarkOpacity: eng.watermarkOpacity as Engagement['watermarkOpacity'],
+    watermarkLayer: eng.watermarkLayer as Engagement['watermarkLayer'],
     role: extras.role,
     favorite: extras.favorite,
     numUsers: extras.numUsers,
@@ -70,8 +83,17 @@ export function serializeApiKey(k: DbApiKey): ApiKey {
   };
 }
 
-export function serializeTag(t: DbTag): Tag {
-  return { id: t.id, name: t.name, colorName: t.colorName };
+export function serializeTag(t: DbTag, usageCount?: number): Tag {
+  return { id: t.id, name: t.name, colorName: t.colorName, usageCount };
+}
+
+export function serializeReportSettings(s: DbReportSettings): ReportSettings {
+  return {
+    organizationName: s.organizationName,
+    accentColor: s.accentColor,
+    logoDataUri: s.logoDataUri,
+    footerNote: s.footerNote,
+  };
 }
 
 type EvidenceWithRelations = DbEvidence & {
@@ -133,6 +155,7 @@ export function serializeFinding(f: FindingWithRelations, engagementSlug: string
     engagementSlug,
     title: f.title,
     description: f.description,
+    remediation: f.remediation,
     category: f.category?.category ?? null,
     severity: f.severity,
     cvssVector: f.cvssVector,

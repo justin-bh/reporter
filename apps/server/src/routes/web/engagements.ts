@@ -101,6 +101,22 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       if (body.startedAt !== undefined) data.startedAt = new Date(body.startedAt);
       if (body.projectedEndAt !== undefined)
         data.projectedEndAt = body.projectedEndAt === null ? null : new Date(body.projectedEndAt);
+      // Report metadata: empty string clears to null so the report treats it as unset.
+      const orNull = (v: string | null | undefined) => (v == null || v === '' ? null : v);
+      if (body.clientName !== undefined) data.clientName = orNull(body.clientName);
+      if (body.assessmentType !== undefined) data.assessmentType = orNull(body.assessmentType);
+      if (body.location !== undefined) data.location = orNull(body.location);
+      if (body.scope !== undefined) data.scope = orNull(body.scope);
+      if (body.executiveSummary !== undefined)
+        data.executiveSummary = orNull(body.executiveSummary);
+      if (body.methodology !== undefined) data.methodology = orNull(body.methodology);
+      // Watermark. Text/color clear to null (renderer then uses its defaults);
+      // enabled/opacity/layer are set directly.
+      if (body.watermarkEnabled !== undefined) data.watermarkEnabled = body.watermarkEnabled;
+      if (body.watermarkText !== undefined) data.watermarkText = orNull(body.watermarkText);
+      if (body.watermarkColor !== undefined) data.watermarkColor = orNull(body.watermarkColor);
+      if (body.watermarkOpacity !== undefined) data.watermarkOpacity = body.watermarkOpacity;
+      if (body.watermarkLayer !== undefined) data.watermarkLayer = body.watermarkLayer;
 
       // A status change drives the actual-end date: entering complete/archived
       // stamps "now", returning to active clears it. This wins over any value in

@@ -114,6 +114,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       const data: {
         title?: string;
         description?: string;
+        remediation?: string;
         readyToReport?: boolean;
         categoryId?: number | null;
         severity?: 'none' | 'low' | 'medium' | 'high' | 'critical' | null;
@@ -122,6 +123,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       } = {
         title: body.title ?? undefined,
         description: body.description ?? undefined,
+        remediation: body.remediation ?? undefined,
         readyToReport: body.readyToReport ?? undefined,
         categoryId:
           body.category === undefined ? undefined : await categoryIdFor(app, body.category),

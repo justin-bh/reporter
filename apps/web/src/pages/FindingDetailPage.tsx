@@ -48,6 +48,7 @@ export function FindingDetailPage() {
   const [form, setForm] = useState({
     title: '',
     description: '',
+    remediation: '',
     category: '',
     readyToReport: false,
     severity: '' as Severity | '',
@@ -65,6 +66,7 @@ export function FindingDetailPage() {
       setForm({
         title: finding.title,
         description: finding.description,
+        remediation: finding.remediation,
         category: finding.category ?? '',
         readyToReport: finding.readyToReport,
         severity: finding.severity ?? '',
@@ -90,6 +92,7 @@ export function FindingDetailPage() {
       const patch: Record<string, unknown> = {
         title: form.title,
         description: form.description,
+        remediation: form.remediation,
         category: form.category || null,
         readyToReport: form.readyToReport,
       };
@@ -306,6 +309,20 @@ export function FindingDetailPage() {
             rows={6}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
+            disabled={!canWrite}
+            title={readOnlyTitle}
+          />
+        </Field>
+        <Field
+          label="Remediation"
+          htmlFor="frem"
+          hint="Recommended fix / guidance (shown in the report)"
+        >
+          <Textarea
+            id="frem"
+            rows={6}
+            value={form.remediation}
+            onChange={(e) => setForm({ ...form, remediation: e.target.value })}
             disabled={!canWrite}
             title={readOnlyTitle}
           />

@@ -38,6 +38,8 @@ const reporter = {
   testConnection: (): Promise<ConnectionResult> => ipcRenderer.invoke(CH.testConnection),
   listEngagements: (): Promise<EngagementLite[]> => ipcRenderer.invoke(CH.listEngagements),
   listTags: (slug: string): Promise<TagLite[]> => ipcRenderer.invoke(CH.listTags, slug),
+  createTag: (slug: string, input: { name: string; colorName: string }): Promise<TagLite> =>
+    ipcRenderer.invoke(CH.createTag, slug, input),
   listEvidence: (slug: string): Promise<EvidenceLite[]> =>
     ipcRenderer.invoke(CH.listEvidence, slug),
   setEngagement: (slug: string | null): Promise<DesktopSettings> =>
