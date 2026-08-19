@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-19
+
 ### Added
 
 - **Client-ready report, greatly expanded.** The exported PDF now follows a full
