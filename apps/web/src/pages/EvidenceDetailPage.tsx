@@ -149,7 +149,9 @@ export function EvidenceDetailPage() {
 
       <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-3">
-          <EvidenceContent evidence={evidence} slug={slug} />
+          {/* Caption off here: the title is shown once, in the editable Title
+              field above the description in the Edit card. */}
+          <EvidenceContent evidence={evidence} slug={slug} showCaption={false} />
 
           {!isComment && (
             <Card className="space-y-3 p-4">
