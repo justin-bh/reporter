@@ -50,7 +50,7 @@ const program = new Command();
 program
   .name('reporter-term')
   .description('Record terminal sessions and upload them to reporter as evidence')
-  .version('0.4.0');
+  .version('0.5.0');
 
 program
   .command('record', { isDefault: true })
