@@ -25,6 +25,7 @@ import {
 import {
   WATERMARK_LAYERS,
   WATERMARK_LAYER_LABELS,
+  WATERMARK_MAX_CHARS,
   WATERMARK_OPACITIES,
   WATERMARK_OPACITY_LABELS,
   type Contact,
@@ -165,7 +166,9 @@ export function EngagementSettingsPage() {
         executiveSummary: eng.executiveSummary ?? '',
         methodology: eng.methodology ?? '',
         wmEnabled: eng.watermarkEnabled ?? true,
-        wmText: eng.watermarkText ?? '',
+        // Clamp to the current cap so an engagement that saved a longer watermark
+        // under the old (120-char) limit doesn't block autosave of the whole form.
+        wmText: (eng.watermarkText ?? '').slice(0, WATERMARK_MAX_CHARS),
         wmColor: eng.watermarkColor ?? '#64748b',
         wmOpacity: eng.watermarkOpacity ?? 'medium',
         wmLayer: eng.watermarkLayer ?? 'behind',
@@ -221,7 +224,8 @@ export function EngagementSettingsPage() {
         executiveSummary: orNull(v.executiveSummary),
         methodology: orNull(v.methodology),
         watermarkEnabled: v.wmEnabled,
-        watermarkText: orNull(v.wmText),
+        // Slice defensively so a legacy over-long value can never 400 the patch.
+        watermarkText: orNull(v.wmText.slice(0, WATERMARK_MAX_CHARS)),
         watermarkColor: v.wmColor,
         watermarkOpacity: v.wmOpacity,
         watermarkLayer: v.wmLayer,
@@ -608,11 +612,16 @@ export function EngagementSettingsPage() {
           onChange={(e) => patchForm('wmEnabled', e.target.checked)}
         />
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Watermark text" htmlFor="wm-text" hint="Defaults to CONFIDENTIAL">
+          <Field
+            label="Watermark text"
+            htmlFor="wm-text"
+            hint={`Defaults to CONFIDENTIAL. Up to ${WATERMARK_MAX_CHARS} characters.`}
+          >
             <Input
               id="wm-text"
               value={form.wmText}
               placeholder="CONFIDENTIAL"
+              maxLength={WATERMARK_MAX_CHARS}
               onChange={(e) => patchForm('wmText', e.target.value)}
               onBlur={() => void flush()}
               disabled={!isEngAdmin || !form.wmEnabled}

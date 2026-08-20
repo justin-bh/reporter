@@ -719,6 +719,15 @@ export function useCreateSavedQuery(slug: string) {
   });
 }
 
+export function useUpdateSavedQuery(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; name?: string; query?: string }) =>
+      api.put<SavedQuery>(`/web/engagements/${slug}/queries/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['queries', slug] }),
+  });
+}
+
 export function useDeleteSavedQuery(slug: string) {
   const qc = useQueryClient();
   return useMutation({

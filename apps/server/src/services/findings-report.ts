@@ -17,6 +17,7 @@ import {
   GOAL_STATUS_LABELS,
   SEVERITY_LABELS,
   SEVERITY_RANK,
+  executionTimelineConfigSchema,
   iso21434Ref,
   unr155Ref,
   tagColor,
@@ -25,9 +26,11 @@ import {
   type EvidenceGrouping,
   type EvidenceType,
   type ExecutionSubsection,
+  type ExecutionTimelineConfig,
   type FindingsExport,
   type FindingKind,
   type FixEffort,
+  type ParsedQuery,
   type RecommendationItem,
   type ReportCustomSection,
   type ReportSectionEntry,
@@ -39,6 +42,7 @@ import {
   type ThreatDiagram,
 } from '@reporter/shared';
 import { evidenceContentMime } from '../routes/shared-evidence.js';
+import { buildEvidenceWhere } from '../helpers/timeline-filter.js';
 import { fetchGoalsTree, progressFromTree } from './goals.js';
 import { getReportSettings } from './report-settings.js';
 import {
@@ -48,6 +52,7 @@ import {
   prose,
   reportCss,
   watermarkCss,
+  watermarkFontSize,
   watermarkMarkup,
 } from './report-style.js';
 
@@ -351,16 +356,35 @@ function standardsBlock(iso: string[], unr: string[]): string {
   return parts.length ? `<h4 class="sub">Standards Mapping</h4>${parts.join('')}` : '';
 }
 
+/** Which detail sub-blocks of a finding card to render (per the section config). */
+interface FindingParts {
+  impact: boolean;
+  standards: boolean;
+  remediation: boolean;
+  attackPath: boolean;
+  attachedEvidence: boolean;
+}
+/** All finding sub-blocks on — the default when a report isn't section-configured. */
+const ALL_FINDING_PARTS: FindingParts = {
+  impact: true,
+  standards: true,
+  remediation: true,
+  attackPath: true,
+  attachedEvidence: true,
+};
+
 /**
  * Render one weakness's detailed subsection (heading, meta, description, impact,
  * standards mapping, remediation, evidence). `label` is the cross-reference id
- * (e.g. "W1"). Strengths are summary-table only and never rendered here.
+ * (e.g. "W1"). `parts` gates the optional sub-blocks (Detailed Findings section
+ * toggles). Strengths are summary-table only and never rendered here.
  */
 async function renderFinding(
   app: FastifyInstance,
   f: GatheredFinding,
   label: string,
   budget: Budget,
+  parts: FindingParts = ALL_FINDING_PARTS,
 ): Promise<string> {
   // Split into the two buckets. `gather` already orders Attack Path first, each
   // bucket by its own position, so filtering preserves the intended order.
@@ -377,15 +401,17 @@ async function renderFinding(
     meta.push(`<strong>Fix effort:</strong> ${esc(FIX_EFFORT_LABELS[f.fixEffort])}`);
 
   const descHtml = prose(f.description) || '<p class="pp muted">No description provided.</p>';
-  const impactHtml = f.impact.trim() ? `<h4 class="sub">Impact</h4>${prose(f.impact)}` : '';
-  const standardsHtml = standardsBlock(f.iso21434Refs, f.unr155Refs);
-  const remediationHtml = f.remediation.trim()
-    ? `<h4 class="sub">Remediation</h4>${prose(f.remediation)}`
-    : '';
+  const impactHtml =
+    parts.impact && f.impact.trim() ? `<h4 class="sub">Impact</h4>${prose(f.impact)}` : '';
+  const standardsHtml = parts.standards ? standardsBlock(f.iso21434Refs, f.unr155Refs) : '';
+  const remediationHtml =
+    parts.remediation && f.remediation.trim()
+      ? `<h4 class="sub">Remediation</h4>${prose(f.remediation)}`
+      : '';
 
   // Render evidence sequentially so at most one blob is held in memory at once.
   let pathHtml = '';
-  if (pathEvidence.length > 0) {
+  if (parts.attackPath && pathEvidence.length > 0) {
     const steps: string[] = [];
     for (let s = 0; s < pathEvidence.length; s++) {
       steps.push(await renderPathStep(app, pathEvidence[s]!, s + 1, budget));
@@ -393,14 +419,18 @@ async function renderFinding(
     pathHtml = `<h4 class="sub">Attack Path (${pathEvidence.length})</h4><div class="path">${steps.join('\n')}</div>`;
   }
 
+  const showAttached = parts.attachedEvidence && attachedEvidence.length > 0;
   const attachedParts: string[] = [];
-  for (const e of attachedEvidence) attachedParts.push(await renderEvidence(app, e, budget));
-  const attachedHtml =
-    attachedEvidence.length > 0
-      ? `<h4 class="sub">Attached Evidence (${attachedEvidence.length})</h4>${attachedParts.join('\n')}`
-      : pathEvidence.length === 0
-        ? '<p class="pp muted">No evidence attached.</p>'
-        : '';
+  if (showAttached) {
+    for (const e of attachedEvidence) attachedParts.push(await renderEvidence(app, e, budget));
+  }
+  const attachedHtml = showAttached
+    ? `<h4 class="sub">Attached Evidence (${attachedEvidence.length})</h4>${attachedParts.join('\n')}`
+    : // Only claim "no evidence" when the finding genuinely has none — not when a
+      // section toggle hid it.
+      pathEvidence.length === 0 && attachedEvidence.length === 0
+      ? '<p class="pp muted">No evidence attached.</p>'
+      : '';
 
   return `
     <div class="finding">
@@ -852,9 +882,59 @@ function renderCustomSection(section: ReportCustomSection): string {
   return section.body.trim() ? prose(section.body) : '<p class="pp muted">No content.</p>';
 }
 
-/** Hand-authored Assessment Execution narrative: titled subsections + evidence. */
+/**
+ * Load and map the evidence for a `timeline`-kind execution subsection into the
+ * `TimelineEvidence` shape, reusing the same `buildEvidenceWhere` semantics as the
+ * interactive Evidence tab so a subsection's filters mean exactly what they do
+ * there. `starred` is resolved against `userId` (the report's author).
+ */
+async function gatherSubsectionTimeline(
+  app: FastifyInstance,
+  engagementId: number,
+  userId: number,
+  cfg: ExecutionTimelineConfig,
+): Promise<TimelineEvidence[]> {
+  const parsed: ParsedQuery = {
+    text: [],
+    tags: cfg.tags,
+    operators: [],
+    types: cfg.types,
+    dateRanges: [],
+    uuids: [],
+    starred: cfg.starredOnly ? true : undefined,
+    // "Include comments" off (default) hides comment evidence, like the tab's
+    // "Hide comments"; on leaves the constraint unset so comments are included.
+    noComments: cfg.includeComments ? undefined : true,
+    sortAsc: true,
+  };
+  const where = buildEvidenceWhere(parsed, engagementId, userId);
+  const rows = await app.db.evidence.findMany({
+    where,
+    include: { tags: { include: { tag: true } }, operator: true },
+    orderBy: { occurredAt: 'asc' },
+  });
+  return rows.map((e) => ({
+    uuid: e.uuid,
+    title: e.title,
+    description: e.description,
+    contentType: e.contentType,
+    contentSubtype: e.contentSubtype,
+    occurredAt: e.occurredAt,
+    fullBlobKey: e.fullBlobKey,
+    operatorName: `${e.operator.firstName} ${e.operator.lastName}`.trim() || 'Unknown',
+    tags: e.tags.map((t) => ({ name: t.tag.name, colorName: t.tag.colorName })),
+  }));
+}
+
+/**
+ * Assessment Execution subsections. A `narrative` subsection renders its titled
+ * prose + hand-embedded evidence; a `timeline` subsection renders a filtered,
+ * grouped view of the engagement's captured evidence (see `ExecutionTimelineConfig`).
+ */
 async function renderExecutionNarrative(
   app: FastifyInstance,
+  engagementId: number,
+  userId: number,
   subsections: ExecutionSubsection[],
   evidenceByUuid: Map<string, GatheredEvidence>,
   budget: Budget,
@@ -862,6 +942,18 @@ async function renderExecutionNarrative(
   const parts: string[] = [];
   for (const sub of subsections) {
     if (!sub.title.trim()) continue;
+
+    if (sub.kind === 'timeline') {
+      const cfg = executionTimelineConfigSchema.parse(sub.timeline ?? {});
+      const items = await gatherSubsectionTimeline(app, engagementId, userId, cfg);
+      const body =
+        items.length === 0
+          ? '<p class="pp muted">No evidence matches this timeline’s filters.</p>'
+          : await renderTimeline(app, items, cfg.group, budget);
+      parts.push(`<h3 class="block-h">${esc(sub.title)}</h3>${body}`);
+      continue;
+    }
+
     const body = sub.body?.trim() ? prose(sub.body) : '';
     const evParts: string[] = [];
     for (const ref of sub.evidence) {
@@ -882,6 +974,9 @@ export async function buildReportHtml(
   eng: EngagementRef,
   generatedAt: Date,
   opts: ReportOptions,
+  /** The report's author; resolves per-user filters (e.g. a timeline subsection's
+   *  "starred only"). Always the requesting user on the web report routes. */
+  userId: number,
   precomputedFiles?: SupportingFileMeta[],
 ): Promise<string> {
   // Narrative is the default Assessment Execution view; the auto timeline is opt-in.
@@ -1105,8 +1200,7 @@ export async function buildReportHtml(
       <div class="stat"><div class="k">Total evidence</div><div class="v">${totalEvidenceCount}</div></div>
       <div class="stat"><div class="k">Window</div><div class="v">${windowDays ?? '—'}<span class="u"> days</span></div></div>
     </div>`;
-
-  const execInner = `${summaryProse}${scopeHtml}<h3 class="block-h">Severity Distribution</h3>${sevBar}${sevCards}${statsStrip}`;
+  const severityBlock = `<h3 class="block-h">Severity Distribution</h3>${sevBar}${sevCards}`;
 
   const catCounts = new Map<string, number>();
   for (const f of weaknesses) {
@@ -1140,7 +1234,6 @@ export async function buildReportHtml(
       unr: f.unr155Refs,
     })),
   ];
-  const findingsSummaryInner = `${renderStrengthsTable(strengths)}${renderWeaknessesTable(weaknesses)}${renderRecommendationsTable(recommendations)}${categoryTable}${renderStandardsTraceability(traceItems)}`;
 
   const methodologyInner = engagement.methodology?.trim()
     ? prose(engagement.methodology)
@@ -1178,6 +1271,8 @@ export async function buildReportHtml(
   for (const entry of sectionEntries) {
     if (!entry.enabled) continue;
     const key = entry.key;
+    // A section sub-item renders unless its entry explicitly turned it off.
+    const partOn = (opt: string): boolean => entry.options?.[opt] !== false;
 
     if (key.startsWith('custom:')) {
       const cs = customSections.find((c) => c.id === key.slice('custom:'.length) && c.title.trim());
@@ -1192,25 +1287,44 @@ export async function buildReportHtml(
     }
 
     switch (key) {
-      case 'executiveSummary':
-        rendered.push({ kicker: 'Overview', title: 'Executive Summary', tocTitle: 'Executive Summary', inner: execInner });
+      case 'executiveSummary': {
+        const parts: string[] = [];
+        if (partOn('summary')) parts.push(summaryProse);
+        if (partOn('scope')) parts.push(scopeHtml);
+        if (partOn('severity')) parts.push(severityBlock);
+        if (partOn('stats')) parts.push(statsStrip);
+        rendered.push({ kicker: 'Overview', title: 'Executive Summary', tocTitle: 'Executive Summary', inner: parts.join('') });
         break;
-      case 'assessmentFindings':
-        rendered.push({ kicker: 'Summary', title: 'Assessment Findings', tocTitle: 'Assessment Findings', inner: findingsSummaryInner });
+      }
+      case 'assessmentFindings': {
+        const parts: string[] = [];
+        if (partOn('strengths')) parts.push(renderStrengthsTable(strengths));
+        if (partOn('weaknesses')) parts.push(renderWeaknessesTable(weaknesses));
+        if (partOn('recommendations')) parts.push(renderRecommendationsTable(recommendations));
+        if (partOn('categories')) parts.push(categoryTable);
+        if (partOn('standards')) parts.push(renderStandardsTraceability(traceItems));
+        rendered.push({ kicker: 'Summary', title: 'Assessment Findings', tocTitle: 'Assessment Findings', inner: parts.join('') });
         break;
+      }
       case 'methodology':
         rendered.push({ kicker: 'Approach', title: 'Methodology & Approach', tocTitle: 'Methodology & Approach', inner: methodologyInner });
         break;
       case 'threatModel':
-        if (hasThreatModel)
-          rendered.push({
-            kicker: 'Attack Surface',
-            title: 'Threat Model',
-            tocTitle: 'Threat Model',
-            inner:
-              renderThreatModel(engagement.threatModelNarrative, threatDiagrams, budget) ||
-              '<p class="pp muted">No threat model recorded.</p>',
-          });
+        if (hasThreatModel) {
+          const tmNarrative = partOn('narrative') ? engagement.threatModelNarrative : null;
+          const tmDiagrams = partOn('diagrams') ? threatDiagrams : [];
+          const tmInner = renderThreatModel(tmNarrative, tmDiagrams, budget);
+          // `hasThreatModel` already guarantees content exists, so an empty render
+          // means both sub-items were toggled off — skip the section rather than
+          // claim "No threat model recorded" (mirrors renderFinding's evidence guard).
+          if (tmInner)
+            rendered.push({
+              kicker: 'Attack Surface',
+              title: 'Threat Model',
+              tocTitle: 'Threat Model',
+              inner: tmInner,
+            });
+        }
         break;
       case 'assessmentExecution': {
         const present = (renderNarrative && hasNarrativeContent) || includeTimeline;
@@ -1252,6 +1366,8 @@ export async function buildReportHtml(
           }
           narrativeHtml = await renderExecutionNarrative(
             app,
+            eng.id,
+            userId,
             executionSubsections,
             evidenceByUuid,
             budget,
@@ -1299,12 +1415,19 @@ export async function buildReportHtml(
           });
         break;
       case 'detailedFindings': {
+        const findingParts: FindingParts = {
+          impact: partOn('impact'),
+          standards: partOn('standards'),
+          remediation: partOn('remediation'),
+          attackPath: partOn('attackPath'),
+          attachedEvidence: partOn('attachedEvidence'),
+        };
         const findingBlocks: string[] = [];
         if (weaknesses.length === 0) {
           findingBlocks.push('<p class="pp muted">No weaknesses to report.</p>');
         } else {
           for (let i = 0; i < weaknesses.length; i++) {
-            findingBlocks.push(await renderFinding(app, weaknesses[i]!, `W${i + 1}`, budget));
+            findingBlocks.push(await renderFinding(app, weaknesses[i]!, `W${i + 1}`, budget, findingParts));
           }
         }
         rendered.push({
@@ -1317,13 +1440,20 @@ export async function buildReportHtml(
         break;
       }
       case 'supportingInformation':
-        if (hasSupporting)
+        if (hasSupporting) {
+          const parts: string[] = [];
+          if (partOn('softwareTested'))
+            parts.push(renderSoftwareTable('Client Software Tested', softwareTested));
+          if (partOn('thirdParty'))
+            parts.push(renderSoftwareTable('3rd-Party Software Used', thirdPartySoftware));
+          if (partOn('filesAttached')) parts.push(renderFilesAttached(supportingFiles));
           rendered.push({
             kicker: 'Reference',
             title: 'Supporting Information',
             tocTitle: 'Supporting Information',
-            inner: `${renderSoftwareTable('Client Software Tested', softwareTested)}${renderSoftwareTable('3rd-Party Software Used', thirdPartySoftware)}${renderFilesAttached(supportingFiles)}`,
+            inner: parts.join(''),
           });
+        }
         break;
       case 'appendix':
         rendered.push({
@@ -1364,8 +1494,10 @@ export async function buildReportHtml(
     WATERMARK_OPACITY_VALUES[engagement.watermarkOpacity as keyof typeof WATERMARK_OPACITY_VALUES] ??
     WATERMARK_OPACITY_VALUES.medium;
   const wmLayer = engagement.watermarkLayer === 'front' ? 'front' : 'behind';
+  // Scale the font so the rotated word always fits the page (no clipping).
+  const wmFontSize = watermarkFontSize(wmText);
   const watermarkStyle = engagement.watermarkEnabled
-    ? watermarkCss(wmColor, wmOpacity, wmLayer)
+    ? watermarkCss(wmColor, wmOpacity, wmLayer, wmFontSize)
     : '';
   const watermark = engagement.watermarkEnabled ? watermarkMarkup(wmText) : '';
 
