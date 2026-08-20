@@ -31,6 +31,7 @@ import {
   DeleteEvidenceDialog,
   type DeleteEvidenceMode,
 } from '../components/evidence/DeleteEvidenceDialog.js';
+import { LinkedGoalsSection } from '../components/goals/LinkedGoalsSection.js';
 
 interface EvidenceForm {
   title: string;
@@ -247,6 +248,10 @@ export function EvidenceDetailPage() {
               </Button>
             </div>
           </Card>
+
+          {!isComment && (
+            <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
+          )}
         </div>
       </div>
 

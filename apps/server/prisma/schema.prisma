@@ -56,6 +56,20 @@ enum FindingKind {
   strength
 }
 
+/**
+ * Lifecycle state of a single engagement goal (an area of interest under a
+ * testing activity). Progress rolls up from these: a goal advances to
+ * `in_progress` automatically when its first evidence/finding is linked, and to
+ * `complete` when the operator marks it done. `not_applicable` goals are
+ * excluded from the completion denominator.
+ */
+enum GoalStatus {
+  not_started
+  in_progress
+  complete
+  not_applicable
+}
+
 model User {
   id        Int       @id @default(autoincrement())
   slug      String    @unique
@@ -199,6 +213,17 @@ model Engagement {
   clientContacts           Json    @default("[]") @map("client_contacts")
   softwareTested           Json    @default("[]") @map("software_tested")
   thirdPartySoftware       Json    @default("[]") @map("third_party_software")
+  // Test approach (e.g. "Gray Box") and the narrative statement of engagement
+  // objectives, both often seeded from an imported proposal. `objectivesNarrative`
+  // heads the Goals tab and can also feed the report.
+  testApproach        String? @map("test_approach")
+  objectivesNarrative String? @map("objectives_narrative")
+  // Report composition: an ordered, toggleable section list + options driving the
+  // exported report (Reports tab). Empty object means "use the canonical default
+  // flow"; the shape is validated by reportConfigSchema in @reporter/shared.
+  reportConfig Json @default("{}") @map("report_config")
+  // Raw JSON of the last imported proposal, kept verbatim for provenance/audit.
+  proposalImport Json? @map("proposal_import")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 
@@ -208,8 +233,105 @@ model Engagement {
   findings    Finding[]
   tags        Tag[]
   savedQueries SavedQuery[]
+  targets     EngagementTarget[]
 
   @@map("engagements")
+}
+
+/**
+ * A system/device under scope for an engagement (proposal "device"). The top of
+ * the goal hierarchy: Target → Activity → Goal. Ordered manually for the report's
+ * Scope & Objectives Coverage section.
+ */
+model EngagementTarget {
+  id           Int      @id @default(autoincrement())
+  engagementId Int      @map("engagement_id")
+  name         String
+  description  String   @default("")
+  position     Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  engagement Engagement       @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  activities TargetActivity[]
+
+  @@index([engagementId, position])
+  @@map("engagement_targets")
+}
+
+/**
+ * A testing activity performed against a target (proposal "interface"), with a
+ * category (e.g. "Software / Application"). Each activity gets an engagement tag
+ * (`tagId`) so evidence tagged with it correlates to the activity on the timeline;
+ * the tag is cleared (SetNull) if deleted, leaving the activity intact.
+ */
+model TargetActivity {
+  id        Int      @id @default(autoincrement())
+  targetId  Int      @map("target_id")
+  name      String
+  category  String   @default("")
+  tagId     Int?     @map("tag_id")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  target EngagementTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  tag    Tag?             @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  goals  ActivityGoal[]
+
+  @@index([targetId, position])
+  @@index([tagId])
+  @@map("target_activities")
+}
+
+/**
+ * A goal / area of interest under an activity (proposal "subItem") — the
+ * trackable unit. `isRetest` flags a goal carried over from a prior report (e.g.
+ * a "W1-…" retest item). Evidence and findings link to it to drive progress.
+ */
+model ActivityGoal {
+  id         Int        @id @default(autoincrement())
+  activityId Int        @map("activity_id")
+  title      String
+  status     GoalStatus @default(not_started)
+  isRetest   Boolean    @default(false) @map("is_retest")
+  notes      String     @default("")
+  position   Int        @default(0)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  activity TargetActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  evidence GoalEvidence[]
+  findings GoalFinding[]
+
+  @@index([activityId, position])
+  @@map("activity_goals")
+}
+
+model GoalEvidence {
+  goalId     Int      @map("goal_id")
+  evidenceId Int      @map("evidence_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  goal     ActivityGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  evidence Evidence     @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([goalId, evidenceId])
+  @@index([evidenceId])
+  @@map("goal_evidence")
+}
+
+model GoalFinding {
+  goalId    Int      @map("goal_id")
+  findingId Int      @map("finding_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  goal    ActivityGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  finding Finding      @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@id([goalId, findingId])
+  @@index([findingId])
+  @@map("goal_findings")
 }
 
 model UserEngagementRole {
@@ -260,6 +382,7 @@ model Tag {
 
   engagement Engagement     @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   evidence  EvidenceTag[]
+  activities TargetActivity[]
 
   @@unique([engagementId, name])
   @@index([engagementId])
@@ -332,6 +455,7 @@ model Evidence {
   findings  EvidenceFinding[]
   metadata  EvidenceMetadata[]
   userPrefs UserEvidencePref[]
+  goals     GoalEvidence[]
 
   @@index([engagementId, occurredAt])
   @@index([parentEvidenceId])
@@ -393,6 +517,7 @@ model Finding {
   engagement Engagement         @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   category  FindingCategory?  @relation(fields: [categoryId], references: [id])
   evidence  EvidenceFinding[]
+  goals     GoalFinding[]
 
   @@index([engagementId, position])
   @@map("findings")

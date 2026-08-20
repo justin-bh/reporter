@@ -37,6 +37,7 @@ import { AttachedEvidenceSection } from '../components/findings/AttachedEvidence
 import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.js';
 import { CategorySelect } from '../components/findings/CategorySelect.js';
 import { StandardsPicker } from '../components/findings/StandardsPicker.js';
+import { LinkedGoalsSection } from '../components/goals/LinkedGoalsSection.js';
 
 interface FindingForm {
   kind: FindingKind;
@@ -433,6 +434,8 @@ export function FindingDetailPage() {
           {canWrite && <SaveStatusIndicator status={status} />}
         </div>
       </Card>
+
+      <LinkedGoalsSection slug={slug} kind="finding" uuid={uuid} canWrite={canWrite} />
 
       {/* Evidence — full width, two buckets below the details. */}
       <AttackPathSection

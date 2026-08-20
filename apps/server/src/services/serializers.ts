@@ -10,17 +10,19 @@ import type {
   Tag as DbTag,
   User as DbUser,
 } from '@prisma/client';
-import type {
-  ApiKey,
-  Evidence,
-  FindingEvidence,
-  Finding,
-  Engagement,
-  EngagementRole,
-  ReportSettings,
-  SavedQuery,
-  Tag,
-  User,
+import {
+  reportConfigSchema,
+  type ApiKey,
+  type Evidence,
+  type EngagementProgress,
+  type FindingEvidence,
+  type Finding,
+  type Engagement,
+  type EngagementRole,
+  type ReportSettings,
+  type SavedQuery,
+  type Tag,
+  type User,
 } from '@reporter/shared';
 
 export function serializeUser(u: DbUser, extras: { mustResetPassword?: boolean } = {}): User {
@@ -45,6 +47,8 @@ export function serializeEngagement(
     numUsers?: number;
     numEvidence?: number;
     numFindings?: number;
+    /** Rolled-up goal progress; present once the engagement has goals. */
+    progress?: EngagementProgress;
     /**
      * Include the structured report content (scope, recommendations, threat model +
      * diagrams, execution narrative, contacts, software). These are heavy (diagrams
@@ -64,15 +68,22 @@ export function serializeEngagement(
     actualEndAt: eng.actualEndAt?.toISOString() ?? null,
     clientName: eng.clientName,
     assessmentType: eng.assessmentType,
+    testApproach: eng.testApproach,
     location: eng.location,
     scope: eng.scope,
     executiveSummary: eng.executiveSummary,
     methodology: eng.methodology,
+    objectivesNarrative: eng.objectivesNarrative,
     watermarkEnabled: eng.watermarkEnabled,
     watermarkText: eng.watermarkText,
     watermarkColor: eng.watermarkColor,
     watermarkOpacity: eng.watermarkOpacity as Engagement['watermarkOpacity'],
     watermarkLayer: eng.watermarkLayer as Engagement['watermarkLayer'],
+    // Report config is always returned, normalized to the canonical default when
+    // the engagement has never been configured (stored as `{}`).
+    reportConfig: reportConfigSchema.parse(eng.reportConfig ?? {}),
+    hasProposalImport: eng.proposalImport != null,
+    progress: extras.progress,
     role: extras.role,
     favorite: extras.favorite,
     numUsers: extras.numUsers,

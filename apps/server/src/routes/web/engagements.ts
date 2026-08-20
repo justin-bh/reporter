@@ -8,6 +8,10 @@ import {
 } from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import { serializeEngagement, serializeUser } from '../../services/serializers.js';
+import {
+  computeEngagementProgress,
+  computeOneEngagementProgress,
+} from '../../services/goals.js';
 
 export async function engagementRoutes(app: FastifyInstance): Promise<void> {
   // List the engagements the user is a member of — for everyone, site admins
@@ -24,6 +28,10 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: 'desc' },
     });
 
+    const progress = await computeEngagementProgress(
+      app,
+      engs.map((e) => e.id),
+    );
     return engs.map((eng) =>
       serializeEngagement(eng, {
         role: eng.roles[0]?.role,
@@ -31,6 +39,7 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         numUsers: eng._count.roles,
         numEvidence: eng._count.evidence,
         numFindings: eng._count.findings,
+        progress: progress.get(eng.id),
       }),
     );
   });
@@ -77,12 +86,14 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
           prefs: { where: { userId: req.authedUser!.id }, select: { isFavorite: true } },
         },
       });
+      const progress = await computeOneEngagementProgress(app, eng.id);
       return serializeEngagement(eng, {
         role: req.authedUser!.admin ? 'admin' : eng.roles[0]?.role,
         favorite: eng.prefs[0]?.isFavorite ?? false,
         numUsers: eng._count.roles,
         numEvidence: eng._count.evidence,
         numFindings: eng._count.findings,
+        progress,
         // The detail view (engagement settings) needs the full structured report content.
         includeContent: true,
       });
@@ -107,11 +118,16 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       const orNull = (v: string | null | undefined) => (v == null || v === '' ? null : v);
       if (body.clientName !== undefined) data.clientName = orNull(body.clientName);
       if (body.assessmentType !== undefined) data.assessmentType = orNull(body.assessmentType);
+      if (body.testApproach !== undefined) data.testApproach = orNull(body.testApproach);
       if (body.location !== undefined) data.location = orNull(body.location);
       if (body.scope !== undefined) data.scope = orNull(body.scope);
       if (body.executiveSummary !== undefined)
         data.executiveSummary = orNull(body.executiveSummary);
       if (body.methodology !== undefined) data.methodology = orNull(body.methodology);
+      if (body.objectivesNarrative !== undefined)
+        data.objectivesNarrative = orNull(body.objectivesNarrative);
+      // Report composition config: the whole object is replaced when present.
+      if (body.reportConfig !== undefined) data.reportConfig = body.reportConfig;
       // Structured report content (JSON lists). Assign the validated array directly —
       // an empty array clears the list. The threat-model narrative clears to null.
       if (body.scopeTargets !== undefined) data.scopeTargets = body.scopeTargets;
@@ -148,9 +164,10 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const eng = await app.db.engagement.update({ where: { slug }, data });
+      const progress = await computeOneEngagementProgress(app, eng.id);
       // Return the full structured content (matching the GET detail route) so a
       // direct consumer of the PUT response sees the fields it just set.
-      return serializeEngagement(eng, { includeContent: true });
+      return serializeEngagement(eng, { includeContent: true, progress });
     },
   );
 

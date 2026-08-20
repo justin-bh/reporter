@@ -14,12 +14,14 @@ import {
   EVIDENCE_TYPE_LABELS,
   FINDINGS_EXPORT_VERSION,
   FIX_EFFORT_LABELS,
+  GOAL_STATUS_LABELS,
   SEVERITY_LABELS,
   SEVERITY_RANK,
   iso21434Ref,
   unr155Ref,
   tagColor,
   type Contact,
+  type EngagementProgress,
   type EvidenceGrouping,
   type EvidenceType,
   type ExecutionSubsection,
@@ -27,13 +29,17 @@ import {
   type FindingKind,
   type FixEffort,
   type RecommendationItem,
+  type ReportCustomSection,
+  type ReportSectionEntry,
   type ScopeTarget,
   type Severity,
   type SoftwareItem,
   type StandardRef,
+  type Target,
   type ThreatDiagram,
 } from '@reporter/shared';
 import { evidenceContentMime } from '../routes/shared-evidence.js';
+import { fetchGoalsTree, progressFromTree } from './goals.js';
 import { getReportSettings } from './report-settings.js';
 import {
   FONT_LINKS,
@@ -91,6 +97,16 @@ export interface ReportOptions {
   includeTimeline?: boolean;
   /** Include the Severity & CVSS reference appendix. */
   includeAppendix?: boolean;
+  /**
+   * Ordered, toggleable content sections (from a saved report config). When set,
+   * this drives section order/enablement and supersedes the boolean flags above
+   * (`includeNarrative`/`includeTimeline`/`includeAppendix` are ignored). When
+   * absent, the report renders in the fixed default order using those flags — the
+   * historical behavior.
+   */
+  sections?: ReportSectionEntry[];
+  /** Free-text custom sections referenced by `custom:<id>` keys in `sections`. */
+  customSections?: ReportCustomSection[];
 }
 
 export interface JsonExportOptions extends ReportOptions {
@@ -794,6 +810,48 @@ function renderFilesAttached(files: SupportingFileMeta[]): string {
     <table class="tbl"><thead><tr><th class="num">#</th><th>Filename</th><th>SHA-256</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/**
+ * Scope & Objectives Coverage: per-target tables of activities → goals with each
+ * goal's status and the count of linked findings/evidence, plus a coverage lede.
+ * Driven by the engagement's goals tree (Target → Activity → Goal).
+ */
+function renderScopeCoverage(targets: Target[], progress: EngagementProgress): string {
+  if (targets.length === 0) return '<p class="pp muted">No scope targets recorded.</p>';
+  const retest = '<span class="chip" style="background:#c99a00;color:#1a1400">Retest</span> ';
+  const naNote = progress.notApplicable ? ` (${progress.notApplicable} N/A)` : '';
+  const parts: string[] = [
+    `<p class="lede">${progress.complete} of ${progress.total} goals complete${naNote} — ${progress.percent}% coverage.</p>`,
+  ];
+  for (const t of targets) {
+    const rows: string[] = [];
+    for (const a of t.activities) {
+      const actLabel = `${esc(a.name)}${a.category ? ` <span class="muted">· ${esc(a.category)}</span>` : ''}`;
+      if (a.goals.length === 0) {
+        rows.push(`<tr><td class="title">${actLabel}</td><td class="muted">No goals defined</td><td>—</td><td class="num">—</td></tr>`);
+        continue;
+      }
+      for (const g of a.goals) {
+        rows.push(
+          `<tr><td class="title">${actLabel}</td><td>${g.isRetest ? retest : ''}${esc(g.title)}</td><td>${esc(GOAL_STATUS_LABELS[g.status])}</td><td class="num">${g.numFindings} / ${g.numEvidence}</td></tr>`,
+        );
+      }
+    }
+    const body = rows.length
+      ? rows.join('')
+      : '<tr><td colspan="4" class="muted">No activities recorded.</td></tr>';
+    const desc = t.description.trim() ? `<p class="pp muted">${esc(t.description)}</p>` : '';
+    parts.push(
+      `<h3 class="block-h">${esc(t.name)}</h3>${desc}<table class="tbl"><thead><tr><th>Activity</th><th>Goal</th><th>Status</th><th class="num">Findings / Evidence</th></tr></thead><tbody>${body}</tbody></table>`,
+    );
+  }
+  return parts.join('');
+}
+
+/** A free-text custom report section (title + prose body). */
+function renderCustomSection(section: ReportCustomSection): string {
+  return section.body.trim() ? prose(section.body) : '<p class="pp muted">No content.</p>';
+}
+
 /** Hand-authored Assessment Execution narrative: titled subsections + evidence. */
 async function renderExecutionNarrative(
   app: FastifyInstance,
@@ -888,28 +946,46 @@ export async function buildReportHtml(
   // Supporting files (non-screenshot evidence) for the ZIP + Files Attached table.
   const supportingFiles = precomputedFiles ?? (await gatherSupportingFiles(app, eng));
 
-  // Which optional sections render.
+  // Which optional sections have content to render.
   const hasThreatModel =
     Boolean(engagement.threatModelNarrative?.trim()) || threatDiagrams.length > 0;
-  const hasNarrative = includeNarrative && executionSubsections.some((s) => s.title.trim());
-  const hasExecution = hasNarrative || includeTimeline;
+  const hasNarrativeContent = executionSubsections.some((s) => s.title.trim());
   const hasSupporting =
     softwareTested.some((s) => s.name.trim()) ||
     thirdPartySoftware.some((s) => s.name.trim()) ||
     supportingFiles.length > 0;
 
-  // Section numbers advance only for rendered sections, so the TOC never drifts.
+  // Section order + enablement. An explicit `sections` config drives everything
+  // and turns the narrative on whenever its section is on; without a config we
+  // rebuild the historical fixed order from the legacy boolean flags so existing
+  // callers get byte-identical output.
+  const configured = opts.sections !== undefined;
+  const renderNarrative = configured ? true : includeNarrative;
+  const customSections = opts.customSections ?? [];
+  const sectionEntries: ReportSectionEntry[] = configured
+    ? opts.sections!
+    : [
+        { key: 'executiveSummary', enabled: true },
+        { key: 'assessmentFindings', enabled: true },
+        { key: 'methodology', enabled: true },
+        { key: 'threatModel', enabled: true },
+        { key: 'assessmentExecution', enabled: renderNarrative || includeTimeline },
+        { key: 'scopeCoverage', enabled: false },
+        { key: 'detailedFindings', enabled: true },
+        { key: 'supportingInformation', enabled: true },
+        { key: 'appendix', enabled: includeAppendix },
+      ];
+
+  // Load the goals tree only when the coverage section is actually enabled.
+  const wantCoverage = sectionEntries.some((s) => s.key === 'scopeCoverage' && s.enabled);
+  const coverageTargets: Target[] = wantCoverage ? await fetchGoalsTree(app, eng.id) : [];
+  const coverageProgress: EngagementProgress = progressFromTree(coverageTargets);
+
+  // Section 01 is always Engagement Details; content sections number from 02 in
+  // their configured, rendered order, so the TOC never drifts.
   let secN = 0;
   const nextNum = () => String(++secN).padStart(2, '0');
   const numDetails = nextNum();
-  const numExec = nextNum();
-  const numFindings = nextNum();
-  const numMethod = nextNum();
-  const numThreat = hasThreatModel ? nextNum() : '';
-  const numExecution = hasExecution ? nextNum() : '';
-  const numDetailed = nextNum();
-  const numSupporting = hasSupporting ? nextNum() : '';
-  const numAppendix = includeAppendix ? nextNum() : '';
 
   // ---- Cover -------------------------------------------------------------
   const eyebrow = (engagement.assessmentType || 'Findings Report').toUpperCase();
@@ -990,30 +1066,7 @@ export async function buildReportHtml(
       ${detailsGrid}
     </section>`;
 
-  // ---- Table of Contents -------------------------------------------------
-  const tocRows: string[] = [];
-  tocRows.push(tocItem(numDetails, 'Engagement Details', false));
-  tocRows.push(tocItem(numExec, 'Executive Summary', false));
-  tocRows.push(tocItem(numFindings, 'Assessment Findings', false));
-  tocRows.push(tocItem(numMethod, 'Methodology & Approach', false));
-  if (hasThreatModel) tocRows.push(tocItem(numThreat, 'Threat Model', false));
-  if (hasExecution) tocRows.push(tocItem(numExecution, 'Assessment Execution', false));
-  tocRows.push(tocItem(numDetailed, 'Detailed Findings', false));
-  // Detailed weaknesses by title, numbered as sub-rows (W1, W2, …).
-  weaknesses.forEach((f, i) => {
-    tocRows.push(tocItem(`W${i + 1}`, f.title, true));
-  });
-  if (hasSupporting) tocRows.push(tocItem(numSupporting, 'Supporting Information', false));
-  if (includeAppendix)
-    tocRows.push(tocItem(numAppendix, 'Appendix: Severity & CVSS Reference', false));
-
-  const tocSection = `
-    <section class="section">
-      ${sectionHead('', 'Contents', 'Table of Contents', true)}
-      <div class="toc">${tocRows.join('')}</div>
-    </section>`;
-
-  // ---- Executive Summary -------------------------------------------------
+  // ---- Precompute the content of each (sync) section ---------------------
   const summaryProse = engagement.executiveSummary?.trim()
     ? prose(engagement.executiveSummary)
     : '';
@@ -1053,18 +1106,8 @@ export async function buildReportHtml(
       <div class="stat"><div class="k">Window</div><div class="v">${windowDays ?? '—'}<span class="u"> days</span></div></div>
     </div>`;
 
-  const execSection = `
-    <section class="section">
-      ${sectionHead(numExec, 'Overview', 'Executive Summary')}
-      ${summaryProse}
-      ${scopeHtml}
-      <h3 class="block-h">Severity Distribution</h3>
-      ${sevBar}
-      ${sevCards}
-      ${statsStrip}
-    </section>`;
+  const execInner = `${summaryProse}${scopeHtml}<h3 class="block-h">Severity Distribution</h3>${sevBar}${sevCards}${statsStrip}`;
 
-  // ---- Assessment Findings (summary tables) ------------------------------
   const catCounts = new Map<string, number>();
   for (const f of weaknesses) {
     const key = f.category || 'Uncategorized';
@@ -1097,165 +1140,218 @@ export async function buildReportHtml(
       unr: f.unr155Refs,
     })),
   ];
+  const findingsSummaryInner = `${renderStrengthsTable(strengths)}${renderWeaknessesTable(weaknesses)}${renderRecommendationsTable(recommendations)}${categoryTable}${renderStandardsTraceability(traceItems)}`;
 
-  const findingsSummarySection = `
-    <section class="section">
-      ${sectionHead(numFindings, 'Summary', 'Assessment Findings')}
-      ${renderStrengthsTable(strengths)}
-      ${renderWeaknessesTable(weaknesses)}
-      ${renderRecommendationsTable(recommendations)}
-      ${categoryTable}
-      ${renderStandardsTraceability(traceItems)}
-    </section>`;
-
-  // ---- Methodology & Approach --------------------------------------------
-  const methodologyProse = engagement.methodology?.trim()
+  const methodologyInner = engagement.methodology?.trim()
     ? prose(engagement.methodology)
     : `<p class="pp">This assessment followed a structured, evidence-driven methodology: reconnaissance and scoping, active testing against the in-scope surface, verification and impact analysis of each issue, and consolidation of results into the prioritized findings that follow. Every finding is supported by the captured evidence recorded during the engagement.</p>`;
-  const methodSection = `
-    <section class="section">
-      ${sectionHead(numMethod, 'Approach', 'Methodology & Approach')}
-      ${methodologyProse}
-    </section>`;
 
-  // ---- Threat Model ------------------------------------------------------
-  const threatModelSection = hasThreatModel
-    ? `
-    <section class="section">
-      ${sectionHead(numThreat, 'Attack Surface', 'Threat Model')}
-      ${renderThreatModel(engagement.threatModelNarrative, threatDiagrams, budget) || '<p class="pp muted">No threat model recorded.</p>'}
-    </section>`
-    : '';
-
-  // ---- Assessment Execution (hand-authored narrative + optional timeline) --
-  let executionSection = '';
-  if (hasExecution) {
-    let narrativeHtml = '';
-    if (hasNarrative) {
-      const refUuids = [
-        ...new Set(executionSubsections.flatMap((s) => s.evidence.map((e) => e.evidenceUuid))),
-      ];
-      const evidenceByUuid = new Map<string, GatheredEvidence>();
-      if (refUuids.length) {
-        const rows = await app.db.evidence.findMany({
-          where: { engagementId: eng.id, uuid: { in: refUuids } },
-          select: {
-            uuid: true,
-            title: true,
-            description: true,
-            contentType: true,
-            contentSubtype: true,
-            originalFilename: true,
-            occurredAt: true,
-            fullBlobKey: true,
-          },
-        });
-        for (const r of rows) {
-          evidenceByUuid.set(r.uuid, {
-            uuid: r.uuid,
-            title: r.title,
-            description: r.description,
-            contentType: r.contentType,
-            contentSubtype: r.contentSubtype,
-            originalFilename: r.originalFilename,
-            occurredAt: r.occurredAt,
-            fullBlobKey: r.fullBlobKey,
-            caption: '',
-            inPath: false,
-          });
-        }
-      }
-      narrativeHtml = await renderExecutionNarrative(
-        app,
-        executionSubsections,
-        evidenceByUuid,
-        budget,
-      );
-    }
-
-    let timelineHtml = '';
-    if (includeTimeline) {
-      const evidence = await app.db.evidence.findMany({
-        where: { engagementId: eng.id, parentEvidenceId: null },
-        include: { tags: { include: { tag: true } }, operator: true },
-        orderBy: { occurredAt: 'asc' },
-      });
-      const tlItems: TimelineEvidence[] = evidence.map((e) => ({
-        uuid: e.uuid,
-        title: e.title,
-        description: e.description,
-        contentType: e.contentType,
-        contentSubtype: e.contentSubtype,
-        occurredAt: e.occurredAt,
-        fullBlobKey: e.fullBlobKey,
-        operatorName: `${e.operator.firstName} ${e.operator.lastName}`.trim() || 'Unknown',
-        tags: e.tags.map((t) => ({ name: t.tag.name, colorName: t.tag.colorName })),
-      }));
-      const groupLabel = EVIDENCE_GROUPING_LABELS[evidenceGroup];
-      const body = await renderTimeline(app, tlItems, evidenceGroup, budget);
-      timelineHtml = `<h3 class="block-h">Evidence Log · ${esc(groupLabel)}</h3>${body}`;
-    }
-
-    executionSection = `
-    <section class="section">
-      ${sectionHead(numExecution, 'Walkthrough', 'Assessment Execution')}
-      ${narrativeHtml}
-      ${timelineHtml}
-    </section>`;
-  }
-
-  // ---- Detailed Findings (weaknesses) ------------------------------------
-  const findingBlocks: string[] = [];
-  if (weaknesses.length === 0) {
-    findingBlocks.push('<p class="pp muted">No weaknesses to report.</p>');
-  } else {
-    for (let i = 0; i < weaknesses.length; i++) {
-      findingBlocks.push(await renderFinding(app, weaknesses[i]!, `W${i + 1}`, budget));
-    }
-  }
-  const findingsSection = `
-    <section class="section">
-      ${sectionHead(numDetailed, 'Detailed Results', 'Detailed Findings')}
-      ${findingBlocks.join('\n')}
-    </section>`;
-
-  // ---- Supporting Information --------------------------------------------
-  const supportingSection = hasSupporting
-    ? `
-    <section class="section">
-      ${sectionHead(numSupporting, 'Reference', 'Supporting Information')}
-      ${renderSoftwareTable('Client Software Tested', softwareTested)}
-      ${renderSoftwareTable('3rd-Party Software Used', thirdPartySoftware)}
-      ${renderFilesAttached(supportingFiles)}
-    </section>`
-    : '';
-
-  // ---- Appendix: Severity & CVSS Reference -------------------------------
-  let appendixSection = '';
-  if (includeAppendix) {
-    const bands: { sev: Severity; range: string; desc: string }[] = [
-      { sev: 'critical', range: '9.0 – 10.0', desc: 'Immediate risk; likely leads to full compromise. Remediate urgently.' },
-      { sev: 'high', range: '7.0 – 8.9', desc: 'Serious risk; significant impact or ease of exploitation. Prioritize.' },
-      { sev: 'medium', range: '4.0 – 6.9', desc: 'Moderate risk; meaningful impact, often requiring specific conditions.' },
-      { sev: 'low', range: '0.1 – 3.9', desc: 'Limited risk; minor impact or difficult to exploit.' },
-      { sev: 'none', range: '0.0', desc: 'Informational; no direct security impact.' },
-    ];
-    const rows = bands
-      .map(
-        (b) =>
-          `<tr><td>${severityPill(b.sev, null)}</td><td class="num">${b.range}</td><td>${esc(b.desc)}</td></tr>`,
-      )
-      .join('');
-    appendixSection = `
-    <section class="section">
-      ${sectionHead(numAppendix, 'Reference', 'Severity & CVSS Reference')}
-      <p class="lede">Severity ratings follow the CVSS v3.1 qualitative severity scale, derived from each finding's base score.</p>
+  const bands: { sev: Severity; range: string; desc: string }[] = [
+    { sev: 'critical', range: '9.0 – 10.0', desc: 'Immediate risk; likely leads to full compromise. Remediate urgently.' },
+    { sev: 'high', range: '7.0 – 8.9', desc: 'Serious risk; significant impact or ease of exploitation. Prioritize.' },
+    { sev: 'medium', range: '4.0 – 6.9', desc: 'Moderate risk; meaningful impact, often requiring specific conditions.' },
+    { sev: 'low', range: '0.1 – 3.9', desc: 'Limited risk; minor impact or difficult to exploit.' },
+    { sev: 'none', range: '0.0', desc: 'Informational; no direct security impact.' },
+  ];
+  const appendixInner = `<p class="lede">Severity ratings follow the CVSS v3.1 qualitative severity scale, derived from each finding's base score.</p>
       <table class="tbl">
         <thead><tr><th>Severity</th><th class="num">CVSS score</th><th>Description</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </section>`;
+        <tbody>${bands
+          .map(
+            (b) =>
+              `<tr><td>${severityPill(b.sev, null)}</td><td class="num">${b.range}</td><td>${esc(b.desc)}</td></tr>`,
+          )
+          .join('')}</tbody>
+      </table>`;
+
+  // ---- Render each enabled+present section, in configured order ----------
+  interface RenderedSection {
+    kicker: string;
+    title: string;
+    tocTitle: string;
+    inner: string;
+    /** Detailed Findings adds its weaknesses as TOC sub-rows (W1, W2, …). */
+    weaknessToc?: boolean;
   }
+  const rendered: RenderedSection[] = [];
+
+  for (const entry of sectionEntries) {
+    if (!entry.enabled) continue;
+    const key = entry.key;
+
+    if (key.startsWith('custom:')) {
+      const cs = customSections.find((c) => c.id === key.slice('custom:'.length) && c.title.trim());
+      if (cs)
+        rendered.push({
+          kicker: 'Additional',
+          title: cs.title,
+          tocTitle: cs.title,
+          inner: renderCustomSection(cs),
+        });
+      continue;
+    }
+
+    switch (key) {
+      case 'executiveSummary':
+        rendered.push({ kicker: 'Overview', title: 'Executive Summary', tocTitle: 'Executive Summary', inner: execInner });
+        break;
+      case 'assessmentFindings':
+        rendered.push({ kicker: 'Summary', title: 'Assessment Findings', tocTitle: 'Assessment Findings', inner: findingsSummaryInner });
+        break;
+      case 'methodology':
+        rendered.push({ kicker: 'Approach', title: 'Methodology & Approach', tocTitle: 'Methodology & Approach', inner: methodologyInner });
+        break;
+      case 'threatModel':
+        if (hasThreatModel)
+          rendered.push({
+            kicker: 'Attack Surface',
+            title: 'Threat Model',
+            tocTitle: 'Threat Model',
+            inner:
+              renderThreatModel(engagement.threatModelNarrative, threatDiagrams, budget) ||
+              '<p class="pp muted">No threat model recorded.</p>',
+          });
+        break;
+      case 'assessmentExecution': {
+        const present = (renderNarrative && hasNarrativeContent) || includeTimeline;
+        if (!present) break;
+        let narrativeHtml = '';
+        if (renderNarrative && hasNarrativeContent) {
+          const refUuids = [
+            ...new Set(executionSubsections.flatMap((s) => s.evidence.map((e) => e.evidenceUuid))),
+          ];
+          const evidenceByUuid = new Map<string, GatheredEvidence>();
+          if (refUuids.length) {
+            const rows = await app.db.evidence.findMany({
+              where: { engagementId: eng.id, uuid: { in: refUuids } },
+              select: {
+                uuid: true,
+                title: true,
+                description: true,
+                contentType: true,
+                contentSubtype: true,
+                originalFilename: true,
+                occurredAt: true,
+                fullBlobKey: true,
+              },
+            });
+            for (const r of rows) {
+              evidenceByUuid.set(r.uuid, {
+                uuid: r.uuid,
+                title: r.title,
+                description: r.description,
+                contentType: r.contentType,
+                contentSubtype: r.contentSubtype,
+                originalFilename: r.originalFilename,
+                occurredAt: r.occurredAt,
+                fullBlobKey: r.fullBlobKey,
+                caption: '',
+                inPath: false,
+              });
+            }
+          }
+          narrativeHtml = await renderExecutionNarrative(
+            app,
+            executionSubsections,
+            evidenceByUuid,
+            budget,
+          );
+        }
+
+        let timelineHtml = '';
+        if (includeTimeline) {
+          const evidence = await app.db.evidence.findMany({
+            where: { engagementId: eng.id, parentEvidenceId: null },
+            include: { tags: { include: { tag: true } }, operator: true },
+            orderBy: { occurredAt: 'asc' },
+          });
+          const tlItems: TimelineEvidence[] = evidence.map((e) => ({
+            uuid: e.uuid,
+            title: e.title,
+            description: e.description,
+            contentType: e.contentType,
+            contentSubtype: e.contentSubtype,
+            occurredAt: e.occurredAt,
+            fullBlobKey: e.fullBlobKey,
+            operatorName: `${e.operator.firstName} ${e.operator.lastName}`.trim() || 'Unknown',
+            tags: e.tags.map((t) => ({ name: t.tag.name, colorName: t.tag.colorName })),
+          }));
+          const groupLabel = EVIDENCE_GROUPING_LABELS[evidenceGroup];
+          const body = await renderTimeline(app, tlItems, evidenceGroup, budget);
+          timelineHtml = `<h3 class="block-h">Evidence Log · ${esc(groupLabel)}</h3>${body}`;
+        }
+
+        rendered.push({
+          kicker: 'Walkthrough',
+          title: 'Assessment Execution',
+          tocTitle: 'Assessment Execution',
+          inner: `${narrativeHtml}${timelineHtml}`,
+        });
+        break;
+      }
+      case 'scopeCoverage':
+        if (coverageTargets.length > 0)
+          rendered.push({
+            kicker: 'Coverage',
+            title: 'Scope & Objectives Coverage',
+            tocTitle: 'Scope & Objectives Coverage',
+            inner: renderScopeCoverage(coverageTargets, coverageProgress),
+          });
+        break;
+      case 'detailedFindings': {
+        const findingBlocks: string[] = [];
+        if (weaknesses.length === 0) {
+          findingBlocks.push('<p class="pp muted">No weaknesses to report.</p>');
+        } else {
+          for (let i = 0; i < weaknesses.length; i++) {
+            findingBlocks.push(await renderFinding(app, weaknesses[i]!, `W${i + 1}`, budget));
+          }
+        }
+        rendered.push({
+          kicker: 'Detailed Results',
+          title: 'Detailed Findings',
+          tocTitle: 'Detailed Findings',
+          inner: findingBlocks.join('\n'),
+          weaknessToc: true,
+        });
+        break;
+      }
+      case 'supportingInformation':
+        if (hasSupporting)
+          rendered.push({
+            kicker: 'Reference',
+            title: 'Supporting Information',
+            tocTitle: 'Supporting Information',
+            inner: `${renderSoftwareTable('Client Software Tested', softwareTested)}${renderSoftwareTable('3rd-Party Software Used', thirdPartySoftware)}${renderFilesAttached(supportingFiles)}`,
+          });
+        break;
+      case 'appendix':
+        rendered.push({
+          kicker: 'Reference',
+          title: 'Severity & CVSS Reference',
+          tocTitle: 'Appendix: Severity & CVSS Reference',
+          inner: appendixInner,
+        });
+        break;
+    }
+  }
+
+  // Assign section numbers (02, 03, …) in render order, then build the TOC.
+  const numbered = rendered.map((r) => ({ ...r, num: nextNum() }));
+  const tocRows: string[] = [tocItem(numDetails, 'Engagement Details', false)];
+  for (const r of numbered) {
+    tocRows.push(tocItem(r.num, r.tocTitle, false));
+    if (r.weaknessToc) weaknesses.forEach((f, i) => tocRows.push(tocItem(`W${i + 1}`, f.title, true)));
+  }
+  const tocSection = `
+    <section class="section">
+      ${sectionHead('', 'Contents', 'Table of Contents', true)}
+      <div class="toc">${tocRows.join('')}</div>
+    </section>`;
+
+  const bodySections = numbered
+    .map((r) => `<section class="section">${sectionHead(r.num, r.kicker, r.title)}${r.inner}</section>`)
+    .join('\n');
 
   // Running-header text (baked into the @page margin boxes).
   const hdrLeft = orgName.toUpperCase();
@@ -1284,14 +1380,7 @@ ${FONT_LINKS}
   ${cover}
   ${detailsSection}
   ${tocSection}
-  ${execSection}
-  ${findingsSummarySection}
-  ${methodSection}
-  ${threatModelSection}
-  ${executionSection}
-  ${findingsSection}
-  ${supportingSection}
-  ${appendixSection}
+  ${bodySections}
 </body></html>`;
 }
 

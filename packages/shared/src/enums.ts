@@ -141,3 +141,100 @@ export const FINDING_KIND_LABELS: Record<FindingKind, string> = {
   weakness: 'Weakness',
   strength: 'Strength',
 };
+
+/**
+ * Lifecycle state of a single engagement goal (an area of interest under a
+ * testing activity). Progress rolls up from these across the engagement.
+ * `not_applicable` goals are excluded from the completion denominator.
+ */
+export const GOAL_STATUSES = ['not_started', 'in_progress', 'complete', 'not_applicable'] as const;
+export const goalStatusSchema = z.enum(GOAL_STATUSES);
+export type GoalStatus = z.infer<typeof goalStatusSchema>;
+export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  complete: 'Complete',
+  not_applicable: 'N/A',
+};
+/** Display order for the goal-status control (workflow order, not alphabetical). */
+export const GOAL_STATUS_ORDER: Record<GoalStatus, number> = {
+  not_started: 0,
+  in_progress: 1,
+  complete: 2,
+  not_applicable: 3,
+};
+
+/**
+ * The content sections of the exported report, in their canonical order. The
+ * cover, engagement-details, and table-of-contents pages are structural and are
+ * always emitted first; these are the sections a report configuration can
+ * reorder and toggle. `scopeCoverage` (Scope & Objectives Coverage, driven by the
+ * goals tree) is the one new section — off by default so the default report is
+ * unchanged.
+ */
+export const REPORT_SECTIONS = [
+  'executiveSummary',
+  'assessmentFindings',
+  'methodology',
+  'threatModel',
+  'assessmentExecution',
+  'scopeCoverage',
+  'detailedFindings',
+  'supportingInformation',
+  'appendix',
+] as const;
+export const reportSectionSchema = z.enum(REPORT_SECTIONS);
+export type ReportSection = z.infer<typeof reportSectionSchema>;
+export const REPORT_SECTION_LABELS: Record<ReportSection, string> = {
+  executiveSummary: 'Executive Summary',
+  assessmentFindings: 'Assessment Findings',
+  methodology: 'Methodology & Approach',
+  threatModel: 'Threat Model',
+  assessmentExecution: 'Assessment Execution',
+  scopeCoverage: 'Scope & Objectives Coverage',
+  detailedFindings: 'Detailed Findings',
+  supportingInformation: 'Supporting Information',
+  appendix: 'Appendix: Severity & CVSS Reference',
+};
+/** Short hint shown under each toggle in the Reports configurator. */
+export const REPORT_SECTION_HINTS: Record<ReportSection, string> = {
+  executiveSummary: 'Summary prose, scope, severity distribution and key stats.',
+  assessmentFindings: 'Strengths/weaknesses summary tables, recommendations, standards traceability.',
+  methodology: 'The methodology narrative (or a sensible default).',
+  threatModel: 'Threat-model narrative and diagrams (only renders when present).',
+  assessmentExecution: 'Hand-authored execution narrative and optional evidence log.',
+  scopeCoverage: 'Per-target coverage of activities and goals, with status and linked artifacts.',
+  detailedFindings: 'Full per-weakness detail cards (attack path, evidence, remediation).',
+  supportingInformation: 'Software tested, third-party software, and files attached.',
+  appendix: 'Severity & CVSS reference table.',
+};
+
+/**
+ * A named report "type" the Reports section offers as a one-click download.
+ * `custom` renders the engagement's saved section configuration; the others are
+ * canned section sets. The chosen preset also names the exported file
+ * (`<slug>-<fileLabel>-<timestamp>.<ext>`) so different report types — and
+ * repeated exports on the same day — never collide.
+ */
+export const REPORT_PRESETS = ['full', 'executive', 'findings', 'custom'] as const;
+export const reportPresetSchema = z.enum(REPORT_PRESETS);
+export type ReportPreset = z.infer<typeof reportPresetSchema>;
+export const REPORT_PRESET_LABELS: Record<ReportPreset, string> = {
+  full: 'Full report',
+  executive: 'Executive summary',
+  findings: 'Findings only',
+  custom: 'Custom (configured sections)',
+};
+export const REPORT_PRESET_HINTS: Record<ReportPreset, string> = {
+  full: 'Every default section, in the standard order.',
+  executive: 'Cover, engagement details, and the executive summary only.',
+  findings: 'The findings summary tables plus the full detailed findings.',
+  custom: 'The sections you’ve enabled and reordered below.',
+};
+/** Filesystem-safe filename fragment for each report type. */
+export const REPORT_PRESET_FILE_LABELS: Record<ReportPreset, string> = {
+  full: 'full-report',
+  executive: 'executive-summary',
+  findings: 'findings',
+  custom: 'custom-report',
+};

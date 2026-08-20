@@ -46,7 +46,6 @@ import {
   useReorderFindings,
 } from '../api/hooks.js';
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
-import { ExportFindingsModal } from '../components/findings/ExportFindingsModal.js';
 import { CategorySelect } from '../components/findings/CategorySelect.js';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 
@@ -59,16 +58,11 @@ export function FindingsPage() {
   const importFindings = useImportFindings(slug);
   const fileInput = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-
-  // Export is available whenever findings exist — the modal's "include all"
-  // toggle covers the case where none are marked ready yet.
-  const hasFindings = (findings?.length ?? 0) > 0;
 
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
@@ -128,11 +122,6 @@ export function FindingsPage() {
           >
             Import
           </Button>
-          {hasFindings && (
-            <Button variant="secondary" onClick={() => setExporting(true)}>
-              Export
-            </Button>
-          )}
           <Button
             onClick={() => setCreating(true)}
             disabled={!canWrite}
@@ -182,7 +171,6 @@ export function FindingsPage() {
       )}
 
       <CreateFindingModal slug={slug} open={creating} onClose={() => setCreating(false)} />
-      <ExportFindingsModal slug={slug} open={exporting} onClose={() => setExporting(false)} />
     </div>
   );
 }

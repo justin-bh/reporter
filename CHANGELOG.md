@@ -8,6 +8,52 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Added
+
+- **Engagement Goals** — a new **Goals** tab that structures an engagement as a
+  **Target → Activity → Goal** tree (systems/devices under scope, their testing
+  activities, and the areas-of-interest/objectives under each). Goals carry a
+  **status** (Not started / In progress / Complete / N/A) and roll up into a live
+  **engagement progress** percentage shown on the Goals tab and the engagements
+  list. Each activity gets an auto-created **tag** so evidence captured under it
+  correlates back to the goal it advances, and goals can be **linked directly to
+  evidence and findings** (with those links surfaced on the evidence and finding
+  detail pages). Activities with no imported objectives can have **sub-items
+  added** by hand.
+- **Import a proposal JSON when creating an engagement** — the "New engagement"
+  flow accepts the JSON exported by the proposal-generation tool and builds the
+  goals tree from its **scope** section (devices → interfaces → sub-items), a
+  1-to-1 translation from proposal to engagement. Sub-items carried over from a
+  prior report (e.g. `W1-…`) are auto-flagged as **retests**. Engagement metadata
+  (client, assessment type, approach, objectives narrative, scope, contacts,
+  start date, exclusions) is applied from the proposal, and the raw JSON is kept
+  for provenance.
+- **Reports section** — export moves out of Findings into its own **Reports** tab
+  where you compose the report: **enable/disable and drag-reorder** every section,
+  add **free-text custom sections**, and set options (include-all-findings,
+  evidence timeline + grouping). A new **Scope & Objectives Coverage** section can
+  render the goals tree (per-target activity/goal coverage with status and linked
+  findings/evidence counts). The default configuration reproduces the previous
+  report exactly.
+- **Report types** — the Reports tab offers one-click **Full report**,
+  **Executive summary**, **Findings only**, and **Custom** (your configured
+  sections) downloads (PDF / ZIP / JSON).
+
+### Changed
+
+- **Exported report filenames now include the report type and a to-the-second
+  timestamp** (e.g. `acme-executive-summary-2026-08-20-143052.pdf`), so different
+  report types — and repeated exports on the same day — no longer overwrite each
+  other.
+
+### Migration
+
+- Adds the `engagement_targets`, `target_activities`, `activity_goals`,
+  `goal_evidence`, and `goal_findings` tables and the `GoalStatus` enum, plus
+  `engagements.test_approach`, `objectives_narrative`, `report_config`, and
+  `proposal_import`. Purely additive — existing data is untouched and an
+  unconfigured engagement's report is byte-for-byte unchanged.
+
 ## [0.4.0] - 2026-08-19
 
 ### Added
