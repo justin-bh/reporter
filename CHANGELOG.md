@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-20
+
 ### Added
 
 - **Full Markdown in every prose field** — engagement Executive summary, Methodology,
