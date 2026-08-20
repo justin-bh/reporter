@@ -42,6 +42,12 @@ export interface RepeatableListProps<T> {
   disabled?: boolean;
   /** Passed to disabled controls as a tooltip (e.g. the read-only reason). */
   disabledTitle?: string;
+  /**
+   * Replaces the default single "add" button — for lists that add more than one
+   * kind of item (the caller renders its own controls and appends via `onChange`).
+   * When set, `newItem`/`addLabel` are unused for the footer.
+   */
+  addSlot?: ReactNode;
 }
 
 export function RepeatableList<T>({
@@ -53,6 +59,7 @@ export function RepeatableList<T>({
   emptyHint,
   disabled = false,
   disabledTitle,
+  addSlot,
 }: RepeatableListProps<T>) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -114,16 +121,18 @@ export function RepeatableList<T>({
           </SortableContext>
         </DndContext>
       )}
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        onClick={add}
-        disabled={disabled}
-        title={disabled ? disabledTitle : undefined}
-      >
-        ＋ {addLabel}
-      </Button>
+      {addSlot ?? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={add}
+          disabled={disabled}
+          title={disabled ? disabledTitle : undefined}
+        >
+          ＋ {addLabel}
+        </Button>
+      )}
     </div>
   );
 }

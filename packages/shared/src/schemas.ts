@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import {
+  EVIDENCE_TYPES,
+  WATERMARK_MAX_CHARS,
   evidenceTypeSchema,
   engagementRoleSchema,
   engagementStatusSchema,
   evidenceGroupingSchema,
+  executionSubsectionKindSchema,
   goalStatusSchema,
   savedQueryTypeSchema,
   severitySchema,
@@ -89,14 +92,40 @@ export const executionEvidenceRefSchema = z.object({
 export type ExecutionEvidenceRef = z.infer<typeof executionEvidenceRefSchema>;
 
 /**
- * One titled subsection of the hand-authored Assessment Execution narrative. The
- * title groups the narrative by topic/interface (e.g. a subsystem); `evidence`
- * embeds captured evidence into that subsection, in order.
+ * Filters for a `timeline`-kind Assessment Execution subsection: it renders the
+ * engagement's captured evidence (not hand-picked), narrowed and grouped. Empty
+ * `tags`/`types` mean "no restriction". `starred` is resolved against the user
+ * generating the report.
+ */
+export const executionTimelineConfigSchema = z.object({
+  /** Restrict to evidence carrying all of these tags (empty = any tag). */
+  tags: z.array(z.string().max(64)).max(50).default([]),
+  /** Restrict to these evidence content types (empty = any type). */
+  types: z.array(evidenceTypeSchema).max(EVIDENCE_TYPES.length).default([]),
+  /** How items are grouped in the report (chronological / by tag / by type). */
+  group: evidenceGroupingSchema.default('chronological'),
+  /** Include follow-up comment evidence; default shows only top-level items. */
+  includeComments: z.boolean().default(false),
+  /** Only include evidence the report's author has starred. */
+  starredOnly: z.boolean().default(false),
+});
+export type ExecutionTimelineConfig = z.infer<typeof executionTimelineConfigSchema>;
+
+/**
+ * One titled subsection of the Assessment Execution narrative. A `narrative`
+ * subsection (the default and legacy shape) groups hand-authored prose plus
+ * embedded evidence by topic/interface; a `timeline` subsection instead renders
+ * a filtered, grouped view of the engagement's captured evidence (see
+ * `timeline`). Legacy rows lack `kind` and parse as `narrative`.
  */
 export const executionSubsectionSchema = z.object({
+  kind: executionSubsectionKindSchema.default('narrative'),
   title: z.string().min(1).max(255),
+  // Narrative fields: present for `narrative`; ignored (and empty) for `timeline`.
   body: z.string().max(20_000).default(''),
   evidence: z.array(executionEvidenceRefSchema).max(200).default([]),
+  // Timeline config: present for `timeline` subsections.
+  timeline: executionTimelineConfigSchema.optional(),
 });
 export type ExecutionSubsection = z.infer<typeof executionSubsectionSchema>;
 
@@ -119,6 +148,12 @@ export type ReportCustomSection = z.infer<typeof reportCustomSectionSchema>;
 export const reportSectionEntrySchema = z.object({
   key: z.string().min(1).max(80),
   enabled: z.boolean().default(true),
+  /**
+   * Per-section sub-item toggles, keyed by the item ids in `REPORT_SECTION_ITEMS`.
+   * An absent key (or `true`) includes that piece; `false` excludes it. Only
+   * meaningful for built-in sections that expose sub-items; ignored otherwise.
+   */
+  options: z.record(z.boolean()).optional(),
 });
 export type ReportSectionEntry = z.infer<typeof reportSectionEntrySchema>;
 
@@ -528,8 +563,9 @@ export const updateEngagementInput = z.object({
   softwareTested: z.array(softwareItemSchema).max(200).optional(),
   thirdPartySoftware: z.array(softwareItemSchema).max(200).optional(),
   // Report watermark. Text/color are nullable so an empty field restores the default.
+  // Text is capped short so the diagonal word always fits the page (see WATERMARK_MAX_CHARS).
   watermarkEnabled: z.boolean().optional(),
-  watermarkText: z.string().max(120).nullable().optional(),
+  watermarkText: z.string().max(WATERMARK_MAX_CHARS).nullable().optional(),
   watermarkColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'must be a #rrggbb hex color')

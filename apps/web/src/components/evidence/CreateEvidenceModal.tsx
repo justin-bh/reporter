@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Field, Input, Modal, Select, TagPicker, Textarea, useToast } from '@reporter/ui';
 import {
   EVIDENCE_TYPE_LABELS,
+  defaultTagColorFor,
   type CreateEvidenceInput,
   type EvidenceType,
 } from '@reporter/shared';
-import { useCreateEvidence, useTags } from '../../api/hooks.js';
+import { useCreateEvidence, useCreateTag, useTags } from '../../api/hooks.js';
+import { useEngagementPermissions } from '../../lib/permissions.js';
 import { useUnsavedGuard } from '../../hooks/useUnsavedGuard.js';
 
 const CREATABLE: EvidenceType[] = ['image', 'codeblock', 'none', 'event', 'http-request-cycle'];
@@ -28,7 +30,26 @@ export function CreateEvidenceModal({
   const toast = useToast();
   const { data: tags } = useTags(slug);
   const create = useCreateEvidence(slug);
+  const createTag = useCreateTag(slug);
+  const { canWrite } = useEngagementPermissions(slug);
   const isComment = parentEvidenceUuid !== undefined;
+
+  // Inline "+ New tag" in the picker: create a tag with a name-derived color and
+  // return its id so the picker selects it. Writers only (creating a tag needs write).
+  const onCreateTag = canWrite
+    ? async (tagName: string) => {
+        try {
+          const t = await createTag.mutateAsync({
+            name: tagName,
+            colorName: defaultTagColorFor(tagName),
+          });
+          return t.id;
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Could not create tag');
+          throw err;
+        }
+      }
+    : undefined;
 
   const [type, setType] = useState<EvidenceType>('image');
   const [evTitle, setEvTitle] = useState('');
@@ -304,7 +325,12 @@ export function CreateEvidenceModal({
             tags={tags ?? []}
             selectedIds={tagIds}
             onChange={setTagIds}
-            emptyHint="No tags in this engagement yet — add some on the Tags tab."
+            onCreateTag={onCreateTag}
+            emptyHint={
+              canWrite
+                ? 'No tags in this engagement yet — create one below.'
+                : 'No tags in this engagement yet — add some on the Tags tab.'
+            }
           />
         </Field>
       </div>

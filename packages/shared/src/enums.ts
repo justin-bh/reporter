@@ -60,6 +60,32 @@ export const EVIDENCE_GROUPING_LABELS: Record<EvidenceGrouping, string> = {
   type: 'By type',
 };
 
+/**
+ * An Assessment Execution subsection is either a hand-authored `narrative` block
+ * (title + prose + embedded evidence — the legacy shape) or an auto-generated
+ * `timeline` of captured evidence filtered by tag/type, grouped, with comment and
+ * starred toggles. Rows saved before this existed lack the discriminator and
+ * default to `narrative`.
+ */
+export const EXECUTION_SUBSECTION_KINDS = ['narrative', 'timeline'] as const;
+export const executionSubsectionKindSchema = z.enum(EXECUTION_SUBSECTION_KINDS);
+export type ExecutionSubsectionKind = z.infer<typeof executionSubsectionKindSchema>;
+export const EXECUTION_SUBSECTION_KIND_LABELS: Record<ExecutionSubsectionKind, string> = {
+  narrative: 'Written narrative',
+  timeline: 'Activity timeline',
+};
+export const EXECUTION_SUBSECTION_KIND_HINTS: Record<ExecutionSubsectionKind, string> = {
+  narrative: 'A titled block of prose with evidence you embed by hand.',
+  timeline: 'The timeline of captured evidence, filtered by tag or type and grouped.',
+};
+
+/**
+ * Max length of the per-engagement watermark text. Kept short so the single
+ * diagonal, rotated word always fits the printable page — the renderer scales the
+ * font size down as the text lengthens, and this cap bounds how small it can get.
+ */
+export const WATERMARK_MAX_CHARS = 32;
+
 /** Report watermark transparency — three fixed levels mapped to opacities by the renderer. */
 export const WATERMARK_OPACITIES = ['light', 'medium', 'strong'] as const;
 export const watermarkOpacitySchema = z.enum(WATERMARK_OPACITIES);
@@ -207,6 +233,74 @@ export const REPORT_SECTION_HINTS: Record<ReportSection, string> = {
   detailedFindings: 'Full per-weakness detail cards (attack path, evidence, remediation).',
   supportingInformation: 'Software tested, third-party software, and files attached.',
   appendix: 'Severity & CVSS reference table.',
+};
+
+/** One independently-toggleable piece of a report section, shown when the section
+ *  is expanded in the Reports configurator. */
+export interface ReportSectionItem {
+  /** Stable id stored in the section entry's `options` map (absent/true = shown). */
+  key: string;
+  /** Label shown next to the sub-item's include/exclude checkbox. */
+  label: string;
+  /** One-line sample of what this piece renders, shown under the label. */
+  sample: string;
+}
+
+/**
+ * The independently-toggleable pieces of each built-in section, in render order.
+ * Expanding a section row lists these with a sample and an include checkbox; a
+ * piece renders unless its section entry's `options[key]` is explicitly `false`.
+ * Sections absent here have a single, non-decomposable body (only the whole
+ * section toggles) — expanding them shows just the section sample.
+ */
+export const REPORT_SECTION_ITEMS: Partial<Record<ReportSection, ReportSectionItem[]>> = {
+  executiveSummary: [
+    { key: 'summary', label: 'Summary prose', sample: 'Your written executive-summary narrative.' },
+    { key: 'scope', label: 'Scope', sample: 'Service-scope targets and exclusions (or the scope prose).' },
+    { key: 'severity', label: 'Severity distribution', sample: 'The severity bar and per-severity count cards.' },
+    { key: 'stats', label: 'Key stats', sample: 'Weaknesses, highest/average CVSS, evidence count, and window.' },
+  ],
+  assessmentFindings: [
+    { key: 'strengths', label: 'Strengths table', sample: 'Summary table of security strengths (S1, S2, …).' },
+    { key: 'weaknesses', label: 'Weaknesses table', sample: 'Summary table of weaknesses with severity and fix effort.' },
+    { key: 'recommendations', label: 'Strategic recommendations', sample: 'Numbered high-level recommendations (R1, R2, …).' },
+    { key: 'categories', label: 'Category breakdown', sample: 'Weakness counts grouped by category.' },
+    { key: 'standards', label: 'Standards traceability', sample: 'Findings mapped to ISO/SAE 21434 and UN R155.' },
+  ],
+  threatModel: [
+    { key: 'narrative', label: 'Narrative', sample: 'The threat-model narrative prose.' },
+    { key: 'diagrams', label: 'Diagrams', sample: 'Embedded threat-model diagram figures.' },
+  ],
+  detailedFindings: [
+    { key: 'impact', label: 'Impact', sample: 'The impact statement on each weakness.' },
+    { key: 'standards', label: 'Standards mapping', sample: 'Per-finding ISO/SAE 21434 and UN R155 references.' },
+    { key: 'remediation', label: 'Remediation', sample: 'Remediation guidance on each weakness.' },
+    { key: 'attackPath', label: 'Attack path', sample: 'The ordered, captioned attack-path steps.' },
+    { key: 'attachedEvidence', label: 'Attached evidence', sample: 'Non-path evidence attached to each finding.' },
+  ],
+  supportingInformation: [
+    { key: 'softwareTested', label: 'Client software tested', sample: 'Table of in-scope client software and versions.' },
+    { key: 'thirdParty', label: '3rd-party software', sample: 'Table of assessment tooling and versions.' },
+    { key: 'filesAttached', label: 'Files attached', sample: 'Supporting files with SHA-256 hashes.' },
+  ],
+};
+
+/** A one-line preview of a whole section, shown when it's expanded in the configurator. */
+export const REPORT_SECTION_SAMPLE: Record<ReportSection, string> = {
+  executiveSummary:
+    'A high-level overview: summary prose, scope, the severity distribution, and key stats.',
+  assessmentFindings:
+    'Summary tables of strengths and weaknesses, recommendations, category breakdown, and standards traceability.',
+  methodology:
+    'The methodology narrative you wrote, or a sensible default paragraph when left blank.',
+  threatModel: 'The threat-model narrative and any embedded diagrams. Renders only when present.',
+  assessmentExecution:
+    'Your hand-authored execution subsections — written narratives and activity timelines.',
+  scopeCoverage: 'Per-target coverage of activities and goals, with status and linked artifacts.',
+  detailedFindings:
+    'A full detail card per weakness: description, impact, standards, remediation, attack path, and evidence.',
+  supportingInformation: 'Client software tested, 3rd-party software used, and files attached.',
+  appendix: 'A CVSS v3.1 severity reference table (critical through informational).',
 };
 
 /**

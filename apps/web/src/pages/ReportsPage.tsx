@@ -39,7 +39,9 @@ import {
   REPORT_PRESET_HINTS,
   REPORT_PRESET_LABELS,
   REPORT_SECTION_HINTS,
+  REPORT_SECTION_ITEMS,
   REPORT_SECTION_LABELS,
+  REPORT_SECTION_SAMPLE,
   reportConfigSchema,
   type EvidenceGrouping,
   type ReportConfig,
@@ -47,6 +49,7 @@ import {
   type ReportPreset,
   type ReportSection,
   type ReportSectionEntry,
+  type ReportSectionItem,
 } from '@reporter/shared';
 import { useEngagement, useUpdateEngagement } from '../api/hooks.js';
 import { useEngagementPermissions } from '../lib/permissions.js';
@@ -162,6 +165,25 @@ export function ReportsPage() {
     }));
   }
 
+  // Which section rows are expanded to show their sample + sub-item toggles.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpand = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  function setSectionOption(key: string, itemKey: string, value: boolean) {
+    setConfig((c) => ({
+      ...c,
+      sections: c.sections.map((s) =>
+        s.key === key ? { ...s, options: { ...(s.options ?? {}), [itemKey]: value } } : s,
+      ),
+    }));
+  }
+
   function resetSections() {
     setConfig((c) => {
       // Keep any custom sections at the end; reset built-ins to the default order.
@@ -242,6 +264,15 @@ export function ReportsPage() {
                   <ul className="flex flex-col gap-2">
                     {config.sections.map((entry) => {
                       const meta = sectionMeta(entry, config.customSections);
+                      const isCustom = customIdOf(entry.key) !== null;
+                      const isBuiltin = !isCustom && !meta.missing;
+                      const rk = entry.key as ReportSection;
+                      const sample = isBuiltin
+                        ? REPORT_SECTION_SAMPLE[rk]
+                        : isCustom
+                          ? 'A free-text section you authored below.'
+                          : undefined;
+                      const items = isBuiltin ? REPORT_SECTION_ITEMS[rk] : undefined;
                       return (
                         <SortableSectionRow
                           key={entry.key}
@@ -252,6 +283,12 @@ export function ReportsPage() {
                           enabled={entry.enabled}
                           canEdit={canEdit}
                           onToggle={(v) => toggleSection(entry.key, v)}
+                          expanded={expanded.has(entry.key)}
+                          onToggleExpand={() => toggleExpand(entry.key)}
+                          sample={sample}
+                          items={items}
+                          options={entry.options}
+                          onToggleOption={(itemKey, v) => setSectionOption(entry.key, itemKey, v)}
                         />
                       );
                     })}
@@ -434,6 +471,12 @@ function SortableSectionRow({
   enabled,
   canEdit,
   onToggle,
+  expanded,
+  onToggleExpand,
+  sample,
+  items,
+  options,
+  onToggleOption,
 }: {
   id: string;
   label: string;
@@ -442,6 +485,15 @@ function SortableSectionRow({
   enabled: boolean;
   canEdit: boolean;
   onToggle: (enabled: boolean) => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  /** One-line preview of the whole section, shown when expanded. */
+  sample?: string;
+  /** Independently-toggleable sub-items, shown when expanded (built-ins only). */
+  items?: ReportSectionItem[];
+  /** Current sub-item overrides keyed by item id (absent/true = included). */
+  options?: Record<string, boolean>;
+  onToggleOption: (itemKey: string, value: boolean) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -452,6 +504,7 @@ function SortableSectionRow({
     transition,
     opacity: isDragging ? 0.6 : 1,
   };
+  const panelId = `section-panel-${id}`;
 
   return (
     <li
@@ -472,14 +525,66 @@ function SortableSectionRow({
         ⠿
       </button>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className={`truncate text-sm font-medium ${enabled ? 'text-text' : 'text-muted'}`}>
-            {label}
-          </p>
-          {missing && <Badge tone="warning">Unknown</Badge>}
-          {!enabled && <Badge tone="neutral">Hidden</Badge>}
-        </div>
-        {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          className="flex w-full items-start gap-2 text-left"
+        >
+          <span
+            className={`mt-0.5 select-none text-xs text-muted transition-transform ${
+              expanded ? 'rotate-90' : ''
+            }`}
+            aria-hidden="true"
+          >
+            ▶
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span
+                className={`truncate text-sm font-medium ${enabled ? 'text-text' : 'text-muted'}`}
+              >
+                {label}
+              </span>
+              {missing && <Badge tone="warning">Unknown</Badge>}
+              {!enabled && <Badge tone="neutral">Hidden</Badge>}
+            </span>
+            {hint && <span className="mt-0.5 block text-xs text-muted">{hint}</span>}
+          </span>
+        </button>
+
+        {expanded && (
+          <div id={panelId} className="mt-2 space-y-2 border-t border-border pt-2 pl-6">
+            {sample && <p className="text-xs text-muted">{sample}</p>}
+            {items && items.length > 0 ? (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-text">Include in this section:</p>
+                {items.map((it) => (
+                  <label key={it.key} className="flex cursor-pointer items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={options?.[it.key] !== false}
+                      onChange={(e) => onToggleOption(it.key, e.target.checked)}
+                      disabled={!canEdit || !enabled}
+                      aria-label={`Include ${it.label}`}
+                      className="mt-0.5 h-4 w-4 rounded border-border text-accent accent-[var(--accent)] disabled:opacity-50"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm text-text">{it.label}</span>
+                      <span className="block text-xs text-muted">{it.sample}</span>
+                    </span>
+                  </label>
+                ))}
+                {!enabled && (
+                  <p className="text-xs text-muted">Enable the section to include its parts.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted">This section has no separately toggleable parts.</p>
+            )}
+          </div>
+        )}
       </div>
       <label className="mt-0.5 inline-flex cursor-pointer items-center">
         <input

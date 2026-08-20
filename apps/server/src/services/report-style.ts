@@ -35,18 +35,42 @@ export function prose(text: string | null | undefined): string {
 export const WATERMARK_OPACITY_VALUES = { light: 0.06, medium: 0.11, strong: 0.18 } as const;
 
 /**
+ * The diagonal watermark font size (px) that keeps the rotated word inside the
+ * printable Letter page. The single word is centered and rotated -45°, so its
+ * axis-aligned bounding box grows with both its length and its glyph height; we
+ * solve for a font size whose box stays within the ~7.3in printable width, using
+ * a conservative per-glyph advance (~0.82em, covering the condensed font's wider
+ * Arial fallback plus letter-spacing). Short text is capped so it stays a
+ * tasteful size; long text shrinks (never clips). The lower bound is chosen so
+ * that even the longest allowed text (`WATERMARK_MAX_CHARS`) still fits.
+ */
+export function watermarkFontSize(text: string): number {
+  const n = Math.max(text.trim().length, 1);
+  // 920 ≈ (printable width / cos45°) with a safety margin; 0.82·n + 1 is the box
+  // width (advance·n) plus the glyph-height term, both in font-size units.
+  const fit = 920 / (0.82 * n + 1);
+  return Math.round(Math.min(120, Math.max(34, fit)));
+}
+
+/**
  * CSS for the per-page watermark. A single diagonal `position: fixed` word
  * repeats on every printed page in Chromium; the cover's opaque, higher-z-index
  * background hides it on the title page. `layer: 'behind'` (z-index -1) sits
  * under the content; `'front'` (z-index 900) sits above it (still below the
- * cover at 1000). Caller passes a resolved color + opacity.
+ * cover at 1000). Caller passes a resolved color + opacity + a page-fitting font
+ * size (see `watermarkFontSize`).
  */
-export function watermarkCss(color: string, opacity: number, layer: 'behind' | 'front'): string {
+export function watermarkCss(
+  color: string,
+  opacity: number,
+  layer: 'behind' | 'front',
+  fontSize: number,
+): string {
   const z = layer === 'front' ? 900 : -1;
   return `.watermark { position: fixed; top: 50%; left: 50%;
   transform: translate(-50%, -50%) rotate(-45deg); font-family: var(--font-cond);
   font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; white-space: nowrap;
-  font-size: 130px; line-height: 1; color: ${color}; opacity: ${opacity}; pointer-events: none;
+  font-size: ${fontSize}px; line-height: 1; color: ${color}; opacity: ${opacity}; pointer-events: none;
   z-index: ${z}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`;
 }
 

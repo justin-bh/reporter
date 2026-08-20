@@ -1,10 +1,16 @@
 import { useState, type ReactNode } from 'react';
-import { Badge, Button, Card, Field, Input, Spinner, Textarea } from '@reporter/ui';
+import { Badge, Button, Card, Checkbox, Field, Input, Select, Spinner, Textarea } from '@reporter/ui';
 import {
+  EVIDENCE_GROUPINGS,
+  EVIDENCE_GROUPING_LABELS,
+  EXECUTION_SUBSECTION_KIND_HINTS,
+  EXECUTION_SUBSECTION_KIND_LABELS,
   type Contact,
+  type EvidenceGrouping,
   type Evidence,
   type ExecutionEvidenceRef,
   type ExecutionSubsection,
+  type ExecutionTimelineConfig,
   type RecommendationItem,
   type ScopeTarget,
   type SoftwareItem,
@@ -12,10 +18,21 @@ import {
 } from '@reporter/shared';
 import { RepeatableList } from '../common/RepeatableList.js';
 import { EvidencePickerModal } from '../findings/EvidencePickerModal.js';
-import { useEvidence } from '../../api/hooks.js';
+import { TagsFilter } from '../evidence/filters/TagsFilter.js';
+import { TypeFilter } from '../evidence/filters/TypeFilter.js';
+import { useEvidence, useTags } from '../../api/hooks.js';
 import { evidenceHeading } from '../../lib/evidence-label.js';
 import { SaveStatusIndicator } from '../SaveStatusIndicator.js';
 import type { SaveStatus } from '../../hooks/useAutosave.js';
+
+/** A fresh timeline-subsection filter config (all-inclusive, chronological). */
+const DEFAULT_TIMELINE_CONFIG: ExecutionTimelineConfig = {
+  tags: [],
+  types: [],
+  group: 'chronological',
+  includeComments: false,
+  starredOnly: false,
+};
 
 // Threat-model diagram limits (mirrors the server's ~2 MB/image cap; see the
 // shared threatDiagramSchema). base64 inflates ~33%, so a ~2 MB data URI ≈ 1.5 MB
@@ -516,10 +533,24 @@ function ExecutionEditor({
   subsections: ExecutionSubsection[];
   onChange: (v: ExecutionSubsection[]) => void;
 }) {
+  const newNarrative = (): ExecutionSubsection => ({
+    kind: 'narrative',
+    title: '',
+    body: '',
+    evidence: [],
+  });
+  const newTimeline = (): ExecutionSubsection => ({
+    kind: 'timeline',
+    title: '',
+    body: '',
+    evidence: [],
+    timeline: { ...DEFAULT_TIMELINE_CONFIG },
+  });
+
   return (
     <SectionCard
       title="Assessment execution"
-      hint="Hand-authored narrative subsections with embedded evidence."
+      hint="Written narrative subsections with embedded evidence, or activity timelines drawn from the engagement’s captured evidence."
     >
       <RepeatableList
         items={subsections}
@@ -528,40 +559,150 @@ function ExecutionEditor({
         disabledTitle={disabledTitle}
         addLabel="Add subsection"
         emptyHint="No execution subsections yet."
-        newItem={() => ({ title: '', body: '', evidence: [] })}
-        renderRow={(sub, update, index) => (
-          <div className="space-y-3">
-            <Field label="Subsection title" htmlFor={`ex-title-${index}`}>
-              <Input
-                id={`ex-title-${index}`}
-                value={sub.title}
-                onChange={(e) => update({ ...sub, title: e.target.value })}
-                disabled={disabled}
-                title={disabledTitle}
-                placeholder="e.g. CAN bus analysis"
-              />
-            </Field>
-            <Field label="Body" htmlFor={`ex-body-${index}`}>
-              <Textarea
-                id={`ex-body-${index}`}
-                rows={5}
-                value={sub.body}
-                onChange={(e) => update({ ...sub, body: e.target.value })}
-                disabled={disabled}
-                title={disabledTitle}
-              />
-            </Field>
-            <ExecutionEvidenceEditor
-              slug={slug}
+        newItem={newNarrative}
+        addSlot={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
               disabled={disabled}
-              disabledTitle={disabledTitle}
-              refs={sub.evidence}
-              onChange={(evidence) => update({ ...sub, evidence })}
-            />
+              title={disabledTitle}
+              onClick={() => onChange([...subsections, newNarrative()])}
+            >
+              ＋ Add narrative
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={disabled}
+              title={disabledTitle}
+              onClick={() => onChange([...subsections, newTimeline()])}
+            >
+              ＋ Add timeline
+            </Button>
           </div>
-        )}
+        }
+        renderRow={(sub, update, index) => {
+          const kind = sub.kind === 'timeline' ? 'timeline' : 'narrative';
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge tone={kind === 'timeline' ? 'accent' : 'neutral'}>
+                  {EXECUTION_SUBSECTION_KIND_LABELS[kind]}
+                </Badge>
+                <span className="text-xs text-muted">{EXECUTION_SUBSECTION_KIND_HINTS[kind]}</span>
+              </div>
+              <Field label="Subsection title" htmlFor={`ex-title-${index}`}>
+                <Input
+                  id={`ex-title-${index}`}
+                  value={sub.title}
+                  onChange={(e) => update({ ...sub, title: e.target.value })}
+                  disabled={disabled}
+                  title={disabledTitle}
+                  placeholder={
+                    kind === 'timeline' ? 'e.g. CAN bus activity' : 'e.g. CAN bus analysis'
+                  }
+                />
+              </Field>
+              {kind === 'timeline' ? (
+                <ExecutionTimelineEditor
+                  slug={slug}
+                  index={index}
+                  disabled={disabled}
+                  disabledTitle={disabledTitle}
+                  config={sub.timeline}
+                  onChange={(timeline) => update({ ...sub, timeline })}
+                />
+              ) : (
+                <>
+                  <Field label="Body" htmlFor={`ex-body-${index}`}>
+                    <Textarea
+                      id={`ex-body-${index}`}
+                      rows={5}
+                      value={sub.body}
+                      onChange={(e) => update({ ...sub, body: e.target.value })}
+                      disabled={disabled}
+                      title={disabledTitle}
+                    />
+                  </Field>
+                  <ExecutionEvidenceEditor
+                    slug={slug}
+                    disabled={disabled}
+                    disabledTitle={disabledTitle}
+                    refs={sub.evidence}
+                    onChange={(evidence) => update({ ...sub, evidence })}
+                  />
+                </>
+              )}
+            </div>
+          );
+        }}
       />
     </SectionCard>
+  );
+}
+
+/** Filters + grouping for a timeline-kind execution subsection. */
+function ExecutionTimelineEditor({
+  slug,
+  index,
+  disabled,
+  disabledTitle,
+  config,
+  onChange,
+}: Common & {
+  slug: string;
+  /** Row position — keeps this editor's control ids unique across subsections. */
+  index: number;
+  config: ExecutionTimelineConfig | undefined;
+  onChange: (v: ExecutionTimelineConfig) => void;
+}) {
+  const { data: tags = [] } = useTags(slug);
+  const cfg = config ?? DEFAULT_TIMELINE_CONFIG;
+  const groupId = `ex-tl-group-${index}`;
+  return (
+    <div className="space-y-3 rounded-card border border-dashed border-border p-3">
+      <p className="text-xs font-medium text-muted">
+        Renders the engagement’s captured evidence, filtered and grouped — no hand-picked evidence.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Group by" htmlFor={groupId}>
+          <Select
+            id={groupId}
+            value={cfg.group}
+            disabled={disabled}
+            title={disabledTitle}
+            onChange={(e) => onChange({ ...cfg, group: e.target.value as EvidenceGrouping })}
+          >
+            {EVIDENCE_GROUPINGS.map((g) => (
+              <option key={g} value={g}>
+                {EVIDENCE_GROUPING_LABELS[g]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="flex items-center gap-2 pb-0.5">
+          <TagsFilter value={cfg.tags} tags={tags} onChange={(t) => onChange({ ...cfg, tags: t })} />
+          <TypeFilter value={cfg.types} onChange={(t) => onChange({ ...cfg, types: t })} />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <Checkbox
+          label="Include follow-up comments"
+          checked={cfg.includeComments}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...cfg, includeComments: e.target.checked })}
+        />
+        <Checkbox
+          label="Only starred evidence"
+          checked={cfg.starredOnly}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...cfg, starredOnly: e.target.checked })}
+        />
+      </div>
+    </div>
   );
 }
 

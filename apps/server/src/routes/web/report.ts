@@ -190,7 +190,13 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const { slug } = req.params as { slug: string };
       const q = req.query as Record<string, string | undefined>;
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
-      const html = await buildReportHtml(app, eng, new Date(), reportOptionsFromQuery(q));
+      const html = await buildReportHtml(
+        app,
+        eng,
+        new Date(),
+        reportOptionsFromQuery(q),
+        req.authedUser!.id,
+      );
       const pdf = await renderPdf(app, html);
       reply
         .header('Content-Type', 'application/pdf')
@@ -214,7 +220,14 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       // Compute the supporting-file set once (names + hashes) and reuse it for
       // both the report's Files Attached table and the ZIP entries.
       const files = await gatherSupportingFiles(app, eng);
-      const html = await buildReportHtml(app, eng, new Date(), reportOptionsFromQuery(q), files);
+      const html = await buildReportHtml(
+        app,
+        eng,
+        new Date(),
+        reportOptionsFromQuery(q),
+        req.authedUser!.id,
+        files,
+      );
       const pdf = await renderPdf(app, html);
 
       const base = `${slug}-report-${stamp()}`;
@@ -258,7 +271,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const config = reportConfigSchema.parse(eng.reportConfig ?? {});
       const { options, label } = reportFor(config, presetParam(q.preset));
-      const html = await buildReportHtml(app, eng, new Date(), options);
+      const html = await buildReportHtml(app, eng, new Date(), options, req.authedUser!.id);
       const pdf = await renderPdf(app, html);
       reply
         .header('Content-Type', 'application/pdf')
@@ -277,7 +290,14 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const config = reportConfigSchema.parse(eng.reportConfig ?? {});
       const { options, label } = reportFor(config, presetParam(q.preset));
       const files = await gatherSupportingFiles(app, eng);
-      const html = await buildReportHtml(app, eng, new Date(), options, files);
+      const html = await buildReportHtml(
+        app,
+        eng,
+        new Date(),
+        options,
+        req.authedUser!.id,
+        files,
+      );
       const pdf = await renderPdf(app, html);
 
       const base = `${slug}-${label}-${stamp()}`;

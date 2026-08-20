@@ -8,7 +8,33 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-08-20
+### Added
+
+- **Assessment Execution timeline subsections** — the Assessment Execution card in
+  engagement Settings now offers two kinds of subsection: the existing hand-authored
+  **narrative** (title + prose + embedded evidence) and a new **activity timeline**
+  that renders the engagement's captured evidence, filtered by **tag** and/or
+  **type**, **grouped** (chronological / by tag / by type), with toggles to
+  **include follow-up comments** and show **only starred** items. "Add subsection"
+  splits into **Add narrative** / **Add timeline**.
+- **Save a search as a saved query** — the Evidence tab's filter bar gains a
+  **Save query** action that stores the current filter as a saved query. The
+  **Saved queries** tab is now purely for managing them: **run**, **edit**
+  (rename/modify), and **delete** — its old "Save a query" form is removed.
+- **Expandable report sections with sub-item toggles** — on the Reports tab, click
+  a section to expand it, preview a **sample** of what it renders, and
+  **include/exclude individual pieces** within it (e.g. Executive Summary's scope,
+  severity distribution, or key stats; Detailed Findings' impact, standards,
+  remediation, attack path, or attached evidence; and more).
+- **Create tags inline when adding evidence in the web app** — the web "Add
+  evidence" dialog now has the **+ New tag** affordance already present in the
+  desktop app, the evidence detail view, and the terminal recorder.
+
+### Fixed
+
+- **Report watermark no longer clips at the page edge** — the diagonal watermark
+  now scales its font size to the text length so the whole word fits on the page,
+  and the watermark text is capped at 32 characters.
 
 ### Added
 

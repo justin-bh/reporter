@@ -1,7 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Button, Checkbox, Input } from '@reporter/ui';
+import { Button, Checkbox, Field, Input, Modal, useToast } from '@reporter/ui';
 import { parseQuery, stringifyQuery, type ParsedQuery } from '@reporter/shared';
-import { useEvidenceOperators, useTags, type EvidenceOperator } from '../../api/hooks.js';
+import {
+  useCreateSavedQuery,
+  useEvidenceOperators,
+  useTags,
+  type EvidenceOperator,
+} from '../../api/hooks.js';
 import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { ActiveFilterChips } from './ActiveFilterChips.js';
 import { TagsFilter } from './filters/TagsFilter.js';
@@ -46,6 +51,8 @@ export function FilterBar({
 }) {
   const { data: tags = [] } = useTags(slug);
   const { data: endpointOperators } = useEvidenceOperators(slug);
+  const toast = useToast();
+  const createQuery = useCreateSavedQuery(slug);
 
   // Prefer the complete server list; fall back to operators seen on the current
   // page. Always union in any already-selected slug so an active filter is never
@@ -67,6 +74,24 @@ export function FilterBar({
   const [advanced, setAdvanced] = useState(false);
   const [raw, setRaw] = useState(canonical);
   useEffect(() => setRaw(canonical), [canonical]);
+
+  // Save the current filter as a reusable saved query (managed on the Queries tab).
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const canSaveQuery = canAdd && canonical.trim() !== '';
+  const submitSaveQuery = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = saveName.trim();
+    if (!name || !canonical.trim()) return;
+    try {
+      await createQuery.mutateAsync({ name, query: canonical, type: 'evidence' });
+      setSaveOpen(false);
+      setSaveName('');
+      toast.success('Query saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save query');
+    }
+  };
 
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -162,14 +187,31 @@ export function FilterBar({
             onChange={onChange}
           />
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setAdvanced((a) => !a)}
-          aria-expanded={advanced}
-        >
-          {advanced ? 'Hide query' : 'Advanced'}
-        </Button>
+        <div className="flex flex-none items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSaveOpen(true)}
+            disabled={!canSaveQuery}
+            title={
+              !canAdd
+                ? READ_ONLY_TITLE
+                : canonical.trim() === ''
+                  ? 'Add a filter to save'
+                  : 'Save this search to your saved queries'
+            }
+          >
+            Save query
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAdvanced((a) => !a)}
+            aria-expanded={advanced}
+          >
+            {advanced ? 'Hide query' : 'Advanced'}
+          </Button>
+        </div>
       </div>
 
       {advanced && (
@@ -194,6 +236,45 @@ export function FilterBar({
           </p>
         </form>
       )}
+
+      <Modal
+        open={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        title="Save query"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSaveOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submitSaveQuery}
+              loading={createQuery.isPending}
+              disabled={!saveName.trim()}
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={submitSaveQuery} className="space-y-3">
+          <Field label="Name" htmlFor="save-query-name">
+            <Input
+              id="save-query-name"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="e.g. Starred CAN-bus screenshots"
+              maxLength={255}
+              autoFocus
+            />
+          </Field>
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted">Query</p>
+            <code className="block break-words rounded-input border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs text-muted">
+              {canonical}
+            </code>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
