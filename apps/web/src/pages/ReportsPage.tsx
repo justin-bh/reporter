@@ -89,7 +89,9 @@ function sectionMeta(
 export function ReportsPage() {
   const { slug = '' } = useParams();
   const toast = useToast();
-  const { canWrite } = useEngagementPermissions(slug);
+  // The report config is persisted via the engagement update endpoint, which is
+  // admin-gated — so gate these controls on the engagement-admin role.
+  const { canAdmin: canEdit } = useEngagementPermissions(slug);
   const { data: eng, isLoading, isError, refetch } = useEngagement(slug);
 
   // Seed the config form once per engagement (normalizing an empty config to the
@@ -110,7 +112,7 @@ export function ReportsPage() {
   const { status, flush } = useAutosave<ReportConfig>({
     value: config,
     baseline,
-    isValid: () => canWrite,
+    isValid: () => canEdit,
     save: async (v) => {
       await update.mutateAsync({ reportConfig: v });
       setBaseline(v);
@@ -194,7 +196,7 @@ export function ReportsPage() {
   }
 
   const busyAny = busy !== null;
-  const readOnly = !canWrite;
+  const readOnly = !canEdit;
 
   const orderedKeys = useMemo(() => config.sections.map((s) => s.key), [config.sections]);
 
@@ -207,7 +209,7 @@ export function ReportsPage() {
             Choose which sections appear, reorder them, then generate the report.
           </p>
         </div>
-        {canWrite && <SaveStatusIndicator status={status} />}
+        {canEdit && <SaveStatusIndicator status={status} />}
       </div>
 
       {isLoading ? (
@@ -248,7 +250,7 @@ export function ReportsPage() {
                           hint={meta.hint}
                           missing={meta.missing}
                           enabled={entry.enabled}
-                          canWrite={canWrite}
+                          canEdit={canEdit}
                           onToggle={(v) => toggleSection(entry.key, v)}
                         />
                       );
@@ -305,7 +307,7 @@ export function ReportsPage() {
                             />
                           </Field>
                         </div>
-                        {canWrite && (
+                        {canEdit && (
                           <button
                             type="button"
                             onClick={() => removeCustomSection(s.id)}
@@ -430,7 +432,7 @@ function SortableSectionRow({
   hint,
   missing,
   enabled,
-  canWrite,
+  canEdit,
   onToggle,
 }: {
   id: string;
@@ -438,12 +440,12 @@ function SortableSectionRow({
   hint: string;
   missing: boolean;
   enabled: boolean;
-  canWrite: boolean;
+  canEdit: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
-    disabled: !canWrite,
+    disabled: !canEdit,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -463,7 +465,7 @@ function SortableSectionRow({
         {...attributes}
         {...listeners}
         type="button"
-        disabled={!canWrite}
+        disabled={!canEdit}
         aria-label={`Drag to reorder ${label}`}
         className="mt-0.5 cursor-grab touch-none px-1 text-muted hover:text-text active:cursor-grabbing disabled:opacity-50"
       >
@@ -484,7 +486,7 @@ function SortableSectionRow({
           type="checkbox"
           checked={enabled}
           onChange={(e) => onToggle(e.target.checked)}
-          disabled={!canWrite}
+          disabled={!canEdit}
           aria-label={`Include ${label}`}
           className="h-4 w-4 rounded border-border text-accent accent-[var(--accent)] disabled:opacity-50"
         />

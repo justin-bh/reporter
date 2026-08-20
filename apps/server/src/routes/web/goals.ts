@@ -142,7 +142,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       const eng = await engBySlug(slug);
       const target = await getTarget(eng.id, intParam(id, 'target'));
       const position = await app.db.targetActivity.count({ where: { targetId: target.id } });
-      const tagId = await ensureActivityTag(app, eng.id, input.name);
+      const tagId = await ensureActivityTag(app.db, eng.id, input.name);
       const a = await app.db.targetActivity.create({
         data: { targetId: target.id, name: input.name, category: input.category, tagId, position },
       });
@@ -169,7 +169,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       // if needed); the old tag is left in place (it may be in use on evidence).
       const tagId =
         input.name !== undefined && input.name !== activity.name
-          ? await ensureActivityTag(app, eng.id, input.name)
+          ? await ensureActivityTag(app.db, eng.id, input.name)
           : undefined;
       const a = await app.db.targetActivity.update({
         where: { id: activity.id },
@@ -479,85 +479,89 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       const { draft, mode, applyMetadata, rawProposal } = importRequestSchema.parse(req.body);
       const eng = await engBySlug(slug);
 
-      if (mode === 'replace') {
-        await app.db.engagementTarget.deleteMany({ where: { engagementId: eng.id } });
-      }
-
       // The raw proposal JSON is stored verbatim (provenance). null/undefined is
       // treated as "not provided" — Prisma's JSON column keeps its current value.
       const rawJson =
         rawProposal == null ? undefined : (rawProposal as Prisma.InputJsonValue);
 
-      let metadataApplied = false;
-      if (applyMetadata) {
-        const m = draft.metadata;
-        const data: Prisma.EngagementUpdateInput = {};
-        if (m.clientName) data.clientName = m.clientName;
-        if (m.assessmentType) data.assessmentType = m.assessmentType;
-        if (m.testApproach) data.testApproach = m.testApproach;
-        if (m.objectivesNarrative) data.objectivesNarrative = m.objectivesNarrative;
-        if (m.scope) data.scope = m.scope;
-        if (m.location) data.location = m.location;
-        if (m.startedAt) data.startedAt = new Date(m.startedAt);
-        if (m.scopeExclusions?.length) data.scopeExclusions = m.scopeExclusions;
-        if (m.providerContacts?.length) data.providerContacts = m.providerContacts;
-        if (m.clientContacts?.length) data.clientContacts = m.clientContacts;
-        if (rawJson !== undefined) data.proposalImport = rawJson;
-        if (Object.keys(data).length) {
-          await app.db.engagement.update({ where: { id: eng.id }, data });
-          metadataApplied = true;
+      // The whole import is one transaction: a `replace` must never delete the
+      // existing tree and then only partially rebuild it if a later create fails.
+      return app.db.$transaction(async (tx): Promise<ImportResult> => {
+        if (mode === 'replace') {
+          await tx.engagementTarget.deleteMany({ where: { engagementId: eng.id } });
         }
-      } else if (rawJson !== undefined) {
-        await app.db.engagement.update({
-          where: { id: eng.id },
-          data: { proposalImport: rawJson },
-        });
-      }
 
-      // Create the tree. Positions continue after any existing targets (merge).
-      let targetPos = await app.db.engagementTarget.count({ where: { engagementId: eng.id } });
-      let targetsCreated = 0;
-      let activitiesCreated = 0;
-      let goalsCreated = 0;
+        let metadataApplied = false;
+        if (applyMetadata) {
+          const m = draft.metadata;
+          const data: Prisma.EngagementUpdateInput = {};
+          if (m.clientName) data.clientName = m.clientName;
+          if (m.assessmentType) data.assessmentType = m.assessmentType;
+          if (m.testApproach) data.testApproach = m.testApproach;
+          if (m.objectivesNarrative) data.objectivesNarrative = m.objectivesNarrative;
+          if (m.scope) data.scope = m.scope;
+          if (m.location) data.location = m.location;
+          if (m.startedAt) data.startedAt = new Date(m.startedAt);
+          if (m.scopeExclusions?.length) data.scopeExclusions = m.scopeExclusions;
+          if (m.providerContacts?.length) data.providerContacts = m.providerContacts;
+          if (m.clientContacts?.length) data.clientContacts = m.clientContacts;
+          if (rawJson !== undefined) data.proposalImport = rawJson;
+          if (Object.keys(data).length) {
+            await tx.engagement.update({ where: { id: eng.id }, data });
+            metadataApplied = true;
+          }
+        } else if (rawJson !== undefined) {
+          await tx.engagement.update({
+            where: { id: eng.id },
+            data: { proposalImport: rawJson },
+          });
+        }
 
-      for (const t of draft.targets) {
-        const target = await app.db.engagementTarget.create({
-          data: {
-            engagementId: eng.id,
-            name: t.name,
-            description: t.description,
-            position: targetPos++,
-          },
-        });
-        targetsCreated++;
-        let activityPos = 0;
-        for (const a of t.activities) {
-          const tagId = await ensureActivityTag(app, eng.id, a.name);
-          const activity = await app.db.targetActivity.create({
+        // Create the tree. Positions continue after any existing targets (merge).
+        let targetPos = await tx.engagementTarget.count({ where: { engagementId: eng.id } });
+        let targetsCreated = 0;
+        let activitiesCreated = 0;
+        let goalsCreated = 0;
+
+        for (const t of draft.targets) {
+          const target = await tx.engagementTarget.create({
             data: {
-              targetId: target.id,
-              name: a.name,
-              category: a.category,
-              tagId,
-              position: activityPos++,
+              engagementId: eng.id,
+              name: t.name,
+              description: t.description,
+              position: targetPos++,
             },
           });
-          activitiesCreated++;
-          if (a.goals.length) {
-            await app.db.activityGoal.createMany({
-              data: a.goals.map((g, i) => ({
-                activityId: activity.id,
-                title: g.title,
-                isRetest: g.isRetest,
-                position: i,
-              })),
+          targetsCreated++;
+          let activityPos = 0;
+          for (const a of t.activities) {
+            const tagId = await ensureActivityTag(tx, eng.id, a.name);
+            const activity = await tx.targetActivity.create({
+              data: {
+                targetId: target.id,
+                name: a.name,
+                category: a.category,
+                tagId,
+                position: activityPos++,
+              },
             });
-            goalsCreated += a.goals.length;
+            activitiesCreated++;
+            if (a.goals.length) {
+              await tx.activityGoal.createMany({
+                data: a.goals.map((g, i) => ({
+                  activityId: activity.id,
+                  title: g.title,
+                  isRetest: g.isRetest,
+                  position: i,
+                })),
+              });
+              goalsCreated += a.goals.length;
+            }
           }
         }
-      }
 
-      return { targetsCreated, activitiesCreated, goalsCreated, metadataApplied };
+        return { targetsCreated, activitiesCreated, goalsCreated, metadataApplied };
+      });
     },
   );
 }

@@ -35,7 +35,7 @@ import {
   useUpdateGoal,
   useUpdateTarget,
 } from '../api/hooks.js';
-import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
+import { ADMIN_ONLY_TITLE, READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
 import { useAutosave } from '../hooks/useAutosave.js';
 import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
 import { ProgressBar } from '../components/goals/ProgressBar.js';
@@ -46,7 +46,7 @@ import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.
 
 export function GoalsPage() {
   const { slug = '' } = useParams();
-  const { canWrite } = useEngagementPermissions(slug);
+  const { canWrite, canAdmin } = useEngagementPermissions(slug);
   const { data: tree, isLoading, isError, refetch } = useGoals(slug);
   const [importOpen, setImportOpen] = useState(false);
   const [addTargetOpen, setAddTargetOpen] = useState(false);
@@ -81,7 +81,7 @@ export function GoalsPage() {
         </div>
       </div>
 
-      <ObjectivesNarrative slug={slug} canWrite={canWrite} />
+      <ObjectivesNarrative slug={slug} canEdit={canAdmin} />
 
       {tree && tree.progress.total > 0 && (
         <Card className="space-y-2 p-4">
@@ -151,7 +151,10 @@ export function GoalsPage() {
 // Objectives narrative — autosaved to the engagement.
 // ---------------------------------------------------------------------------
 
-function ObjectivesNarrative({ slug, canWrite }: { slug: string; canWrite: boolean }) {
+// The objectives narrative lives on the engagement and saves via the engagement
+// update endpoint, which requires the engagement-admin role — so it gates on
+// `canEdit` (admin), unlike the goal tree above (write).
+function ObjectivesNarrative({ slug, canEdit }: { slug: string; canEdit: boolean }) {
   const { data: eng } = useEngagement(slug);
   const update = useUpdateEngagement(slug);
 
@@ -170,7 +173,7 @@ function ObjectivesNarrative({ slug, canWrite }: { slug: string; canWrite: boole
   const { status, flush } = useAutosave<string>({
     value,
     baseline,
-    isValid: () => canWrite,
+    isValid: () => canEdit,
     save: async (v) => {
       await update.mutateAsync({ objectivesNarrative: v.trim() === '' ? null : v });
       setBaseline(v);
@@ -186,15 +189,15 @@ function ObjectivesNarrative({ slug, canWrite }: { slug: string; canWrite: boole
             A short narrative of the engagement’s objectives (shown in the report’s scope coverage).
           </p>
         </div>
-        {canWrite && <SaveStatusIndicator status={status} />}
+        {canEdit && <SaveStatusIndicator status={status} />}
       </div>
       <Textarea
         rows={4}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => void flush()}
-        disabled={!canWrite}
-        title={canWrite ? undefined : READ_ONLY_TITLE}
+        disabled={!canEdit}
+        title={canEdit ? undefined : ADMIN_ONLY_TITLE}
         placeholder="Describe the objectives / areas of interest for this engagement…"
       />
     </Card>

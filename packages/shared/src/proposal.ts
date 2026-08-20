@@ -177,7 +177,11 @@ export function proposalToImportDraft(raw: unknown): ImportDraft {
     }))
     .filter((t) => t.name.length > 0);
 
+  // The proposal lists candidate exclusions with a `checked` flag; only the ones
+  // the author actually selected are real scope exclusions. Drop those explicitly
+  // unchecked; keep any where the flag is absent (older/partial exports).
   const scopeExclusions = (p.scopeExclusions ?? [])
+    .filter((e) => e.checked !== false)
     .map((e) => (e.text ?? '').trim())
     .filter((t) => t.length > 0);
 

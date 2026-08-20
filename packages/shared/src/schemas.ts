@@ -587,13 +587,13 @@ export type UpdateGoalInput = z.infer<typeof updateGoalInput>;
 
 /** Link one or more pieces of evidence to a goal. */
 export const linkGoalEvidenceInput = z.object({
-  evidenceUuids: z.array(uuidSchema).min(1),
+  evidenceUuids: z.array(uuidSchema).min(1).max(500),
 });
 export type LinkGoalEvidenceInput = z.infer<typeof linkGoalEvidenceInput>;
 
 /** Link one or more findings to a goal. */
 export const linkGoalFindingInput = z.object({
-  findingUuids: z.array(uuidSchema).min(1),
+  findingUuids: z.array(uuidSchema).min(1).max(500),
 });
 export type LinkGoalFindingInput = z.infer<typeof linkGoalFindingInput>;
 

@@ -129,13 +129,13 @@ export function progressFromTree(targets: Target[]): EngagementProgress {
  * same name is reused. A blank name yields no tag (returns null).
  */
 export async function ensureActivityTag(
-  app: FastifyInstance,
+  db: Prisma.TransactionClient,
   engagementId: number,
   activityName: string,
 ): Promise<number | null> {
   const name = activityName.trim().slice(0, 64);
   if (!name) return null;
-  const tag = await app.db.tag.upsert({
+  const tag = await db.tag.upsert({
     where: { engagementId_name: { engagementId, name } },
     create: { engagementId, name, colorName: defaultTagColorFor(name) },
     update: {},
