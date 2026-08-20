@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Badge,
@@ -21,14 +21,35 @@ import {
   useToast,
   type SortDirection,
 } from '@reporter/ui';
-import { ENGAGEMENT_STATUSES, type Engagement, type EngagementStatus } from '@reporter/shared';
+import {
+  ENGAGEMENT_STATUSES,
+  proposalSuggestedName,
+  proposalToImportDraft,
+  type Engagement,
+  type EngagementStatus,
+  type ImportDraft,
+} from '@reporter/shared';
 import { slugify } from '../lib/slugify.js';
 import { formatDate, fromDateInput } from '../lib/format.js';
-import { useCreateEngagement, useEngagements, useToggleFavorite } from '../api/hooks.js';
+import {
+  useCreateEngagement,
+  useEngagements,
+  useImportProposal,
+  useToggleFavorite,
+} from '../api/hooks.js';
+import { ProgressBar } from '../components/goals/ProgressBar.js';
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
 
-type SortColumn = 'name' | 'status' | 'startedAt' | 'endDate' | 'evidence' | 'findings' | 'members';
+type SortColumn =
+  | 'name'
+  | 'status'
+  | 'startedAt'
+  | 'endDate'
+  | 'progress'
+  | 'evidence'
+  | 'findings'
+  | 'members';
 
 // Numeric columns start descending (most first); text columns start ascending;
 // dates start with the most recent.
@@ -37,6 +58,7 @@ const FIRST_CLICK_DIRECTION: Record<SortColumn, SortDirection> = {
   status: 'asc',
   startedAt: 'desc',
   endDate: 'desc',
+  progress: 'desc',
   evidence: 'desc',
   findings: 'desc',
   members: 'desc',
@@ -62,6 +84,8 @@ function compareBy(column: SortColumn, direction: SortDirection) {
           new Date(e.actualEndAt ?? e.projectedEndAt ?? 0).getTime();
         return dir * (endOf(a) - endOf(b));
       }
+      case 'progress':
+        return dir * ((a.progress?.percent ?? -1) - (b.progress?.percent ?? -1));
       case 'evidence':
         return dir * ((a.numEvidence ?? 0) - (b.numEvidence ?? 0));
       case 'findings':
@@ -302,6 +326,12 @@ function EngagementCard({ eng }: { eng: Engagement }) {
             ? ` · due ${formatDate(eng.projectedEndAt)}`
             : ''}
       </div>
+      {eng.progress && eng.progress.total > 0 && (
+        <div className="flex items-center gap-2">
+          <ProgressBar progress={eng.progress} className="flex-1" />
+          <span className="text-xs tabular-nums text-muted">{eng.progress.percent}%</span>
+        </div>
+      )}
     </Card>
   );
 }
@@ -347,6 +377,13 @@ function EngagementsTable({
           </SortableTh>
           <SortableTh direction={directionOf('endDate')} onSort={() => toggleSort('endDate')}>
             End
+          </SortableTh>
+          <SortableTh
+            align="right"
+            direction={directionOf('progress')}
+            onSort={() => toggleSort('progress')}
+          >
+            Progress
           </SortableTh>
           <SortableTh
             align="right"
@@ -400,6 +437,16 @@ function EngagementsTable({
                   <span className="text-muted">—</span>
                 )}
               </Td>
+              <Td className="text-right">
+                {eng.progress && eng.progress.total > 0 ? (
+                  <div className="flex items-center justify-end gap-2">
+                    <ProgressBar progress={eng.progress} className="w-16" />
+                    <span className="tabular-nums text-muted">{eng.progress.percent}%</span>
+                  </div>
+                ) : (
+                  <span className="text-muted">—</span>
+                )}
+              </Td>
               <Td className="text-right tabular-nums">{eng.numEvidence ?? 0}</Td>
               <Td className="text-right tabular-nums text-muted">{findings > 0 ? findings : ''}</Td>
               <Td className="text-right tabular-nums">{eng.numUsers ?? 0}</Td>
@@ -414,12 +461,51 @@ function EngagementsTable({
 function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
   const create = useCreateEngagement();
+  const fileInput = useRef<HTMLInputElement>(null);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
   const [projectedEndAt, setProjectedEndAt] = useState('');
+  // Optional proposal to import right after creation.
+  const [proposal, setProposal] = useState<{ draft: ImportDraft; raw: unknown; fileName: string } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!open) {
+      setName('');
+      setSlug('');
+      setSlugTouched(false);
+      setProjectedEndAt('');
+      setProposal(null);
+    }
+  }, [open]);
 
   const effectiveSlug = slugTouched ? slug : slugify(name);
+
+  // The create modal can't call useImportProposal(slug) before the slug exists, so
+  // POST the import directly against the created engagement's slug.
+  const importAfterCreate = useImportProposal(effectiveSlug);
+
+  async function onProposalFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await file.text());
+    } catch {
+      toast.error('That file is not valid JSON');
+      return;
+    }
+    const draft = proposalToImportDraft(raw);
+    setProposal({ draft, raw, fileName: file.name });
+    // Prefill the name/slug from the proposal if the user hasn't typed anything.
+    const suggested = proposalSuggestedName(raw);
+    if (suggested && !name.trim()) {
+      setName(suggested);
+    }
+  }
 
   async function submit() {
     try {
@@ -428,16 +514,38 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
         slug: effectiveSlug,
         projectedEndAt: fromDateInput(projectedEndAt),
       });
-      toast.success('Engagement created');
-      setName('');
-      setSlug('');
-      setSlugTouched(false);
-      setProjectedEndAt('');
+      // If a proposal was attached, import it (replace + apply metadata) into the
+      // brand-new engagement. Its own hook is bound to `effectiveSlug`.
+      if (proposal) {
+        try {
+          const r = await importAfterCreate.mutateAsync({
+            draft: proposal.draft,
+            mode: 'replace',
+            applyMetadata: true,
+            rawProposal: proposal.raw,
+          });
+          toast.success(
+            `Engagement created · imported ${r.targetsCreated} targets, ${r.goalsCreated} goals`,
+          );
+        } catch (err) {
+          // The engagement exists; only the import failed. Surface it distinctly.
+          toast.error(
+            err instanceof Error
+              ? `Engagement created, but import failed: ${err.message}`
+              : 'Engagement created, but import failed',
+          );
+        }
+      } else {
+        toast.success('Engagement created');
+      }
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create engagement');
     }
   }
+
+  const busy = create.isPending || importAfterCreate.isPending;
+  const targetCount = proposal?.draft.targets.length ?? 0;
 
   return (
     <Modal
@@ -446,10 +554,10 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
       title="New engagement"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={create.isPending} disabled={!name || !effectiveSlug}>
+          <Button onClick={submit} loading={busy} disabled={!name || !effectiveSlug}>
             Create
           </Button>
         </>
@@ -481,6 +589,41 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
             onChange={(e) => setProjectedEndAt(e.target.value)}
           />
         </Field>
+
+        <div className="border-t border-border pt-4">
+          <p className="text-sm font-medium text-text">Import from proposal (optional)</p>
+          <p className="mt-0.5 text-xs text-muted">
+            Attach a proposal JSON to prefill the name and import its Targets, Activities, and Goals
+            when the engagement is created.
+          </p>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onProposalFile}
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => fileInput.current?.click()}>
+              {proposal ? 'Choose a different file' : 'Choose proposal…'}
+            </Button>
+            {proposal && (
+              <>
+                <span className="text-xs text-text">{proposal.fileName}</span>
+                <Badge tone="neutral">{targetCount} targets</Badge>
+                <button
+                  type="button"
+                  onClick={() => setProposal(null)}
+                  aria-label="Remove proposal"
+                  title="Remove proposal"
+                  className="px-1 text-muted hover:text-danger"
+                >
+                  ✕
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </Modal>
   );

@@ -3,9 +3,15 @@ import type { FastifyInstance } from 'fastify';
 import type { PuppeteerNode } from 'puppeteer';
 import {
   FINDINGS_EXPORT_VERSION,
+  REPORT_PRESET_FILE_LABELS,
   evidenceGroupingSchema,
   findingsExportSchema,
+  reportConfigSchema,
+  reportPresetSchema,
+  reportPresetSections,
   type EvidenceGrouping,
+  type ReportConfig,
+  type ReportPreset,
 } from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import {
@@ -31,8 +37,22 @@ function groupParam(v: unknown): EvidenceGrouping {
   return parsed.success ? parsed.data : 'chronological';
 }
 
+/**
+ * A filename timestamp down to the second (local time), so repeated exports on
+ * the same day get distinct names: `2026-08-20-143052`.
+ */
 function stamp(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(
+    d.getMinutes(),
+  )}${p(d.getSeconds())}`;
+}
+
+/** The `?preset` query param ("report type"), defaulting to the saved custom config. */
+function presetParam(v: unknown): ReportPreset {
+  const parsed = reportPresetSchema.safeParse(v);
+  return parsed.success ? parsed.data : 'custom';
 }
 
 /** Report options parsed from the shared query params of the PDF and ZIP routes. */
@@ -44,6 +64,40 @@ function reportOptionsFromQuery(q: Record<string, string | undefined>): ReportOp
     includeNarrative: boolParamDefaultTrue(q.includeNarrative),
     includeTimeline: boolParam(q.includeTimeline),
     includeAppendix: boolParamDefaultTrue(q.includeAppendix),
+  };
+}
+
+/** Report options from a saved report configuration (the Reports section). */
+function reportOptionsFromConfig(config: ReportConfig): ReportOptions {
+  return {
+    includeAll: config.includeAllFindings,
+    evidenceGroup: config.evidenceGroup,
+    includeTimeline: config.includeEvidenceTimeline,
+    sections: config.sections,
+    customSections: config.customSections,
+  };
+}
+
+/**
+ * Resolve a report "type" into render options and the filename fragment that
+ * names it. `custom` renders the engagement's saved configuration; the canned
+ * presets render a fixed section subset (report-ready findings, no timeline).
+ */
+function reportFor(
+  config: ReportConfig,
+  preset: ReportPreset,
+): { options: ReportOptions; label: string } {
+  const label = REPORT_PRESET_FILE_LABELS[preset];
+  if (preset === 'custom') return { options: reportOptionsFromConfig(config), label };
+  return {
+    options: {
+      includeAll: false,
+      evidenceGroup: config.evidenceGroup,
+      includeTimeline: false,
+      sections: reportPresetSections(preset),
+      customSections: [],
+    },
+    label,
   };
 }
 
@@ -187,6 +241,86 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       }
       await archive.finalize();
       return reply;
+    },
+  );
+
+  // --- Config-driven report generation (the Reports section) ---------------
+  // These use the engagement's saved `reportConfig` (ordered/toggleable sections
+  // + options) rather than query params. The legacy `/findings/*` routes above
+  // stay for the client API and back-compat.
+
+  app.get(
+    '/engagements/:slug/report.pdf',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const config = reportConfigSchema.parse(eng.reportConfig ?? {});
+      const { options, label } = reportFor(config, presetParam(q.preset));
+      const html = await buildReportHtml(app, eng, new Date(), options);
+      const pdf = await renderPdf(app, html);
+      reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `attachment; filename="${slug}-${label}-${stamp()}.pdf"`);
+      return reply.send(pdf);
+    },
+  );
+
+  app.get(
+    '/engagements/:slug/report.zip',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const config = reportConfigSchema.parse(eng.reportConfig ?? {});
+      const { options, label } = reportFor(config, presetParam(q.preset));
+      const files = await gatherSupportingFiles(app, eng);
+      const html = await buildReportHtml(app, eng, new Date(), options, files);
+      const pdf = await renderPdf(app, html);
+
+      const base = `${slug}-${label}-${stamp()}`;
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('warning', (err: unknown) => app.log.warn({ err }, 'zip warning'));
+      archive.on('error', (err: unknown) => app.log.error({ err }, 'zip error'));
+      reply
+        .header('Content-Type', 'application/zip')
+        .header('Content-Disposition', `attachment; filename="${base}.zip"`);
+      reply.send(archive);
+      archive.append(pdf, { name: `${base}.pdf` });
+      for (const f of files) {
+        const buf = await app.blobs.getBuffer(f.blobKey).catch(() => null);
+        if (buf) archive.append(buf, { name: `supporting-files/${f.filename}` });
+      }
+      if (files.length > 0) {
+        const manifest =
+          files.map((f) => `${f.sha256}  supporting-files/${f.filename}`).join('\n') + '\n';
+        archive.append(manifest, { name: 'supporting-files/SHA256SUMS.txt' });
+      }
+      await archive.finalize();
+      return reply;
+    },
+  );
+
+  app.get(
+    '/engagements/:slug/report.json',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const config = reportConfigSchema.parse(eng.reportConfig ?? {});
+      const { options, label } = reportFor(config, presetParam(q.preset));
+      const data = await buildFindingsExport(app, eng, new Date(), {
+        includeAll: options.includeAll ?? false,
+        includeEvidenceContent: boolParam(q.includeEvidenceContent),
+      });
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="${slug}-${label}-${stamp()}.json"`,
+      );
+      return data;
     },
   );
 }

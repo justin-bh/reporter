@@ -5,6 +5,11 @@ import { createLocalUser } from '../src/services/users.js';
 import { generateApiKey } from '../src/services/apikeys.js';
 
 const TABLES = [
+  'goal_evidence',
+  'goal_findings',
+  'activity_goals',
+  'target_activities',
+  'engagement_targets',
   'evidence_findings',
   'evidence_tags',
   'evidence_metadata',

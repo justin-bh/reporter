@@ -2,6 +2,7 @@ import { NavLink, Outlet, useParams } from 'react-router-dom';
 import { Badge, Spinner } from '@reporter/ui';
 import { useEngagement } from '../api/hooks.js';
 import { formatDate } from '../lib/format.js';
+import { ProgressBar } from './goals/ProgressBar.js';
 
 const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' } as const;
 
@@ -11,10 +12,14 @@ export function EngagementLayout() {
 
   const tabs = [
     { to: 'evidence', label: 'Evidence' },
+    { to: 'goals', label: 'Goals' },
     { to: 'findings', label: 'Findings' },
+    { to: 'reports', label: 'Reports' },
     { to: 'queries', label: 'Saved queries' },
     { to: 'settings', label: 'Settings' },
   ];
+
+  const hasProgress = Boolean(eng?.progress && eng.progress.total > 0);
 
   return (
     <div>
@@ -37,6 +42,12 @@ export function EngagementLayout() {
             ) : eng.projectedEndAt ? (
               <span className="text-sm text-muted">Due {formatDate(eng.projectedEndAt)}</span>
             ) : null}
+            {hasProgress && eng.progress && (
+              <div className="flex min-w-40 items-center gap-2">
+                <ProgressBar progress={eng.progress} className="w-32" />
+                <span className="text-sm text-muted">{eng.progress.percent}% goals</span>
+              </div>
+            )}
           </div>
         )}
       </div>

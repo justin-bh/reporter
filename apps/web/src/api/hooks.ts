@@ -1,24 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  Activity,
   AdminEngagement,
   AdminUser,
   ApiKey,
+  CreateActivityInput,
   CreateEvidenceInput,
   CreateFindingInput,
   CreateEngagementInput,
+  CreateGoalInput,
   CreateTagInput,
+  CreateTargetInput,
   Evidence,
   Finding,
   FindingCategory,
   FindingDetail,
   FindingEvidence,
   FindingsImportResult,
+  Goal,
+  GoalsTree,
+  ImportRequest,
+  ImportResult,
   Engagement,
+  LinkedGoal,
   ReportSettings,
   SavedQuery,
   Tag,
+  Target,
+  UpdateActivityInput,
   UpdateFindingEvidenceInput,
+  UpdateGoalInput,
   UpdateReportSettingsInput,
+  UpdateTargetInput,
   User,
 } from '@reporter/shared';
 import { api } from './client.js';
@@ -87,6 +100,10 @@ export function useUpdateEngagement(slug: string) {
           | 'watermarkColor'
           | 'watermarkOpacity'
           | 'watermarkLayer'
+          // Goals + Reports v2
+          | 'reportConfig'
+          | 'testApproach'
+          | 'objectivesNarrative'
         >
       >,
     ) => api.put<Engagement>(`/web/engagements/${slug}`, patch),
@@ -458,6 +475,231 @@ export function useReorderEvidence(slug: string, uuid: string) {
       if (ctx?.prev) qc.setQueryData(['finding', slug, uuid], ctx.prev);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ['finding', slug, uuid] }),
+  });
+}
+
+// --- Goals: Target → Activity → Goal ---
+
+const goalsKey = (slug: string) => ['goals', slug];
+
+/**
+ * After any target/activity/goal mutation the tree changes; status/link changes
+ * additionally move the rolled-up progress that the engagement list + detail
+ * render, so refresh those too.
+ */
+function invalidateGoals(qc: ReturnType<typeof useQueryClient>, slug: string) {
+  qc.invalidateQueries({ queryKey: goalsKey(slug) });
+  qc.invalidateQueries({ queryKey: engKey(slug) });
+  qc.invalidateQueries({ queryKey: ['engagements'] });
+}
+
+export const useGoals = (slug: string) =>
+  useQuery({
+    queryKey: goalsKey(slug),
+    queryFn: () => api.get<GoalsTree>(`/web/engagements/${slug}/goals`),
+  });
+
+// Targets
+export function useCreateTarget(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTargetInput) =>
+      api.post<Target>(`/web/engagements/${slug}/targets`, input),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useUpdateTarget(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: number; patch: UpdateTargetInput }) =>
+      api.put<Target>(`/web/engagements/${slug}/targets/${args.id}`, args.patch),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useDeleteTarget(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.del(`/web/engagements/${slug}/targets/${id}`),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useReorderTargets(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds: number[]) =>
+      api.patch(`/web/engagements/${slug}/targets/reorder`, { orderedIds }),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+// Activities
+export function useCreateActivity(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { targetId: number; input: CreateActivityInput }) =>
+      api.post<Activity>(`/web/engagements/${slug}/targets/${args.targetId}/activities`, args.input),
+    // A new activity auto-creates a correlation tag — refresh the tag list too.
+    onSuccess: () => {
+      invalidateGoals(qc, slug);
+      qc.invalidateQueries({ queryKey: ['tags', slug] });
+    },
+  });
+}
+
+export function useUpdateActivity(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: number; patch: UpdateActivityInput }) =>
+      api.put<Activity>(`/web/engagements/${slug}/activities/${args.id}`, args.patch),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useDeleteActivity(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.del(`/web/engagements/${slug}/activities/${id}`),
+    onSuccess: () => {
+      invalidateGoals(qc, slug);
+      qc.invalidateQueries({ queryKey: ['tags', slug] });
+    },
+  });
+}
+
+export function useReorderActivities(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { targetId: number; orderedIds: number[] }) =>
+      api.patch(`/web/engagements/${slug}/targets/${args.targetId}/activities/reorder`, {
+        orderedIds: args.orderedIds,
+      }),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+// Goals
+export function useCreateGoal(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { activityId: number; input: CreateGoalInput }) =>
+      api.post<Goal>(`/web/engagements/${slug}/activities/${args.activityId}/goals`, args.input),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useUpdateGoal(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: number; patch: UpdateGoalInput }) =>
+      api.put<Goal>(`/web/engagements/${slug}/goals/${args.id}`, args.patch),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useDeleteGoal(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.del(`/web/engagements/${slug}/goals/${id}`),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+export function useReorderGoals(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { activityId: number; orderedIds: number[] }) =>
+      api.patch(`/web/engagements/${slug}/activities/${args.activityId}/goals/reorder`, {
+        orderedIds: args.orderedIds,
+      }),
+    onSuccess: () => invalidateGoals(qc, slug),
+  });
+}
+
+// Goal ↔ Evidence / Finding links
+export function useLinkGoalEvidence(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { goalId: number; evidenceUuids: string[] }) =>
+      api.post(`/web/engagements/${slug}/goals/${args.goalId}/evidence`, {
+        evidenceUuids: args.evidenceUuids,
+      }),
+    onSuccess: (_d, v) => {
+      invalidateGoals(qc, slug);
+      // Any open evidence detail's "Linked goals" list may change.
+      for (const uuid of v.evidenceUuids) {
+        qc.invalidateQueries({ queryKey: ['goals-for-evidence', slug, uuid] });
+      }
+    },
+  });
+}
+
+export function useUnlinkGoalEvidence(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { goalId: number; evidenceUuid: string }) =>
+      api.del(`/web/engagements/${slug}/goals/${args.goalId}/evidence/${args.evidenceUuid}`),
+    onSuccess: (_d, v) => {
+      invalidateGoals(qc, slug);
+      qc.invalidateQueries({ queryKey: ['goals-for-evidence', slug, v.evidenceUuid] });
+    },
+  });
+}
+
+export function useLinkGoalFinding(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { goalId: number; findingUuids: string[] }) =>
+      api.post(`/web/engagements/${slug}/goals/${args.goalId}/findings`, {
+        findingUuids: args.findingUuids,
+      }),
+    onSuccess: (_d, v) => {
+      invalidateGoals(qc, slug);
+      for (const uuid of v.findingUuids) {
+        qc.invalidateQueries({ queryKey: ['goals-for-finding', slug, uuid] });
+      }
+    },
+  });
+}
+
+export function useUnlinkGoalFinding(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { goalId: number; findingUuid: string }) =>
+      api.del(`/web/engagements/${slug}/goals/${args.goalId}/findings/${args.findingUuid}`),
+    onSuccess: (_d, v) => {
+      invalidateGoals(qc, slug);
+      qc.invalidateQueries({ queryKey: ['goals-for-finding', slug, v.findingUuid] });
+    },
+  });
+}
+
+/** Goals currently linked to a piece of evidence (for the detail-page section). */
+export const useGoalsForEvidence = (slug: string, uuid: string) =>
+  useQuery({
+    queryKey: ['goals-for-evidence', slug, uuid],
+    queryFn: () =>
+      api.get<LinkedGoal[]>(`/web/engagements/${slug}/goals/for-evidence/${uuid}`),
+    enabled: Boolean(slug && uuid),
+  });
+
+/** Goals currently linked to a finding (for the detail-page section). */
+export const useGoalsForFinding = (slug: string, uuid: string) =>
+  useQuery({
+    queryKey: ['goals-for-finding', slug, uuid],
+    queryFn: () => api.get<LinkedGoal[]>(`/web/engagements/${slug}/goals/for-finding/${uuid}`),
+    enabled: Boolean(slug && uuid),
+  });
+
+/** Import a proposal draft (with metadata + mode) into the engagement. */
+export function useImportProposal(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ImportRequest) =>
+      api.post<ImportResult>(`/web/engagements/${slug}/proposal/import`, body),
+    onSuccess: () => invalidateGoals(qc, slug),
   });
 }
 

@@ -3,12 +3,15 @@ import {
   evidenceTypeSchema,
   engagementRoleSchema,
   engagementStatusSchema,
+  evidenceGroupingSchema,
+  goalStatusSchema,
   savedQueryTypeSchema,
   severitySchema,
   fixEffortSchema,
   findingKindSchema,
   watermarkLayerSchema,
   watermarkOpacitySchema,
+  type ReportPreset,
 } from './enums.js';
 import { cvssVectorSchema } from './cvss.js';
 
@@ -98,6 +101,152 @@ export const executionSubsectionSchema = z.object({
 export type ExecutionSubsection = z.infer<typeof executionSubsectionSchema>;
 
 // ---------------------------------------------------------------------------
+// Report composition config (per-engagement; drives the Reports section)
+// ---------------------------------------------------------------------------
+
+/** A free-text custom section a user can insert into the report flow. */
+export const reportCustomSectionSchema = z.object({
+  id: z.string().min(1).max(64),
+  title: z.string().min(1).max(255),
+  body: z.string().max(50_000).default(''),
+});
+export type ReportCustomSection = z.infer<typeof reportCustomSectionSchema>;
+
+/**
+ * One entry in the ordered report section list. `key` is a built-in
+ * `ReportSection` value or `custom:<id>` referencing a `customSections` entry.
+ */
+export const reportSectionEntrySchema = z.object({
+  key: z.string().min(1).max(80),
+  enabled: z.boolean().default(true),
+});
+export type ReportSectionEntry = z.infer<typeof reportSectionEntrySchema>;
+
+/**
+ * The default section order — this reproduces the current ("Kia") report flow
+ * exactly. The one new section, `scopeCoverage`, ships disabled so an
+ * unconfigured engagement's report is byte-for-byte the same as before.
+ */
+export const DEFAULT_REPORT_SECTIONS: ReportSectionEntry[] = [
+  { key: 'executiveSummary', enabled: true },
+  { key: 'assessmentFindings', enabled: true },
+  { key: 'methodology', enabled: true },
+  { key: 'threatModel', enabled: true },
+  { key: 'assessmentExecution', enabled: true },
+  { key: 'scopeCoverage', enabled: false },
+  { key: 'detailedFindings', enabled: true },
+  { key: 'supportingInformation', enabled: true },
+  { key: 'appendix', enabled: true },
+];
+
+/**
+ * Per-engagement report configuration. Every field has a default, so
+ * `reportConfigSchema.parse(eng.reportConfig ?? {})` yields the canonical default
+ * for an engagement that has never been configured.
+ */
+export const reportConfigSchema = z.object({
+  sections: z.array(reportSectionEntrySchema).max(50).default(DEFAULT_REPORT_SECTIONS),
+  customSections: z.array(reportCustomSectionSchema).max(30).default([]),
+  /** Include every finding; otherwise only "Ready to report" findings. */
+  includeAllFindings: z.boolean().default(false),
+  /** Include the auto-generated evidence log in Assessment Execution. */
+  includeEvidenceTimeline: z.boolean().default(false),
+  /** How that evidence log is grouped. */
+  evidenceGroup: evidenceGroupingSchema.default('chronological'),
+});
+export type ReportConfig = z.infer<typeof reportConfigSchema>;
+
+/**
+ * The ordered section list for a canned report "type" (everything but `custom`,
+ * which renders the engagement's saved configuration). `full` reproduces the
+ * default report; `executive` and `findings` are focused subsets.
+ */
+export function reportPresetSections(
+  preset: Exclude<ReportPreset, 'custom'>,
+): ReportSectionEntry[] {
+  switch (preset) {
+    case 'full':
+      return DEFAULT_REPORT_SECTIONS.map((s) => ({ ...s }));
+    case 'executive':
+      return [{ key: 'executiveSummary', enabled: true }];
+    case 'findings':
+      return [
+        { key: 'assessmentFindings', enabled: true },
+        { key: 'detailedFindings', enabled: true },
+      ];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Goals: Target → Activity → Goal (engagement scope & objectives)
+// ---------------------------------------------------------------------------
+
+/** A goal / area of interest under an activity — the trackable unit. */
+export const goalSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string().min(1).max(500),
+  status: goalStatusSchema,
+  /** Carried over from a prior report as a retest item (e.g. a "W1-…" goal). */
+  isRetest: z.boolean(),
+  notes: z.string(),
+  position: z.number().int().nonnegative(),
+  numEvidence: z.number().int().nonnegative(),
+  numFindings: z.number().int().nonnegative(),
+});
+export type Goal = z.infer<typeof goalSchema>;
+
+/** A testing activity on a target, with its category and correlation tag. */
+export const activitySchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1).max(255),
+  category: z.string(),
+  /** The engagement tag auto-created for this activity (timeline correlation). */
+  tagId: z.number().int().positive().nullable(),
+  position: z.number().int().nonnegative(),
+  goals: z.array(goalSchema),
+});
+export type Activity = z.infer<typeof activitySchema>;
+
+/** A system/device under scope, with its activities. */
+export const targetSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1).max(255),
+  description: z.string(),
+  position: z.number().int().nonnegative(),
+  activities: z.array(activitySchema),
+});
+export type Target = z.infer<typeof targetSchema>;
+
+/** Rolled-up goal progress for an engagement (or a subtree). */
+export const engagementProgressSchema = z.object({
+  total: z.number().int().nonnegative(),
+  complete: z.number().int().nonnegative(),
+  inProgress: z.number().int().nonnegative(),
+  notStarted: z.number().int().nonnegative(),
+  notApplicable: z.number().int().nonnegative(),
+  /** complete / (total − notApplicable), as a whole percent; 0 when nothing to do. */
+  percent: z.number().int().min(0).max(100),
+});
+export type EngagementProgress = z.infer<typeof engagementProgressSchema>;
+
+/** The full goals tree for an engagement, plus its rolled-up progress. */
+export const goalsTreeSchema = z.object({
+  targets: z.array(targetSchema),
+  progress: engagementProgressSchema,
+});
+export type GoalsTree = z.infer<typeof goalsTreeSchema>;
+
+/** A goal as referenced from an evidence/finding "linked goals" list. */
+export const linkedGoalSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string(),
+  status: goalStatusSchema,
+  targetName: z.string(),
+  activityName: z.string(),
+});
+export type LinkedGoal = z.infer<typeof linkedGoalSchema>;
+
+// ---------------------------------------------------------------------------
 // Entities (server → client shapes)
 // ---------------------------------------------------------------------------
 
@@ -150,10 +299,13 @@ export const engagementSchema = z.object({
   // Present-or-null on every engagement; edited on the Settings page.
   clientName: z.string().nullable().optional(),
   assessmentType: z.string().nullable().optional(),
+  testApproach: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   scope: z.string().nullable().optional(),
   executiveSummary: z.string().nullable().optional(),
   methodology: z.string().nullable().optional(),
+  /** Narrative statement of engagement objectives (heads the Goals tab). */
+  objectivesNarrative: z.string().nullable().optional(),
   // Structured report content. Present on the engagement-detail read shape; omitted
   // from lean list responses (hence optional). Each list defaults to empty server-side.
   scopeTargets: z.array(scopeTargetSchema).optional(),
@@ -172,6 +324,13 @@ export const engagementSchema = z.object({
   watermarkColor: z.string().nullable().optional(),
   watermarkOpacity: watermarkOpacitySchema.optional(),
   watermarkLayer: watermarkLayerSchema.optional(),
+  // Report composition config. Always present on responses (normalized to the
+  // canonical default for an unconfigured engagement).
+  reportConfig: reportConfigSchema.optional(),
+  // Rolled-up goal progress; present on list + detail once goals exist.
+  progress: engagementProgressSchema.optional(),
+  /** Whether a proposal JSON has been imported (raw kept server-side for provenance). */
+  hasProposalImport: z.boolean().optional(),
 });
 export type Engagement = z.infer<typeof engagementSchema>;
 
@@ -349,10 +508,12 @@ export const updateEngagementInput = z.object({
   // Report metadata. Each is nullable so an empty field clears it.
   clientName: z.string().max(255).nullable().optional(),
   assessmentType: z.string().max(255).nullable().optional(),
+  testApproach: z.string().max(255).nullable().optional(),
   location: z.string().max(255).nullable().optional(),
   scope: z.string().max(20_000).nullable().optional(),
   executiveSummary: z.string().max(20_000).nullable().optional(),
   methodology: z.string().max(20_000).nullable().optional(),
+  objectivesNarrative: z.string().max(20_000).nullable().optional(),
   // Structured report content (JSON lists). Each is optional so a request can set
   // just one; sending an empty array clears that list. Sizes are capped to bound
   // the engagement row + PDF payload.
@@ -376,8 +537,71 @@ export const updateEngagementInput = z.object({
     .optional(),
   watermarkOpacity: watermarkOpacitySchema.optional(),
   watermarkLayer: watermarkLayerSchema.optional(),
+  // Report composition config (Reports section). Replaces the whole config.
+  reportConfig: reportConfigSchema.optional(),
 });
 export type UpdateEngagementInput = z.infer<typeof updateEngagementInput>;
+
+// ---------------------------------------------------------------------------
+// Goals request payloads (client → server)
+// ---------------------------------------------------------------------------
+
+export const createTargetInput = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(10_000).default(''),
+});
+export type CreateTargetInput = z.infer<typeof createTargetInput>;
+
+export const updateTargetInput = z.object({
+  name: z.string().min(1).max(255).optional(),
+  description: z.string().max(10_000).optional(),
+});
+export type UpdateTargetInput = z.infer<typeof updateTargetInput>;
+
+export const createActivityInput = z.object({
+  name: z.string().min(1).max(255),
+  category: z.string().max(120).default(''),
+});
+export type CreateActivityInput = z.infer<typeof createActivityInput>;
+
+export const updateActivityInput = z.object({
+  name: z.string().min(1).max(255).optional(),
+  category: z.string().max(120).optional(),
+});
+export type UpdateActivityInput = z.infer<typeof updateActivityInput>;
+
+export const createGoalInput = z.object({
+  title: z.string().min(1).max(500),
+  isRetest: z.boolean().default(false),
+  notes: z.string().max(10_000).default(''),
+});
+export type CreateGoalInput = z.infer<typeof createGoalInput>;
+
+export const updateGoalInput = z.object({
+  title: z.string().min(1).max(500).optional(),
+  status: goalStatusSchema.optional(),
+  isRetest: z.boolean().optional(),
+  notes: z.string().max(10_000).optional(),
+});
+export type UpdateGoalInput = z.infer<typeof updateGoalInput>;
+
+/** Link one or more pieces of evidence to a goal. */
+export const linkGoalEvidenceInput = z.object({
+  evidenceUuids: z.array(uuidSchema).min(1),
+});
+export type LinkGoalEvidenceInput = z.infer<typeof linkGoalEvidenceInput>;
+
+/** Link one or more findings to a goal. */
+export const linkGoalFindingInput = z.object({
+  findingUuids: z.array(uuidSchema).min(1),
+});
+export type LinkGoalFindingInput = z.infer<typeof linkGoalFindingInput>;
+
+/** Reorder request keyed by numeric ids (targets, activities, or goals). */
+export const reorderIdsInput = z.object({
+  orderedIds: z.array(z.number().int().positive()).min(1),
+});
+export type ReorderIdsInput = z.infer<typeof reorderIdsInput>;
 
 export const createTagInput = z.object({
   name: z.string().min(1).max(64),
