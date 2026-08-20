@@ -18,7 +18,7 @@ import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 
 /**
  * Finding-category list + add form. Presentational block meant to live inside a
- * Settings Card. Categories are shared across all engagements; deleting one is a
+ * Settings Card. Categories are specific to this engagement; deleting one is a
  * soft-delete and existing findings keep their label.
  */
 export function CategoryManager({
@@ -39,7 +39,7 @@ export function CategoryManager({
   async function removeCategory(id: number, category: string) {
     const ok = await confirm({
       title: 'Delete category',
-      message: `Delete the category “${category}”? Categories are shared across all engagements; existing findings keep their label.`,
+      message: `Delete the category “${category}”? Categories are specific to this engagement; existing findings keep their label.`,
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -74,7 +74,7 @@ export function CategoryManager({
       ) : !categories || categories.length === 0 ? (
         <EmptyState
           title="No categories yet"
-          description="Add a category to group findings; categories are shared across engagements."
+          description="Add a category to group findings; categories are specific to this engagement."
         />
       ) : (
         <ul className="flex flex-wrap gap-2">

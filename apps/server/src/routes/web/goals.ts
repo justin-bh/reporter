@@ -506,6 +506,28 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
           if (m.providerContacts?.length) data.providerContacts = m.providerContacts;
           if (m.clientContacts?.length) data.clientContacts = m.clientContacts;
           if (rawJson !== undefined) data.proposalImport = rawJson;
+
+          // Populate the structured Service-scope section from the same devices
+          // that build the goals tree: each target's name, with its interface
+          // (activity) names as the in-scope subsystems. `replace` overwrites the
+          // scope list; `merge` appends to whatever is already there (mirroring
+          // how the goals tree itself merges). Capped to the engagement schema's
+          // 100-target / 200-subsystem limits.
+          const derivedScope = draft.targets.map((t) => ({
+            name: t.name,
+            subsystems: t.activities
+              .map((a) => a.name)
+              .filter((s) => s.trim().length > 0)
+              .slice(0, 200),
+          }));
+          if (derivedScope.length) {
+            const existing =
+              mode === 'replace'
+                ? []
+                : ((eng.scopeTargets as unknown as { name: string; subsystems: string[] }[]) ?? []);
+            data.scopeTargets = [...existing, ...derivedScope].slice(0, 100);
+          }
+
           if (Object.keys(data).length) {
             await tx.engagement.update({ where: { id: eng.id }, data });
             metadataApplied = true;
@@ -557,6 +579,33 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
               });
               goalsCreated += a.goals.length;
             }
+          }
+        }
+
+        // Seed the engagement's finding-category list from the proposal's own
+        // weakness taxonomy so classifying a finding is "pick from the plan", not
+        // free-typing: the intended weakness classes (non-retest goal titles) plus
+        // the activity categories. Deduped, length-bounded, and revived if a
+        // matching category was previously soft-deleted.
+        if (applyMetadata) {
+          const categoryNames = new Set<string>();
+          for (const t of draft.targets) {
+            for (const a of t.activities) {
+              const cat = a.category.trim();
+              if (cat) categoryNames.add(cat);
+              for (const g of a.goals) {
+                const title = g.title.trim();
+                // Retests are prior-report carryovers (e.g. "W1-…"), not classes.
+                if (!g.isRetest && title && title.length <= 120) categoryNames.add(title);
+              }
+            }
+          }
+          for (const category of categoryNames) {
+            await tx.findingCategory.upsert({
+              where: { engagementId_category: { engagementId: eng.id, category } },
+              create: { engagementId: eng.id, category },
+              update: { deletedAt: null },
+            });
           }
         }
 

@@ -8,6 +8,7 @@
  * settings can be injected into `--bh-red` / `--accent`. Everything is embedded
  * inline in the report HTML so the document is fully self-contained.
  */
+import { renderMarkdown } from '@reporter/shared';
 
 /** HTML-escape user text for safe interpolation into the document. */
 export function esc(s: string): string {
@@ -19,16 +20,17 @@ export function esc(s: string): string {
 }
 
 /**
- * Render plain-text prose (finding description, remediation, scope, summary,
- * methodology) as escaped paragraphs. Blank lines split paragraphs; single
- * newlines are preserved inside a paragraph via `white-space: pre-wrap`. No
- * markdown is interpreted.
+ * Render author prose (finding description, remediation, scope, summary,
+ * methodology, narratives, custom sections) as Markdown → HTML. Uses the shared
+ * renderer so the exported PDF matches the in-app editor's Preview exactly:
+ * blank lines start new paragraphs, single newlines become `<br>`, and the usual
+ * markdown (headings, lists, **bold**, links, code, tables) is supported. The
+ * output is wrapped in `.md` for the report's markdown styling; empty input
+ * yields an empty string so callers can omit the block.
  */
 export function prose(text: string | null | undefined): string {
-  const t = (text ?? '').trim();
-  if (!t) return '';
-  const paras = t.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  return paras.map((p) => `<p class="pp">${esc(p)}</p>`).join('');
+  const html = renderMarkdown(text);
+  return html ? `<div class="md">${html}</div>` : '';
 }
 
 /** Map the three transparency levels to CSS opacities. */
@@ -146,6 +148,37 @@ p, li { text-wrap: pretty; }
 .pp:last-child { margin-bottom: 0; }
 .muted { color: var(--fg-3); }
 .mono { font-family: var(--font-mono); }
+
+/* Rendered markdown prose (see report-style prose()). Mirrors the in-app editor
+   preview (.md-body in the design system) with print colors. */
+.md { color: var(--fg-1); font-size: 14.5px; line-height: 1.62; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 12px; }
+.md h1, .md h2, .md h3, .md h4 { color: var(--bh-black); font-weight: 700; line-height: 1.25;
+  margin: 18px 0 8px; break-after: avoid; }
+.md h1 { font-size: 20px; }
+.md h2 { font-size: 17px; }
+.md h3 { font-size: 15px; }
+.md h4 { font-size: 14px; }
+.md ul, .md ol { margin: 0 0 12px; padding-left: 22px; }
+.md li { margin: 2px 0; }
+.md li > ul, .md li > ol { margin: 2px 0; }
+.md a { color: var(--bh-red); text-decoration: underline; }
+.md strong { font-weight: 700; }
+.md em { font-style: italic; }
+.md code { font-family: var(--font-mono); font-size: 12.5px; background: #f6f6f6;
+  border: 1px solid var(--stroke-light); border-radius: 4px; padding: 0.5px 4px; }
+.md pre { background: #f6f6f6; border: 1px solid var(--stroke-light); border-radius: 6px;
+  padding: 12px; overflow-x: auto; margin: 0 0 12px; white-space: pre-wrap; word-break: break-word; }
+.md pre code { background: none; border: 0; padding: 0; font-size: 12px; line-height: 1.5; }
+.md blockquote { margin: 0 0 12px; padding: 2px 0 2px 14px; border-left: 3px solid var(--bh-red);
+  color: var(--fg-2); }
+.md hr { border: 0; border-top: 1px solid var(--stroke-light); margin: 16px 0; }
+.md table { width: 100%; border-collapse: collapse; margin: 0 0 12px; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--stroke-light); padding: 6px 10px; text-align: left;
+  vertical-align: top; }
+.md th { background: var(--bh-light-gray); font-weight: 700; color: var(--bh-black); }
 
 /* ---- cover ---- */
 /* The cover is the first page, which has zero @page margin (see @page :first),

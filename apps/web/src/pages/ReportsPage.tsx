@@ -26,15 +26,17 @@ import {
   ErrorState,
   Field,
   Input,
+  MarkdownField,
   Select,
   Spinner,
-  Textarea,
   useToast,
 } from '@reporter/ui';
 import {
   DEFAULT_REPORT_SECTIONS,
   EVIDENCE_GROUPINGS,
   EVIDENCE_GROUPING_LABELS,
+  FINDING_GROUPINGS,
+  FINDING_GROUPING_LABELS,
   REPORT_PRESETS,
   REPORT_PRESET_HINTS,
   REPORT_PRESET_LABELS,
@@ -44,6 +46,7 @@ import {
   REPORT_SECTION_SAMPLE,
   reportConfigSchema,
   type EvidenceGrouping,
+  type FindingGrouping,
   type ReportConfig,
   type ReportCustomSection,
   type ReportPreset,
@@ -334,11 +337,11 @@ export function ReportsPage() {
                             />
                           </Field>
                           <Field label="Body" htmlFor={`cs-body-${s.id}`}>
-                            <Textarea
+                            <MarkdownField
                               id={`cs-body-${s.id}`}
                               rows={4}
                               value={s.body}
-                              onChange={(e) => updateCustomSection(s.id, { body: e.target.value })}
+                              onChange={(v) => updateCustomSection(s.id, { body: v })}
                               onBlur={() => void flush()}
                               disabled={readOnly}
                             />
@@ -375,6 +378,29 @@ export function ReportsPage() {
                 }
                 disabled={readOnly}
               />
+              <Field
+                label="Findings grouping"
+                htmlFor="rp-finding-group"
+                hint="How findings are ordered/grouped in the report"
+              >
+                <Select
+                  id="rp-finding-group"
+                  value={config.findingGroup}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      findingGroup: e.target.value as FindingGrouping,
+                    }))
+                  }
+                  disabled={readOnly}
+                >
+                  {FINDING_GROUPINGS.map((g) => (
+                    <option key={g} value={g}>
+                      {FINDING_GROUPING_LABELS[g]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               <Checkbox
                 label="Include the evidence timeline in Assessment Execution"
                 checked={config.includeEvidenceTimeline}

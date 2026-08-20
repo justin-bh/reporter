@@ -7,10 +7,10 @@ import {
   Checkbox,
   Field,
   Input,
+  MarkdownField,
   Select,
   SeverityBadge,
   Spinner,
-  Textarea,
   useConfirm,
   useToast,
 } from '@reporter/ui';
@@ -353,11 +353,11 @@ export function FindingDetailPage() {
         )}
 
         <Field label="Description" htmlFor="fd">
-          <Textarea
+          <MarkdownField
             id="fd"
             rows={6}
             value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            onChange={(v) => setForm({ ...form, description: v })}
             onBlur={() => void flush()}
             disabled={!canWrite}
             title={readOnlyTitle}
@@ -371,11 +371,11 @@ export function FindingDetailPage() {
               htmlFor="fimp"
               hint="Business or technical impact if exploited (distinct from the description)."
             >
-              <Textarea
+              <MarkdownField
                 id="fimp"
                 rows={4}
                 value={form.impact}
-                onChange={(e) => setForm({ ...form, impact: e.target.value })}
+                onChange={(v) => setForm({ ...form, impact: v })}
                 onBlur={() => void flush()}
                 disabled={!canWrite}
                 title={readOnlyTitle}
@@ -386,11 +386,11 @@ export function FindingDetailPage() {
               htmlFor="frem"
               hint="Recommended fix / guidance (shown in the report)."
             >
-              <Textarea
+              <MarkdownField
                 id="frem"
                 rows={6}
                 value={form.remediation}
-                onChange={(e) => setForm({ ...form, remediation: e.target.value })}
+                onChange={(v) => setForm({ ...form, remediation: v })}
                 onBlur={() => void flush()}
                 disabled={!canWrite}
                 title={readOnlyTitle}

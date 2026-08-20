@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Field, Input, Modal, Select, TagPicker, Textarea, useToast } from '@reporter/ui';
+import {
+  Button,
+  Field,
+  Input,
+  MarkdownField,
+  Modal,
+  Select,
+  TagPicker,
+  Textarea,
+  useToast,
+} from '@reporter/ui';
 import {
   EVIDENCE_TYPE_LABELS,
   defaultTagColorFor,
@@ -223,10 +233,10 @@ export function CreateEvidenceModal({
         </Field>
 
         <Field label="Description" htmlFor="ev-desc" hint="Optional">
-          <Textarea
+          <MarkdownField
             id="ev-desc"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(v) => setDescription(v)}
             rows={3}
           />
         </Field>

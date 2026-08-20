@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Badge, Button, Card, Checkbox, Field, Input, Select, Spinner, Textarea } from '@reporter/ui';
+import { Badge, Button, Card, Checkbox, Field, Input, MarkdownField, Select, Spinner } from '@reporter/ui';
 import {
   EVIDENCE_GROUPINGS,
   EVIDENCE_GROUPING_LABELS,
@@ -348,11 +348,11 @@ function RecommendationsEditor({
               />
             </Field>
             <Field label="Description" htmlFor={`rec-desc-${index}`}>
-              <Textarea
+              <MarkdownField
                 id={`rec-desc-${index}`}
                 rows={3}
                 value={item.description}
-                onChange={(e) => update({ ...item, description: e.target.value })}
+                onChange={(v) => update({ ...item, description: v })}
                 disabled={disabled}
                 title={disabledTitle}
               />
@@ -411,11 +411,11 @@ function ThreatModelEditor({
       hint="A narrative plus optional diagrams embedded in the report."
     >
       <Field label="Threat model narrative" htmlFor="tm-narrative">
-        <Textarea
+        <MarkdownField
           id="tm-narrative"
           rows={6}
           value={narrative}
-          onChange={(e) => onNarrative(e.target.value)}
+          onChange={(v) => onNarrative(v)}
           onBlur={onFlush}
           disabled={disabled}
           title={disabledTitle}
@@ -618,11 +618,11 @@ function ExecutionEditor({
               ) : (
                 <>
                   <Field label="Body" htmlFor={`ex-body-${index}`}>
-                    <Textarea
+                    <MarkdownField
                       id={`ex-body-${index}`}
                       rows={5}
                       value={sub.body}
-                      onChange={(e) => update({ ...sub, body: e.target.value })}
+                      onChange={(v) => update({ ...sub, body: v })}
                       disabled={disabled}
                       title={disabledTitle}
                     />

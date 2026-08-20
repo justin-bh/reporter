@@ -57,16 +57,13 @@ async function main() {
     });
   }
 
-  // --- Default tags + finding categories ---
+  // --- Default tags ---
   for (const t of DEFAULT_TAGS) {
     await db.defaultTag.upsert({
       where: { name: t.name },
       create: t,
       update: { colorName: t.colorName },
     });
-  }
-  for (const category of CATEGORIES) {
-    await db.findingCategory.upsert({ where: { category }, create: { category }, update: {} });
   }
 
   // --- Report branding (single row; defaults to the Block Harbor house style) ---
@@ -231,8 +228,19 @@ async function main() {
     },
   });
 
+  // --- Finding categories (per-engagement) ---
+  for (const c of CATEGORIES) {
+    await db.findingCategory.upsert({
+      where: { engagementId_category: { engagementId: eng.id, category: c } },
+      create: { engagementId: eng.id, category: c },
+      update: {},
+    });
+  }
+
   // --- Findings grouping some evidence ---
-  const category = await db.findingCategory.findUnique({ where: { category: 'Vulnerability' } });
+  const category = await db.findingCategory.findUnique({
+    where: { engagementId_category: { engagementId: eng.id, category: 'Vulnerability' } },
+  });
   // A fully CVSS-rated, report-ready finding (High 8.8, scope-changed local privesc).
   const privesc = scoreVector('CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H')!;
   const finding = await db.finding.create({

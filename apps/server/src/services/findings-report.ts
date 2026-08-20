@@ -27,6 +27,7 @@ import {
   type EvidenceType,
   type ExecutionSubsection,
   type ExecutionTimelineConfig,
+  type FindingGrouping,
   type FindingsExport,
   type FindingKind,
   type FixEffort,
@@ -96,6 +97,11 @@ export interface ReportOptions {
   includeAll?: boolean;
   /** How the Assessment Execution evidence timeline is organized. */
   evidenceGroup?: EvidenceGrouping;
+  /**
+   * How findings are organized in the Assessment Findings + Detailed Findings
+   * sections: `severity` (default flat list), `category`, or `target`.
+   */
+  findingGroup?: FindingGrouping;
   /** Include the hand-authored Assessment Execution narrative (default true). */
   includeNarrative?: boolean;
   /** Include the Assessment Execution auto evidence timeline (default false). */
@@ -719,26 +725,69 @@ function renderStrengthsTable(strengths: GatheredFinding[]): string {
     <tbody>${rows}</tbody></table>`;
 }
 
-/** Summary of Weaknesses table (IDs W1, W2, …) with severity + fix effort. */
-function renderWeaknessesTable(weaknesses: GatheredFinding[]): string {
-  const rows = weaknesses.length
-    ? weaknesses
-        .map(
-          (f, i) => `
-      <tr>
-        <td class="num">W${i + 1}</td>
+/** An ordered run of weaknesses under an optional group heading. */
+interface WeaknessGroup {
+  /** Group heading, or null for an ungrouped (severity) run with no header. */
+  label: string | null;
+  findings: GatheredFinding[];
+}
+
+/**
+ * Arrange the (already severity-sorted) weaknesses into display groups. `severity`
+ * is a single unlabeled run (the historical flat list); `category` / `target`
+ * bucket by that field — buckets ordered alphabetically with the catch-all
+ * ("Uncategorized" / "Unspecified") last, and each bucket stays severity-sorted.
+ */
+function groupWeaknesses(weaknesses: GatheredFinding[], group: FindingGrouping): WeaknessGroup[] {
+  if (group === 'severity') return [{ label: null, findings: weaknesses }];
+  const fallback = group === 'category' ? 'Uncategorized' : 'Unspecified';
+  const keyOf = (f: GatheredFinding): string =>
+    (group === 'category' ? f.category : f.affectedTarget)?.trim() || fallback;
+  const buckets = new Map<string, GatheredFinding[]>();
+  for (const f of weaknesses) {
+    const k = keyOf(f);
+    const bucket = buckets.get(k);
+    if (bucket) bucket.push(f);
+    else buckets.set(k, [f]);
+  }
+  return [...buckets.keys()]
+    .sort((a, b) => (a === fallback ? 1 : b === fallback ? -1 : a.localeCompare(b)))
+    .map((label) => ({ label, findings: buckets.get(label)! }));
+}
+
+/**
+ * Summary of Weaknesses table (IDs W1, W2, … assigned across the flattened group
+ * order so they line up with the Detailed Findings and TOC). Group headings are
+ * inserted as spanning rows when the findings are grouped by category/target.
+ */
+function renderWeaknessesTable(groups: WeaknessGroup[]): string {
+  const total = groups.reduce((n, g) => n + g.findings.length, 0);
+  const head = `<h3 class="block-h">Summary of Weaknesses</h3>
+    <table class="tbl"><thead><tr><th class="num">#</th><th>Weakness</th><th>Category</th><th>Severity</th><th class="num">CVSS</th><th>Fix effort</th></tr></thead>`;
+  if (total === 0) {
+    return `${head}<tbody><tr><td colspan="6" class="muted">No weaknesses to report.</td></tr></tbody></table>`;
+  }
+  const rows: string[] = [];
+  let n = 0;
+  for (const g of groups) {
+    if (g.label !== null) {
+      rows.push(
+        `<tr class="row-group"><td colspan="6">${esc(g.label)} <span class="group-count">(${g.findings.length})</span></td></tr>`,
+      );
+    }
+    for (const f of g.findings) {
+      n++;
+      rows.push(`<tr>
+        <td class="num">W${n}</td>
         <td class="title">${esc(f.title)}</td>
         <td>${esc(f.category || 'Uncategorized')}</td>
         <td>${severityPill(f.severity, null)}</td>
         <td class="num">${f.cvssScore != null ? f.cvssScore.toFixed(1) : '—'}</td>
         <td>${f.fixEffort && f.fixEffort !== 'none' ? esc(FIX_EFFORT_LABELS[f.fixEffort]) : '—'}</td>
-      </tr>`,
-        )
-        .join('')
-    : '<tr><td colspan="6" class="muted">No weaknesses to report.</td></tr>';
-  return `<h3 class="block-h">Summary of Weaknesses</h3>
-    <table class="tbl"><thead><tr><th class="num">#</th><th>Weakness</th><th>Category</th><th>Severity</th><th class="num">CVSS</th><th>Fix effort</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
+      </tr>`);
+    }
+  }
+  return `${head}<tbody>${rows.join('')}</tbody></table>`;
 }
 
 /** Strategic Recommendations table (IDs R1, R2, …). Empty string when none. */
@@ -1013,6 +1062,13 @@ export async function buildReportHtml(
     .filter((f) => f.kind === 'strength')
     .sort((a, b) => a.position - b.position);
 
+  // Display grouping for the Summary + Detailed Findings. `orderedWeaknesses` is
+  // the flattened group order; W-numbers are assigned across it so the summary
+  // table, detailed blocks, standards matrix, and TOC all agree.
+  const findingGroup: FindingGrouping = opts.findingGroup ?? 'severity';
+  const weaknessGroups = groupWeaknesses(weaknesses, findingGroup);
+  const orderedWeaknesses = weaknessGroups.flatMap((g) => g.findings);
+
   // Severity distribution + key stats — weaknesses only (strengths carry no rating).
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, none: 0 };
   for (const f of weaknesses) if (f.severity) counts[f.severity]++;
@@ -1221,7 +1277,7 @@ export async function buildReportHtml(
       : '';
 
   const traceItems = [
-    ...weaknesses.map((f, i) => ({
+    ...orderedWeaknesses.map((f, i) => ({
       label: `W${i + 1}`,
       title: f.title,
       iso: f.iso21434Refs,
@@ -1299,7 +1355,7 @@ export async function buildReportHtml(
       case 'assessmentFindings': {
         const parts: string[] = [];
         if (partOn('strengths')) parts.push(renderStrengthsTable(strengths));
-        if (partOn('weaknesses')) parts.push(renderWeaknessesTable(weaknesses));
+        if (partOn('weaknesses')) parts.push(renderWeaknessesTable(weaknessGroups));
         if (partOn('recommendations')) parts.push(renderRecommendationsTable(recommendations));
         if (partOn('categories')) parts.push(categoryTable);
         if (partOn('standards')) parts.push(renderStandardsTraceability(traceItems));
@@ -1426,8 +1482,17 @@ export async function buildReportHtml(
         if (weaknesses.length === 0) {
           findingBlocks.push('<p class="pp muted">No weaknesses to report.</p>');
         } else {
-          for (let i = 0; i < weaknesses.length; i++) {
-            findingBlocks.push(await renderFinding(app, weaknesses[i]!, `W${i + 1}`, budget, findingParts));
+          let n = 0;
+          for (const g of weaknessGroups) {
+            if (g.label !== null) {
+              findingBlocks.push(
+                `<h3 class="block-h">${esc(g.label)} <span class="group-count">(${g.findings.length})</span></h3>`,
+              );
+            }
+            for (const f of g.findings) {
+              n++;
+              findingBlocks.push(await renderFinding(app, f, `W${n}`, budget, findingParts));
+            }
           }
         }
         rendered.push({
@@ -1471,7 +1536,8 @@ export async function buildReportHtml(
   const tocRows: string[] = [tocItem(numDetails, 'Engagement Details', false)];
   for (const r of numbered) {
     tocRows.push(tocItem(r.num, r.tocTitle, false));
-    if (r.weaknessToc) weaknesses.forEach((f, i) => tocRows.push(tocItem(`W${i + 1}`, f.title, true)));
+    if (r.weaknessToc)
+      orderedWeaknesses.forEach((f, i) => tocRows.push(tocItem(`W${i + 1}`, f.title, true)));
   }
   const tocSection = `
     <section class="section">

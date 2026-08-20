@@ -117,6 +117,25 @@ describe('proposal import', () => {
     // The auto-tag is a real engagement tag usable on the timeline.
     const tags = await get('/web/engagements/op1/tags', cookie);
     expect(tags.map((t: { name: string }) => t.name)).toContain('REST API');
+
+    // The structured Service-scope section is populated from the same devices:
+    // each device → a scope target, its interfaces → in-scope subsystems.
+    const fleetScope = eng.scopeTargets.find((t: { name: string }) => t.name === 'Fleet API');
+    expect(fleetScope.subsystems).toEqual(['REST API', 'MQTT']);
+    const fccScope = eng.scopeTargets.find((t: { name: string }) =>
+      t.name.startsWith('FCC'),
+    );
+    expect(fccScope.subsystems).toEqual(['Web API']);
+
+    // Finding categories are seeded from the proposal's weakness classes
+    // (non-retest goals) + activity categories — but not the retest carryover.
+    const cats = (await get('/web/engagements/op1/finding-categories', cookie)).map(
+      (c: { category: string }) => c.category,
+    );
+    expect(cats).toContain('Cryptographic Failures');
+    expect(cats).toContain('Authentication');
+    expect(cats).toContain('Software / Application');
+    expect(cats).not.toContain('W1-TLS Accepting Weak & Outdated Ciphers');
   });
 
   it('replace mode clears a prior import; merge appends', async () => {

@@ -1,5 +1,7 @@
 export { cn } from './cn.js';
 export * from './theme.js';
+export * from './Logo.js';
+export * from './Markdown.js';
 export * from './Button.js';
 export * from './Spinner.js';
 export * from './Input.js';

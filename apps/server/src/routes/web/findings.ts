@@ -19,12 +19,16 @@ const findingInclude = {
   _count: { select: { evidence: true } },
 } as const;
 
-async function categoryIdFor(app: FastifyInstance, name: string | null): Promise<number | null> {
+async function categoryIdFor(
+  app: FastifyInstance,
+  engagementId: number,
+  name: string | null,
+): Promise<number | null> {
   if (!name) return null;
   const cat = await app.db.findingCategory.upsert({
-    where: { category: name },
-    create: { category: name },
-    update: {},
+    where: { engagementId_category: { engagementId, category: name } },
+    create: { engagementId, category: name },
+    update: { deletedAt: null },
   });
   return cat.id;
 }
@@ -72,7 +76,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
           fixEffort: input.kind === 'strength' ? 'none' : input.fixEffort,
           iso21434Refs: input.iso21434Refs,
           unr155Refs: input.unr155Refs,
-          categoryId: await categoryIdFor(app, input.category),
+          categoryId: await categoryIdFor(app, eng.id, input.category),
           position: (max._max.position ?? -1) + 1,
         },
         include: findingInclude,
@@ -145,7 +149,9 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         remediation: body.remediation ?? undefined,
         readyToReport: body.readyToReport ?? undefined,
         categoryId:
-          body.category === undefined ? undefined : await categoryIdFor(app, body.category),
+          body.category === undefined
+            ? undefined
+            : await categoryIdFor(app, eng.id, body.category),
       };
 
       // Severity / CVSS resolution:

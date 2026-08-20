@@ -30,13 +30,17 @@ interface EngagementRef {
 /** Cap on the total number of evidence items a single import may materialize. */
 const MAX_IMPORT_TOTAL_EVIDENCE = 10_000;
 
-async function categoryIdFor(app: FastifyInstance, name: string | null): Promise<number | null> {
+async function categoryIdFor(
+  app: FastifyInstance,
+  engagementId: number,
+  name: string | null,
+): Promise<number | null> {
   if (!name) return null;
-  // Revive a soft-deleted category (matching the admin "create category" path) so
-  // an import never links a finding to a hidden/zombie category.
+  // Categories are per-engagement; revive a soft-deleted one so an import never
+  // links a finding to a hidden/zombie category.
   const cat = await app.db.findingCategory.upsert({
-    where: { category: name },
-    create: { category: name },
+    where: { engagementId_category: { engagementId, category: name } },
+    create: { engagementId, category: name },
     update: { deletedAt: null },
   });
   return cat.id;
@@ -85,7 +89,7 @@ export async function importFindings(
       iso21434Refs: f.iso21434Refs,
       unr155Refs: f.unr155Refs,
       remediation: f.remediation,
-      categoryId: await categoryIdFor(app, f.category),
+      categoryId: await categoryIdFor(app, eng.id, f.category),
       severity: f.severity,
       cvssVector: f.cvssVector,
       cvssScore: f.cvssScore,

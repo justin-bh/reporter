@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Logo } from './Logo.js';
+import { Logo } from '@reporter/ui';
 
 /** Centered branded shell for the login and setup screens. */
 export function AuthShell({ subtitle, children }: { subtitle: string; children: ReactNode }) {

@@ -61,6 +61,24 @@ export const EVIDENCE_GROUPING_LABELS: Record<EvidenceGrouping, string> = {
 };
 
 /**
+ * How findings are organized in the report's Assessment Findings summary and
+ * Detailed Findings sections: `severity` (the default — most-severe first, a
+ * flat list), `category` (grouped under weakness-category headings), or
+ * `target` (grouped by each finding's affected target). Strengths always follow
+ * their author order; grouping applies to the severity-ranked weaknesses.
+ */
+export const FINDING_GROUPINGS = ['severity', 'category', 'target'] as const;
+export const findingGroupingSchema = z.enum(FINDING_GROUPINGS);
+export type FindingGrouping = z.infer<typeof findingGroupingSchema>;
+
+/** Human labels for the report finding groupings. */
+export const FINDING_GROUPING_LABELS: Record<FindingGrouping, string> = {
+  severity: 'By severity',
+  category: 'By category',
+  target: 'By affected target',
+};
+
+/**
  * An Assessment Execution subsection is either a hand-authored `narrative` block
  * (title + prose + embedded evidence — the legacy shape) or an auto-generated
  * `timeline` of captured evidence filtered by tag/type, grouped, with comment and
