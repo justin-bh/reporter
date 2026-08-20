@@ -6,6 +6,7 @@ import {
   engagementRoleSchema,
   engagementStatusSchema,
   evidenceGroupingSchema,
+  findingGroupingSchema,
   executionSubsectionKindSchema,
   goalStatusSchema,
   savedQueryTypeSchema,
@@ -188,6 +189,12 @@ export const reportConfigSchema = z.object({
   includeEvidenceTimeline: z.boolean().default(false),
   /** How that evidence log is grouped. */
   evidenceGroup: evidenceGroupingSchema.default('chronological'),
+  /**
+   * How findings are organized in the Assessment Findings + Detailed Findings
+   * sections. Defaults to `severity`, reproducing the prior flat, most-severe-
+   * first layout, so an unconfigured engagement's report is unchanged.
+   */
+  findingGroup: findingGroupingSchema.default('severity'),
 });
 export type ReportConfig = z.infer<typeof reportConfigSchema>;
 

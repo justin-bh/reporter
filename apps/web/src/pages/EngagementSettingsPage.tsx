@@ -9,13 +9,13 @@ import {
   ErrorState,
   Field,
   Input,
+  MarkdownField,
   Modal,
   Select,
   Spinner,
   Table,
   Tbody,
   Td,
-  Textarea,
   Th,
   Thead,
   Tr,
@@ -566,33 +566,33 @@ export function EngagementSettingsPage() {
           htmlFor="r-scope"
           hint="Optional free-text notes. Use the structured Service scope section below for the report’s scope tables."
         >
-          <Textarea
+          <MarkdownField
             id="r-scope"
             rows={3}
             value={form.scope}
-            onChange={(e) => patchForm('scope', e.target.value)}
+            onChange={(v) => patchForm('scope', v)}
             onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}
           />
         </Field>
         <Field label="Executive summary" htmlFor="r-exec">
-          <Textarea
+          <MarkdownField
             id="r-exec"
             rows={5}
             value={form.executiveSummary}
-            onChange={(e) => patchForm('executiveSummary', e.target.value)}
+            onChange={(v) => patchForm('executiveSummary', v)}
             onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}
           />
         </Field>
         <Field label="Methodology" htmlFor="r-method">
-          <Textarea
+          <MarkdownField
             id="r-method"
             rows={5}
             value={form.methodology}
-            onChange={(e) => patchForm('methodology', e.target.value)}
+            onChange={(v) => patchForm('methodology', v)}
             onBlur={() => void flush()}
             disabled={!isEngAdmin}
             title={adminOnlyTitle}

@@ -1,7 +1,6 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Button, useTheme } from '@reporter/ui';
+import { Button, Logo, useTheme } from '@reporter/ui';
 import { useAuth } from '../auth.js';
-import { Logo } from './Logo.js';
 
 export function AppLayout() {
   const { user, logout } = useAuth();

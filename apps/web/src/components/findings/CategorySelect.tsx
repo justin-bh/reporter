@@ -7,8 +7,8 @@ const NEW = '__new__';
 
 /**
  * Category picker for a finding: a dropdown of the engagement's existing finding
- * categories with an inline "add new" flow. Categories are shared across
- * engagements; creating one requires write access (callers only render this in
+ * categories with an inline "add new" flow. Categories are specific to this
+ * engagement; creating one requires write access (callers only render this in
  * write-enabled contexts). Reusable across the create-finding modal and the
  * finding editor.
  */

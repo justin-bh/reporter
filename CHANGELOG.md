@@ -10,6 +10,46 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Full Markdown in every prose field** — engagement Executive summary, Methodology,
+  Scope notes, Threat-model narrative, Execution-narrative bodies, Strategic
+  recommendations, custom report sections, finding Description/Impact/Remediation,
+  objectives, target descriptions, and evidence descriptions are now Markdown
+  editors with a **Write / Preview** toggle. One shared renderer powers both the
+  editor preview and the exported PDF, so what you preview is what the report
+  prints — headings, lists, **bold**, links, code, and tables all render, and a
+  blank line between paragraphs produces real paragraph spacing. (Code / HAR /
+  note *content* fields stay plain — Markdown applies to prose only.)
+- **Choose how findings are grouped in the report** — the Reports tab gains a
+  **Findings grouping** option: **by severity** (default, unchanged), **by
+  category**, or **by affected target**. The Summary of Weaknesses table and the
+  Detailed Findings section group under headings accordingly, with W-numbers kept
+  consistent across the summary, detail, standards matrix, and table of contents.
+- **Proposal import seeds finding categories** — importing a proposal now
+  pre-fills the engagement's finding-category list from its own plan (the
+  non-retest goal titles plus the activity categories), so classifying a finding
+  is picking from your scope rather than free-typing.
+
+### Changed
+
+- **Finding categories are now per-engagement** — categories belong to the
+  engagement that owns them (managed under Settings → Finding categories) instead
+  of a single global pool shared across every engagement. Existing categories in
+  use are migrated to the engagements whose findings reference them; the global
+  Admin → Finding categories tab is removed. Tags stay the evidence-organization
+  tool; categories are the report's per-engagement weakness taxonomy.
+- **One canonical logo everywhere** — the web app, its favicon, and the desktop
+  app now render the same SVG reporter mark from the design system, replacing the
+  low-resolution screenshot images that were standing in for the logo.
+
+### Fixed
+
+- **Proposal import now populates the Service scope** — importing a proposal fills
+  the structured **Service scope** section in Settings (each target with its
+  in-scope subsystems), matching the detail it already imported into Goals. It
+  was previously left empty ("No targets yet").
+
+### Added
+
 - **Assessment Execution timeline subsections** — the Assessment Execution card in
   engagement Settings now offers two kinds of subsection: the existing hand-authored
   **narrative** (title + prose + embedded evidence) and a new **activity timeline**

@@ -177,30 +177,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // --- Finding categories ---
-  app.get('/admin/finding-categories', { preHandler: adminGuard }, async () => {
-    return app.db.findingCategory.findMany({
-      where: { deletedAt: null },
-      orderBy: { category: 'asc' },
-    });
-  });
-
-  app.post('/admin/finding-categories', { preHandler: adminGuard }, async (req, reply) => {
-    const { category } = z.object({ category: z.string().min(1).max(255) }).parse(req.body);
-    const created = await app.db.findingCategory.upsert({
-      where: { category },
-      create: { category },
-      update: { deletedAt: null },
-    });
-    reply.status(201);
-    return created;
-  });
-
-  app.delete('/admin/finding-categories/:id', { preHandler: adminGuard }, async (req) => {
-    const { id } = req.params as { id: string };
-    await app.db.findingCategory
-      .update({ where: { id: Number(id) }, data: { deletedAt: new Date() } })
-      .catch(() => {});
-    return { ok: true };
-  });
+  // Finding categories are managed per-engagement (Settings → Finding categories),
+  // not globally — there is no site-wide category taxonomy anymore.
 }

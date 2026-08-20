@@ -6,9 +6,9 @@ import {
   ErrorState,
   Field,
   Input,
+  MarkdownField,
   Spinner,
   TagPicker,
-  Textarea,
   useToast,
 } from '@reporter/ui';
 import { defaultTagColorFor } from '@reporter/shared';
@@ -215,11 +215,11 @@ export function EvidenceDetailPage() {
               />
             </Field>
             <Field label="Description" htmlFor="d-desc" hint="Optional">
-              <Textarea
+              <MarkdownField
                 id="d-desc"
                 rows={3}
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, description: v }))}
                 onBlur={() => void flush()}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}

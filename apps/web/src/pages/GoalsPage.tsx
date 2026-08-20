@@ -8,6 +8,7 @@ import {
   ErrorState,
   Field,
   Input,
+  MarkdownField,
   Modal,
   Spinner,
   Textarea,
@@ -191,10 +192,10 @@ function ObjectivesNarrative({ slug, canEdit }: { slug: string; canEdit: boolean
         </div>
         {canEdit && <SaveStatusIndicator status={status} />}
       </div>
-      <Textarea
+      <MarkdownField
         rows={4}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(v) => setValue(v)}
         onBlur={() => void flush()}
         disabled={!canEdit}
         title={canEdit ? undefined : ADMIN_ONLY_TITLE}
@@ -613,11 +614,11 @@ function TargetModal({
           <Input id="t-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </Field>
         <Field label="Description" htmlFor="t-desc" hint="Optional">
-          <Textarea
+          <MarkdownField
             id="t-desc"
             rows={3}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(v) => setDescription(v)}
           />
         </Field>
       </div>

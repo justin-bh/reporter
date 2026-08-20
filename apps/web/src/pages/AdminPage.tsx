@@ -63,14 +63,12 @@ export function AdminPage() {
         tabs={[
           { key: 'users', label: 'Users' },
           { key: 'default-tags', label: 'Default tags' },
-          { key: 'categories', label: 'Finding categories' },
           { key: 'engagements', label: 'Engagements' },
           { key: 'branding', label: 'Report branding' },
         ]}
       />
       {tab === 'users' && <UsersTab />}
       {tab === 'default-tags' && <DefaultTagsTab />}
-      {tab === 'categories' && <CategoriesTab />}
       {tab === 'engagements' && <EngagementsTab />}
       {tab === 'branding' && <ReportBrandingTab />}
     </div>
@@ -488,81 +486,6 @@ function DefaultTagsTab() {
       <div className="flex items-end gap-2">
         <Field label="New default tag" htmlFor="dt" className="flex-1">
           <Input id="dt" value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Button onClick={() => add.mutate()} disabled={!name} loading={add.isPending}>
-          Add
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-interface Category {
-  id: number;
-  category: string;
-}
-
-function CategoriesTab() {
-  const qc = useQueryClient();
-  const confirm = useConfirm();
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['finding-categories'],
-    queryFn: () => api.get<Category[]>('/web/admin/finding-categories'),
-  });
-  const [name, setName] = useState('');
-  const add = useMutation({
-    mutationFn: () => api.post('/web/admin/finding-categories', { category: name }),
-    onSuccess: () => {
-      setName('');
-      qc.invalidateQueries({ queryKey: ['finding-categories'] });
-    },
-  });
-  const del = useMutation({
-    mutationFn: (id: number) => api.del(`/web/admin/finding-categories/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['finding-categories'] }),
-  });
-
-  async function removeCategory(id: number, category: string) {
-    const ok = await confirm({
-      title: 'Delete category',
-      message: `Delete the finding category “${category}”?`,
-      confirmLabel: 'Delete',
-      danger: true,
-    });
-    if (ok) del.mutate(id);
-  }
-
-  return (
-    <Card className="max-w-xl space-y-4 p-4">
-      <p className="text-sm text-muted">Categories available when classifying findings.</p>
-      {isLoading ? (
-        <Spinner />
-      ) : isError ? (
-        <ErrorState description="Couldn’t load categories." onRetry={() => refetch()} />
-      ) : !data || data.length === 0 ? (
-        <p className="text-sm text-muted">No categories yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {data.map((c) => (
-            <li
-              key={c.id}
-              className="flex items-center justify-between rounded-input border border-border px-3 py-2 text-sm"
-            >
-              {c.category}
-              <button
-                onClick={() => removeCategory(c.id, c.category)}
-                className="text-muted hover:text-danger"
-                aria-label={`Delete category ${c.category}`}
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex items-end gap-2">
-        <Field label="New category" htmlFor="cat" className="flex-1">
-          <Input id="cat" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Button onClick={() => add.mutate()} disabled={!name} loading={add.isPending}>
           Add

@@ -232,6 +232,7 @@ model Engagement {
   evidence    Evidence[]
   findings    Finding[]
   tags        Tag[]
+  categories  FindingCategory[]
   savedQueries SavedQuery[]
   targets     EngagementTarget[]
 
@@ -476,12 +477,18 @@ model EvidenceMetadata {
 }
 
 model FindingCategory {
-  id        Int       @id @default(autoincrement())
-  category  String    @unique
-  deletedAt DateTime? @map("deleted_at")
+  id           Int       @id @default(autoincrement())
+  engagementId Int       @map("engagement_id")
+  category     String
+  deletedAt    DateTime? @map("deleted_at")
 
-  findings Finding[]
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  findings   Finding[]
 
+  // Categories are per-engagement: the same name may exist under different
+  // engagements, but is unique within one.
+  @@unique([engagementId, category])
+  @@index([engagementId])
   @@map("finding_categories")
 }
 

@@ -5,11 +5,13 @@ import {
   FINDINGS_EXPORT_VERSION,
   REPORT_PRESET_FILE_LABELS,
   evidenceGroupingSchema,
+  findingGroupingSchema,
   findingsExportSchema,
   reportConfigSchema,
   reportPresetSchema,
   reportPresetSections,
   type EvidenceGrouping,
+  type FindingGrouping,
   type ReportConfig,
   type ReportPreset,
 } from '@reporter/shared';
@@ -37,6 +39,12 @@ function groupParam(v: unknown): EvidenceGrouping {
   return parsed.success ? parsed.data : 'chronological';
 }
 
+/** Parse the finding grouping, falling back to the default (severity). */
+function findingGroupParam(v: unknown): FindingGrouping {
+  const parsed = findingGroupingSchema.safeParse(v);
+  return parsed.success ? parsed.data : 'severity';
+}
+
 /**
  * A filename timestamp down to the second (local time), so repeated exports on
  * the same day get distinct names: `2026-08-20-143052`.
@@ -60,6 +68,7 @@ function reportOptionsFromQuery(q: Record<string, string | undefined>): ReportOp
   return {
     includeAll: boolParam(q.includeAll),
     evidenceGroup: groupParam(q.evidenceGroup),
+    findingGroup: findingGroupParam(q.findingGroup),
     // Narrative is the default Assessment Execution view; the timeline is opt-in.
     includeNarrative: boolParamDefaultTrue(q.includeNarrative),
     includeTimeline: boolParam(q.includeTimeline),
@@ -72,6 +81,7 @@ function reportOptionsFromConfig(config: ReportConfig): ReportOptions {
   return {
     includeAll: config.includeAllFindings,
     evidenceGroup: config.evidenceGroup,
+    findingGroup: config.findingGroup,
     includeTimeline: config.includeEvidenceTimeline,
     sections: config.sections,
     customSections: config.customSections,
@@ -93,6 +103,7 @@ function reportFor(
     options: {
       includeAll: false,
       evidenceGroup: config.evidenceGroup,
+      findingGroup: config.findingGroup,
       includeTimeline: false,
       sections: reportPresetSections(preset),
       customSections: [],
