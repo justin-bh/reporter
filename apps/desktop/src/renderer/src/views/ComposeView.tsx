@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { defaultTagColorFor } from '@reporter/shared';
+import { EVIDENCE_TYPE_LABELS, defaultTagColorFor, type EvidenceType } from '@reporter/shared';
 import {
   Button,
   EmptyState,
@@ -19,6 +19,30 @@ import type { CaptureDraft, EngagementLite, EvidenceLite, TagLite } from '../../
  * (form clean, or the user confirmed discarding) and `false` to stay.
  */
 export type LeaveGuard = () => Promise<boolean>;
+
+/**
+ * A human, identifiable label for an evidence item in the "Comment on" picker.
+ * Prefers the title, then the description, then the friendly type name — never
+ * the bare content-type — and appends a short timestamp so near-identical
+ * captures (e.g. a burst of screenshots) can still be told apart.
+ */
+function evidenceOptionLabel(ev: EvidenceLite): string {
+  const base =
+    ev.title.trim() ||
+    ev.description.trim() ||
+    EVIDENCE_TYPE_LABELS[ev.contentType as EvidenceType] ||
+    ev.contentType;
+  const when = new Date(ev.occurredAt);
+  const stamp = Number.isNaN(when.getTime())
+    ? ''
+    : when.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+  return stamp ? `${base} · ${stamp}` : base;
+}
 
 export function ComposeView({
   onDone,
@@ -290,7 +314,7 @@ export function ComposeView({
             <option value="">— none —</option>
             {evidenceOptions.map((ev) => (
               <option key={ev.uuid} value={ev.uuid}>
-                {ev.description || `(${ev.contentType})`}
+                {evidenceOptionLabel(ev)}
               </option>
             ))}
           </Select>

@@ -62,6 +62,9 @@ export interface EngagementLite {
 /** A slim piece of existing evidence, for the "comment on" picker in Compose. */
 export interface EvidenceLite {
   uuid: string;
+  /** Primary heading for the evidence — what the picker shows. May be empty on
+   *  evidence created before titles existed (falls back to description, then type). */
+  title: string;
   description: string;
   contentType: string;
   occurredAt: string;
