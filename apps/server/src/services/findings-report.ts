@@ -35,6 +35,7 @@ import {
   type RecommendationItem,
   type ReportCustomSection,
   type ReportSectionEntry,
+  type ReportSummary,
   type ScopeTarget,
   type Severity,
   type SoftwareItem,
@@ -183,6 +184,68 @@ async function gather(
   }));
 }
 
+/**
+ * Snapshot the findings tallies behind a report, using the same `gather` (and
+ * thus the same `includeAll` filter) the PDF does, so the numbers a report shows
+ * match the numbers recorded in its history entry and quoted in an attestation
+ * letter. Counts are weaknesses-only (strengths carry no severity); `none` is
+ * the informational band. `overallRisk` seeds the letter and defaults to the
+ * highest severity present — the assessor can override it when issuing a letter.
+ */
+export async function computeReportSummary(
+  app: FastifyInstance,
+  eng: EngagementRef,
+  opts: ReportOptions,
+): Promise<ReportSummary> {
+  const findings = await gather(app, eng, opts);
+  const weaknesses = findings.filter((f) => f.kind === 'weakness');
+  const strengths = findings.filter((f) => f.kind === 'strength');
+
+  // Weakness counts by severity. Unrated weaknesses fold into the informational
+  // (`none`) band so the five columns always sum to the weakness total — the
+  // attestation letter's results table and its "identified N weaknesses" intro
+  // then agree.
+  const bySeverity: Record<Severity, number> = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    none: 0,
+  };
+  for (const f of weaknesses) bySeverity[f.severity ?? 'none']++;
+
+  // The single most-severe rated weakness (ties broken by CVSS score). The
+  // letter's "highest-rated weakness carried a severity of X (Label)" sentence
+  // must quote ONE finding, so its severity label and CVSS score come from this
+  // same finding — never a label from one weakness paired with a score from
+  // another (a manual Critical with no score alongside a scored High would
+  // otherwise print "8.9 (Critical)").
+  let top: GatheredFinding | null = null;
+  for (const f of weaknesses) {
+    if (!f.severity) continue;
+    if (
+      !top ||
+      SEVERITY_RANK[f.severity] > SEVERITY_RANK[top.severity!] ||
+      (SEVERITY_RANK[f.severity] === SEVERITY_RANK[top.severity!] &&
+        (f.cvssScore ?? -1) > (top.cvssScore ?? -1))
+    ) {
+      top = f;
+    }
+  }
+  const highestSeverity = top?.severity ?? null;
+  const highestCvss = top?.cvssScore ?? null;
+
+  return {
+    findingsTotal: findings.length,
+    weaknessesTotal: weaknesses.length,
+    strengthsTotal: strengths.length,
+    bySeverity,
+    highestCvss,
+    highestSeverity,
+    overallRisk: highestSeverity,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // JSON export (report.json) — also the import envelope
 // ---------------------------------------------------------------------------
@@ -272,7 +335,7 @@ const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-function longDate(d: Date | null | undefined): string {
+export function longDate(d: Date | null | undefined): string {
   if (!d) return '—';
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 }
@@ -1070,8 +1133,11 @@ export async function buildReportHtml(
   const orderedWeaknesses = weaknessGroups.flatMap((g) => g.findings);
 
   // Severity distribution + key stats — weaknesses only (strengths carry no rating).
+  // Unrated weaknesses fold into the informational (`none`) band, matching
+  // `computeReportSummary`, so the report's severity cards and an attestation
+  // letter's results table always agree and the cards sum to the weakness total.
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, none: 0 };
-  for (const f of weaknesses) if (f.severity) counts[f.severity]++;
+  for (const f of weaknesses) counts[f.severity ?? 'none']++;
   const scored = weaknesses.filter((f) => f.cvssScore != null);
   const highestCvss = scored.reduce((m, f) => Math.max(m, f.cvssScore!), 0);
   const avgCvss = scored.length

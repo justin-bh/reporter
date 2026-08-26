@@ -16,6 +16,7 @@ const TABLES = [
   'evidence',
   'findings',
   'finding_categories',
+  'generated_reports',
   'saved_queries',
   'tags',
   'default_tags',
