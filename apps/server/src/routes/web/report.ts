@@ -4,16 +4,20 @@ import type { PuppeteerNode } from 'puppeteer';
 import {
   FINDINGS_EXPORT_VERSION,
   REPORT_PRESET_FILE_LABELS,
+  attestationFrameworkSchema,
   evidenceGroupingSchema,
   findingGroupingSchema,
   findingsExportSchema,
   reportConfigSchema,
   reportPresetSchema,
   reportPresetSections,
+  severitySchema,
+  type AttestationFramework,
   type EvidenceGrouping,
   type FindingGrouping,
   type ReportConfig,
   type ReportPreset,
+  type Severity,
 } from '@reporter/shared';
 import { HttpError, requireAuth, requireEngagementRole } from '../../auth/guards.js';
 import {
@@ -23,6 +27,51 @@ import {
   type ReportOptions,
 } from '../../services/findings-report.js';
 import { importFindings } from '../../services/findings-import.js';
+import {
+  findReportForLetter,
+  listReportHistory,
+  recordGeneratedReport,
+} from '../../services/report-history.js';
+import { buildAttestationLetterHtml } from '../../services/attestation-letter.js';
+import type { GeneratedReportFormat } from '@reporter/shared';
+
+/** Parse the `?framework` query param, defaulting to SOC 2. */
+function frameworkParam(v: unknown): AttestationFramework {
+  const parsed = attestationFrameworkSchema.safeParse(v);
+  return parsed.success ? parsed.data : 'soc2';
+}
+
+/** Parse an optional severity query param (the letter's overall-risk override). */
+function severityParam(v: unknown): Severity | undefined {
+  const parsed = severitySchema.safeParse(v);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Trim an optional string query param to a value or undefined. */
+function strParam(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+/**
+ * Record a report generation for the history log, best-effort: a hiccup here
+ * must never fail the download the user actually asked for.
+ */
+async function recordReport(
+  app: FastifyInstance,
+  args: {
+    eng: { id: number; slug: string; name: string };
+    preset: ReportPreset;
+    format: GeneratedReportFormat;
+    options: ReportOptions;
+    userId: number;
+  },
+): Promise<void> {
+  try {
+    await recordGeneratedReport(app, args);
+  } catch (err) {
+    app.log.error({ err }, 'failed to record report history');
+  }
+}
 
 function boolParam(v: unknown): boolean {
   return v === 'true' || v === '1';
@@ -281,9 +330,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const q = req.query as Record<string, string | undefined>;
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const config = reportConfigSchema.parse(eng.reportConfig ?? {});
-      const { options, label } = reportFor(config, presetParam(q.preset));
+      const preset = presetParam(q.preset);
+      const { options, label } = reportFor(config, preset);
       const html = await buildReportHtml(app, eng, new Date(), options, req.authedUser!.id);
       const pdf = await renderPdf(app, html);
+      await recordReport(app, { eng, preset, format: 'pdf', options, userId: req.authedUser!.id });
       reply
         .header('Content-Type', 'application/pdf')
         .header('Content-Disposition', `attachment; filename="${slug}-${label}-${stamp()}.pdf"`);
@@ -299,7 +350,8 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const q = req.query as Record<string, string | undefined>;
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const config = reportConfigSchema.parse(eng.reportConfig ?? {});
-      const { options, label } = reportFor(config, presetParam(q.preset));
+      const preset = presetParam(q.preset);
+      const { options, label } = reportFor(config, preset);
       const files = await gatherSupportingFiles(app, eng);
       const html = await buildReportHtml(
         app,
@@ -310,6 +362,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         files,
       );
       const pdf = await renderPdf(app, html);
+      await recordReport(app, { eng, preset, format: 'zip', options, userId: req.authedUser!.id });
 
       const base = `${slug}-${label}-${stamp()}`;
       const archive = archiver('zip', { zlib: { level: 9 } });
@@ -352,6 +405,60 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         `attachment; filename="${slug}-${label}-${stamp()}.json"`,
       );
       return data;
+    },
+  );
+
+  // --- Report history + attestation letters --------------------------------
+  // Every generated PDF/ZIP is logged (see recordReport); this is the audit
+  // trail the Reports tab shows and what gates the attestation letter.
+  app.get(
+    '/engagements/:slug/reports/history',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req) => {
+      const { slug } = req.params as { slug: string };
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      return listReportHistory(app, eng.id);
+    },
+  );
+
+  // Attestation letter (PDF). Only available once a report has been generated:
+  // the letter attests to a specific `GeneratedReport` (the latest by default,
+  // or `?reportUuid=`), so its stated results stay consistent with that report.
+  app.get(
+    '/engagements/:slug/attestation-letter.pdf',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+
+      const report = await findReportForLetter(app, eng.id, strParam(q.reportUuid));
+      if (!report) {
+        throw new HttpError(
+          409,
+          'Generate a report before creating an attestation letter for this engagement.',
+        );
+      }
+
+      const framework = frameworkParam(q.framework);
+      const html = await buildAttestationLetterHtml(app, report, new Date(), {
+        framework,
+        frameworkLabel: strParam(q.frameworkLabel),
+        signatoryName: strParam(q.signatoryName),
+        signatoryTitle: strParam(q.signatoryTitle),
+        signatoryEmail: strParam(q.signatoryEmail),
+        recipientName: strParam(q.recipientName),
+        recipientTitle: strParam(q.recipientTitle),
+        overallRisk: severityParam(q.overallRisk),
+      });
+      const pdf = await renderPdf(app, html);
+      reply
+        .header('Content-Type', 'application/pdf')
+        .header(
+          'Content-Disposition',
+          `attachment; filename="${slug}-attestation-letter-${framework}-${stamp()}.pdf"`,
+        );
+      return reply.send(pdf);
     },
   );
 }

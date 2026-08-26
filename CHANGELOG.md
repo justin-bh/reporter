@@ -8,6 +8,24 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Added
+
+- **Compliance attestation letters** — the Reports tab can now produce a short,
+  formal **attestation letter** (PDF) that a client can hand to auditors,
+  customers, or regulators in support of a compliance framework: **SOC 2,
+  HIPAA, PCI DSS, ISO 27001, NIST CSF, GDPR**, or a custom/other framework named
+  at download time. The letter is auto-drafted from the engagement (client,
+  dates, scope, methodology, provider/client contacts) and a specific generated
+  report's findings snapshot, and its "Use of this letter" wording is tailored
+  per framework. It is deliberately a **vendor attestation of testing activity**,
+  not a certification. The letter is only available **once a report has been
+  generated**, since it attests to a specific report.
+- **Report history** — every generated report document (PDF or ZIP) is now
+  recorded as a versioned entry (`v1.0`, `v2.0`, …) with a snapshot of its
+  findings tallies and who generated it, shown on the Reports tab. The
+  attestation letter attests to one of these entries so its stated results stay
+  consistent with that deliverable even after the engagement's findings change.
+
 ## [0.6.0] - 2026-08-20
 
 ### Added

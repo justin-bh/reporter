@@ -17,6 +17,7 @@ import type {
   FindingDetail,
   FindingEvidence,
   FindingsImportResult,
+  GeneratedReport,
   Goal,
   GoalsTree,
   ImportRequest,
@@ -53,6 +54,17 @@ export const useEngagement = (slug: string) =>
   useQuery({
     queryKey: engKey(slug),
     queryFn: () => api.get<Engagement>(`/web/engagements/${slug}`),
+  });
+
+/** Query key for an engagement's report-generation history. */
+export const reportHistoryKey = (slug: string) => ['report-history', slug];
+
+/** An engagement's report history (newest first) — gates the attestation letter. */
+export const useReportHistory = (slug: string) =>
+  useQuery({
+    queryKey: reportHistoryKey(slug),
+    queryFn: () => api.get<GeneratedReport[]>(`/web/engagements/${slug}/reports/history`),
+    enabled: Boolean(slug),
   });
 
 export function useCreateEngagement() {

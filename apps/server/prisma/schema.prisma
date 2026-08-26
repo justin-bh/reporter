@@ -92,6 +92,7 @@ model User {
   prefs        UserEngagementPref[]
   evidencePrefs UserEvidencePref[]
   evidence     Evidence[]
+  generatedReports GeneratedReport[]
 
   @@map("users")
 }
@@ -235,6 +236,7 @@ model Engagement {
   categories  FindingCategory[]
   savedQueries SavedQuery[]
   targets     EngagementTarget[]
+  generatedReports GeneratedReport[]
 
   @@map("engagements")
 }
@@ -413,6 +415,34 @@ model ReportSettings {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("report_settings")
+}
+
+/**
+ * The audit trail behind the Reports tab: one row per report document (PDF or
+ * ZIP) generated for an engagement. Reports themselves render on demand and are
+ * never stored, so this is deliberately lean — `version` is an auto-assigned
+ * label (`v1.0`, `v2.0`, …) and `summary` is a JSON snapshot of the findings
+ * tallies at generation time (shape: `reportSummarySchema` in @reporter/shared).
+ * An attestation letter attests to one of these records so its stated results
+ * stay consistent with the report even after the engagement's findings change.
+ */
+model GeneratedReport {
+  id            Int      @id @default(autoincrement())
+  uuid          String   @unique @default(uuid())
+  engagementId  Int      @map("engagement_id")
+  preset        String
+  label         String
+  version       String
+  format        String
+  summary       Json
+  generatedById Int?     @map("generated_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  engagement  Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  generatedBy User?      @relation(fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([engagementId, createdAt])
+  @@map("generated_reports")
 }
 
 model Evidence {

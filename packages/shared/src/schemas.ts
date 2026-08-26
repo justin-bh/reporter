@@ -15,6 +15,9 @@ import {
   findingKindSchema,
   watermarkLayerSchema,
   watermarkOpacitySchema,
+  reportPresetSchema,
+  generatedReportFormatSchema,
+  attestationFrameworkSchema,
   type ReportPreset,
 } from './enums.js';
 import { cvssVectorSchema } from './cvss.js';
@@ -197,6 +200,77 @@ export const reportConfigSchema = z.object({
   findingGroup: findingGroupingSchema.default('severity'),
 });
 export type ReportConfig = z.infer<typeof reportConfigSchema>;
+
+// ---------------------------------------------------------------------------
+// Report history + attestation letters
+// ---------------------------------------------------------------------------
+
+/**
+ * A snapshot of the findings tallies behind a generated report, captured when
+ * the report is produced. It is stored on the `GeneratedReport` record so an
+ * attestation letter issued later stays consistent with the report as
+ * generated, even if the engagement's findings change afterwards. Counts are
+ * weaknesses only (strengths carry no severity); `none` is the "informational"
+ * band. `overallRisk` seeds the letter's overall-risk statement and defaults to
+ * the highest severity present.
+ */
+export const reportSummarySchema = z.object({
+  findingsTotal: z.number().int().nonnegative(),
+  weaknessesTotal: z.number().int().nonnegative(),
+  strengthsTotal: z.number().int().nonnegative(),
+  bySeverity: z.object({
+    critical: z.number().int().nonnegative(),
+    high: z.number().int().nonnegative(),
+    medium: z.number().int().nonnegative(),
+    low: z.number().int().nonnegative(),
+    none: z.number().int().nonnegative(),
+  }),
+  highestCvss: z.number().nullable(),
+  highestSeverity: severitySchema.nullable(),
+  overallRisk: severitySchema.nullable(),
+});
+export type ReportSummary = z.infer<typeof reportSummarySchema>;
+
+/**
+ * One entry in an engagement's report history — a record that a report document
+ * (PDF or ZIP) was generated. `version` is an auto-assigned, human label
+ * (`v1.0`, `v2.0`, …) so a letter can name the exact deliverable it attests to;
+ * the PDF itself is not stored (reports render on demand), but `summary`
+ * snapshots the tallies. `generatedBy` is the operator's display name (null if
+ * that user was later removed).
+ */
+export const generatedReportSchema = z.object({
+  uuid: uuidSchema,
+  preset: reportPresetSchema,
+  label: z.string(),
+  version: z.string(),
+  format: generatedReportFormatSchema,
+  summary: reportSummarySchema,
+  generatedBy: z.string().nullable(),
+  createdAt: isoDateSchema,
+});
+export type GeneratedReport = z.infer<typeof generatedReportSchema>;
+
+/**
+ * The inputs that shape an attestation letter, supplied as query params on the
+ * letter download. All are optional: `framework` defaults to SOC 2, the report
+ * defaults to the latest in history, the signatory/recipient default to the
+ * engagement's first provider/client contact, and the overall-risk statement
+ * defaults to the snapshot's highest severity. `frameworkLabel` names the
+ * framework when `framework` is `custom`.
+ */
+export const attestationLetterInputSchema = z.object({
+  framework: attestationFrameworkSchema.default('soc2'),
+  frameworkLabel: z.string().max(120).optional(),
+  reportUuid: uuidSchema.optional(),
+  signatoryName: z.string().max(255).optional(),
+  signatoryTitle: z.string().max(255).optional(),
+  signatoryEmail: z.string().max(320).optional(),
+  recipientName: z.string().max(255).optional(),
+  recipientTitle: z.string().max(255).optional(),
+  overallRisk: severitySchema.optional(),
+});
+export type AttestationLetterInput = z.infer<typeof attestationLetterInputSchema>;
 
 /**
  * The ordered section list for a canned report "type" (everything but `custom`,

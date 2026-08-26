@@ -350,3 +350,44 @@ export const REPORT_PRESET_FILE_LABELS: Record<ReportPreset, string> = {
   findings: 'findings',
   custom: 'custom-report',
 };
+
+/**
+ * The formats a report document is generated in. These are the exports the
+ * Reports tab records as "a report was generated" (and that an attestation
+ * letter can attest to); the portable JSON export is a data dump, not a report
+ * document, so it is deliberately excluded.
+ */
+export const GENERATED_REPORT_FORMATS = ['pdf', 'zip'] as const;
+export const generatedReportFormatSchema = z.enum(GENERATED_REPORT_FORMATS);
+export type GeneratedReportFormat = z.infer<typeof generatedReportFormatSchema>;
+
+/**
+ * Compliance frameworks an attestation letter can be issued in support of. The
+ * letter's "Use of this letter" section tailors its wording to the chosen
+ * framework; `custom` pairs with a free-text label supplied at download time so
+ * a framework not listed here (HITRUST, FedRAMP, a bespoke program, …) can still
+ * be named. Selecting a framework never certifies compliance — the letter is a
+ * vendor attestation of testing activity (see the server-side letter copy).
+ */
+export const ATTESTATION_FRAMEWORKS = [
+  'soc2',
+  'hipaa',
+  'pci_dss',
+  'iso_27001',
+  'nist_csf',
+  'gdpr',
+  'custom',
+] as const;
+export const attestationFrameworkSchema = z.enum(ATTESTATION_FRAMEWORKS);
+export type AttestationFramework = z.infer<typeof attestationFrameworkSchema>;
+
+/** Human labels for the attestation frameworks (shown in the letter picker). */
+export const ATTESTATION_FRAMEWORK_LABELS: Record<AttestationFramework, string> = {
+  soc2: 'SOC 2',
+  hipaa: 'HIPAA',
+  pci_dss: 'PCI DSS',
+  iso_27001: 'ISO 27001',
+  nist_csf: 'NIST CSF',
+  gdpr: 'GDPR',
+  custom: 'Other / Custom',
+};

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   KeyboardSensor,
@@ -32,6 +33,8 @@ import {
   useToast,
 } from '@reporter/ui';
 import {
+  ATTESTATION_FRAMEWORKS,
+  ATTESTATION_FRAMEWORK_LABELS,
   DEFAULT_REPORT_SECTIONS,
   EVIDENCE_GROUPINGS,
   EVIDENCE_GROUPING_LABELS,
@@ -44,9 +47,14 @@ import {
   REPORT_SECTION_ITEMS,
   REPORT_SECTION_LABELS,
   REPORT_SECTION_SAMPLE,
+  SEVERITIES,
+  SEVERITY_LABELS,
   reportConfigSchema,
+  type AttestationFramework,
+  type Contact,
   type EvidenceGrouping,
   type FindingGrouping,
+  type GeneratedReport,
   type ReportConfig,
   type ReportCustomSection,
   type ReportPreset,
@@ -54,7 +62,7 @@ import {
   type ReportSectionEntry,
   type ReportSectionItem,
 } from '@reporter/shared';
-import { useEngagement, useUpdateEngagement } from '../api/hooks.js';
+import { reportHistoryKey, useEngagement, useReportHistory, useUpdateEngagement } from '../api/hooks.js';
 import { useEngagementPermissions } from '../lib/permissions.js';
 import { useAutosave } from '../hooks/useAutosave.js';
 import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
@@ -125,7 +133,11 @@ export function ReportsPage() {
     },
   });
 
-  const [busy, setBusy] = useState<'pdf' | 'zip' | 'json' | null>(null);
+  const qc = useQueryClient();
+  const { data: history = [] } = useReportHistory(slug);
+  const hasHistory = history.length > 0;
+
+  const [busy, setBusy] = useState<'pdf' | 'zip' | 'json' | 'attestation' | null>(null);
   // Report "type": `custom` renders the configured sections; the others are
   // canned subsets. Drives the exported filename (`<slug>-<type>-<time>.<ext>`).
   const [preset, setPreset] = useState<ReportPreset>('custom');
@@ -139,8 +151,57 @@ export function ReportsPage() {
       // The server sets the authoritative filename (type + timestamp); this is
       // only a fallback if the Content-Disposition header is missing.
       await downloadFile(url, `${slug}-${preset}-report.${format}`);
+      // A PDF/ZIP generation is logged server-side; refresh history so it shows
+      // up and unlocks the attestation letter. (JSON is a data export, not a
+      // report document, so it is not recorded.)
+      if (format !== 'json') qc.invalidateQueries({ queryKey: reportHistoryKey(slug) });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // --- Attestation letter (only available once a report exists) ------------
+  const providerContacts = useMemo<Contact[]>(
+    () => (eng?.providerContacts ?? []).filter((c) => c.name.trim()),
+    [eng],
+  );
+  const [attReportUuid, setAttReportUuid] = useState<string>('');
+  const [framework, setFramework] = useState<AttestationFramework>('soc2');
+  const [frameworkLabel, setFrameworkLabel] = useState<string>('');
+  const [signatoryIdx, setSignatoryIdx] = useState<string>('0');
+  // Clamp to the current list so a shrinking/refetched providerContacts can't
+  // leave the <Select> pointing at a non-existent option (which would silently
+  // drop the chosen signatory on download).
+  const effSignatoryIdx = providerContacts.length
+    ? Math.min(Math.max(Number(signatoryIdx) || 0, 0), providerContacts.length - 1)
+    : 0;
+  // '' means "use the report snapshot's own overall-risk rating".
+  const [overallRisk, setOverallRisk] = useState<string>('');
+
+  // The report the letter attests to (the picked one, else the latest).
+  const selectedReport: GeneratedReport | undefined =
+    history.find((r) => r.uuid === attReportUuid) ?? history[0];
+
+  async function downloadAttestation() {
+    if (!selectedReport) return;
+    setBusy('attestation');
+    try {
+      const params = new URLSearchParams({ framework, reportUuid: selectedReport.uuid });
+      if (framework === 'custom' && frameworkLabel.trim())
+        params.set('frameworkLabel', frameworkLabel.trim());
+      const contact = providerContacts[effSignatoryIdx];
+      if (contact) {
+        params.set('signatoryName', contact.name);
+        if (contact.title.trim()) params.set('signatoryTitle', contact.title);
+        if (contact.email.trim()) params.set('signatoryEmail', contact.email);
+      }
+      if (overallRisk) params.set('overallRisk', overallRisk);
+      const url = `/web/engagements/${slug}/attestation-letter.pdf?${params.toString()}`;
+      await downloadFile(url, `${slug}-attestation-letter.pdf`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Attestation letter failed');
     } finally {
       setBusy(null);
     }
@@ -482,11 +543,181 @@ export function ReportsPage() {
                 </Button>
               </div>
             </Card>
+
+            {/* Report history */}
+            <Card className="space-y-3 p-4">
+              <h3 className="text-sm font-semibold text-text">Report history</h3>
+              {hasHistory ? (
+                <ul className="space-y-2">
+                  {history.slice(0, 8).map((r) => (
+                    <li
+                      key={r.uuid}
+                      className="rounded-input border border-border p-2 text-xs text-muted"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-text">
+                          {r.version} · {r.label}
+                        </span>
+                        <Badge>{r.format.toUpperCase()}</Badge>
+                      </div>
+                      <div className="mt-1">
+                        {fmtDateTime(r.createdAt)}
+                        {r.generatedBy ? ` · ${r.generatedBy}` : ''}
+                      </div>
+                      <div className="mt-0.5">{summaryLine(r.summary)}</div>
+                    </li>
+                  ))}
+                  {history.length > 8 && (
+                    <li className="text-xs text-muted">+ {history.length - 8} earlier</li>
+                  )}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted">
+                  No reports generated yet. Generate a PDF or ZIP above to start the history.
+                </p>
+              )}
+            </Card>
+
+            {/* Attestation letter */}
+            <Card className="space-y-3 p-4">
+              <h3 className="text-sm font-semibold text-text">Attestation letter</h3>
+              {hasHistory && selectedReport ? (
+                <>
+                  <p className="text-xs text-muted">
+                    A short, formal letter attesting that this assessment was performed — for a
+                    specific generated report — that the client can share with auditors, customers,
+                    or regulators in support of a compliance framework.
+                  </p>
+                  <Field label="Report to attest" htmlFor="att-report">
+                    <Select
+                      id="att-report"
+                      value={selectedReport.uuid}
+                      onChange={(e) => setAttReportUuid(e.target.value)}
+                    >
+                      {history.map((r) => (
+                        <option key={r.uuid} value={r.uuid}>
+                          {r.version} · {r.label} · {fmtDate(r.createdAt)}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Compliance framework" htmlFor="att-framework">
+                    <Select
+                      id="att-framework"
+                      value={framework}
+                      onChange={(e) => setFramework(e.target.value as AttestationFramework)}
+                    >
+                      {ATTESTATION_FRAMEWORKS.map((f) => (
+                        <option key={f} value={f}>
+                          {ATTESTATION_FRAMEWORK_LABELS[f]}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  {framework === 'custom' && (
+                    <Field
+                      label="Framework name"
+                      htmlFor="att-framework-label"
+                      hint="Shown in the letter’s “Use of this letter” section (e.g. HITRUST, FedRAMP)."
+                    >
+                      <Input
+                        id="att-framework-label"
+                        value={frameworkLabel}
+                        onChange={(e) => setFrameworkLabel(e.target.value)}
+                        placeholder="e.g. HITRUST"
+                      />
+                    </Field>
+                  )}
+                  {providerContacts.length > 0 ? (
+                    <Field label="Signatory" htmlFor="att-signatory">
+                      <Select
+                        id="att-signatory"
+                        value={String(effSignatoryIdx)}
+                        onChange={(e) => setSignatoryIdx(e.target.value)}
+                      >
+                        {providerContacts.map((c, i) => (
+                          <option key={i} value={String(i)}>
+                            {c.name}
+                            {c.title ? ` — ${c.title}` : ''}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  ) : (
+                    <p className="text-xs text-muted">
+                      No provider contacts set — the letter will be signed by the organization. Add
+                      contacts on the Settings tab to name a signatory.
+                    </p>
+                  )}
+                  <Field
+                    label="Overall risk"
+                    htmlFor="att-risk"
+                    hint="The overall-risk rating stated in the letter."
+                  >
+                    <Select
+                      id="att-risk"
+                      value={overallRisk}
+                      onChange={(e) => setOverallRisk(e.target.value)}
+                    >
+                      <option value="">
+                        Use report’s rating
+                        {selectedReport.summary.overallRisk
+                          ? ` (${SEVERITY_LABELS[selectedReport.summary.overallRisk]})`
+                          : ''}
+                      </option>
+                      {SEVERITIES.map((s) => (
+                        <option key={s} value={s}>
+                          {SEVERITY_LABELS[s]}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Button
+                    onClick={downloadAttestation}
+                    loading={busy === 'attestation'}
+                    disabled={busyAny}
+                  >
+                    Download attestation letter
+                  </Button>
+                </>
+              ) : (
+                <p className="text-xs text-muted">
+                  Generate a report first — the attestation letter attests to a specific report, so
+                  it unlocks once one has been generated.
+                </p>
+              )}
+            </Card>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Weakness tally line for a report-history entry. */
+function summaryLine(s: GeneratedReport['summary']): string {
+  const { critical, high, medium, low, none } = s.bySeverity;
+  return `${s.weaknessesTotal} weakness${s.weaknessesTotal === 1 ? '' : 'es'} · ${critical}C ${high}H ${medium}M ${low}L ${none}I`;
+}
+
+/** Short date (e.g. "Aug 26, 2026") for an ISO timestamp. */
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/** Short date + time for a history row. */
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function SortableSectionRow({

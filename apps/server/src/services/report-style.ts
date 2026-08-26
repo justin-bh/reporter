@@ -379,3 +379,112 @@ h2, h3, h4 { break-after: avoid; }
 p, li { orphans: 3; widows: 3; }
 `;
 }
+
+/**
+ * The attestation-letter stylesheet. Shares the report's tokens, fonts, colors
+ * and running header/footer so a letter reads as a first-class reporter
+ * deliverable — but it is a self-contained sheet (not `reportCss`) because a
+ * letter has no full-bleed cover: it needs its normal margins and the running
+ * header on the FIRST page too, whereas `reportCss`'s `@page :first` zeroes them
+ * for the cover. Keep the `:root` tokens here in sync with `reportCss`. `accent`
+ * drives the red accent; `hdrLeft`/`hdrRight` are the running-header text (plain,
+ * already uppercased by the caller).
+ */
+export function letterCss(accent: string, hdrLeft: string, hdrRight: string): string {
+  const left = cssString(hdrLeft);
+  const right = cssString(hdrRight);
+  return `
+:root {
+  --bh-red: ${accent};
+  --accent: ${accent};
+  --bh-black: #000000;
+  --bh-near-black: #0d0d0d;
+  --bh-stroke-light: #d6d8d7;
+  --bh-muted: #9a9897;
+  --fg-1: var(--bh-black);
+  --fg-2: #686563;
+  --fg-3: var(--bh-muted);
+  --stroke-light: var(--bh-stroke-light);
+  --font-sans: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --font-cond: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { font-family: var(--font-sans); color: var(--fg-1); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; background: #fff; -webkit-font-smoothing: antialiased; font-family: var(--font-sans); color: var(--fg-1); }
+h1, h2, h3, p { margin: 0; }
+
+/* rendered markdown prose (methodology / scope), mirrors the report's .md */
+.md { color: var(--fg-1); font-size: 13.5px; line-height: 1.6; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 10px; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md li { margin: 2px 0; }
+.md strong { font-weight: 700; }
+.md em { font-style: italic; }
+.md a { color: var(--bh-red); text-decoration: underline; }
+
+/* ---- letterhead ---- */
+.letterhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+              border-bottom: 1px solid var(--stroke-light); padding-bottom: 14px; margin-bottom: 30px; }
+.lh-logo { max-height: 44px; max-width: 240px; width: auto; display: block; }
+.lh-wordmark { font-weight: 900; font-size: 22px; letter-spacing: -0.01em; color: var(--bh-black); }
+.lh-wordmark .dot { color: var(--bh-red); }
+.lh-client { font-size: 13px; color: var(--fg-2); text-align: right; font-weight: 500; }
+
+/* ---- title ---- */
+.letter-title { font-weight: 900; font-size: 25px; letter-spacing: -0.01em; line-height: 1.12;
+                color: var(--bh-black); text-transform: uppercase; }
+.letter-rule { width: 56px; height: 4px; background: var(--bh-red); border: 0; margin: 12px 0 26px; }
+
+/* ---- letter body ---- */
+.letter { font-size: 13.5px; line-height: 1.6; color: var(--fg-1); }
+.letter p { margin: 0 0 13px; }
+.letter .date { margin: 0 0 20px; }
+.letter .addr { margin: 0 0 18px; line-height: 1.5; }
+.letter .re { font-weight: 700; color: var(--bh-black); margin: 0 0 18px; }
+.letter h2 { font-family: var(--font-cond); font-weight: 700; font-size: 13px; letter-spacing: 0.1em;
+             text-transform: uppercase; color: var(--bh-black); margin: 26px 0 10px; break-after: avoid; }
+.letter ol { margin: 0 0 13px; padding-left: 22px; }
+.letter ol li { margin: 0 0 9px; padding-left: 4px; }
+.letter ul.scope { list-style: disc; margin: 0 0 13px; padding-left: 22px; }
+.letter ul.scope li { margin: 0 0 8px; }
+.letter .fineprint { font-size: 11px; line-height: 1.5; color: var(--fg-2); margin: 0 0 13px; }
+
+/* ---- key-value summary table ---- */
+table.kv { width: 100%; border-collapse: collapse; margin: 4px 0 6px; font-size: 13px; }
+table.kv td { padding: 8px 0; border-bottom: 1px solid var(--stroke-light); vertical-align: top; line-height: 1.45; }
+table.kv tr:last-child td { border-bottom: 0; }
+table.kv td.k { font-weight: 700; color: var(--bh-black); width: 34%; padding-right: 16px; }
+table.kv td.v { color: var(--fg-2); }
+
+/* ---- severity counts table (report red-header style) ---- */
+table.tbl { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 13px; }
+table.tbl th { background: var(--bh-red); color: #fff; font-family: var(--font-cond); font-weight: 700;
+               font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center; padding: 9px 10px; }
+table.tbl td { padding: 9px 10px; border-bottom: 1px solid var(--stroke-light); color: var(--bh-black);
+               text-align: center; font-family: var(--font-mono); }
+
+/* ---- signature ---- */
+.sig { margin-top: 34px; break-inside: avoid; }
+.sig .close { margin: 0 0 44px; }
+.sig .line { width: 280px; border-top: 1px solid var(--bh-black); margin: 0 0 8px; }
+.sig .nm { font-weight: 700; color: var(--bh-black); }
+.sig .rl { color: var(--fg-2); }
+.sig .date { margin-top: 26px; color: var(--fg-2); }
+
+@page { size: Letter; margin: 0.8in 0.85in 0.85in; }
+@page {
+  @top-left { content: "${left}"; font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
+              font-size: 8.5px; letter-spacing: 0.12em; color: #9a9897; }
+  @top-right { content: "${right}"; font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
+               font-size: 8.5px; letter-spacing: 0.12em; color: #9a9897; }
+  @bottom-center { content: "PAGE " counter(page) " OF " counter(pages);
+                   font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif; font-size: 8.5px;
+                   letter-spacing: 0.12em; color: #9a9897; }
+}
+h2 { break-after: avoid; }
+p, li { orphans: 3; widows: 3; }
+`;
+}
