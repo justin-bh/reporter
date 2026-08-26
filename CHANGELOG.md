@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-26
+
 ### Added
 
 - **Compliance attestation letters** — the Reports tab can now produce a short,
