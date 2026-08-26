@@ -233,11 +233,14 @@ export type ReportSummary = z.infer<typeof reportSummarySchema>;
 
 /**
  * One entry in an engagement's report history — a record that a report document
- * (PDF or ZIP) was generated. `version` is an auto-assigned, human label
- * (`v1.0`, `v2.0`, …) so a letter can name the exact deliverable it attests to;
- * the PDF itself is not stored (reports render on demand), but `summary`
- * snapshots the tallies. `generatedBy` is the operator's display name (null if
- * that user was later removed).
+ * (PDF, ZIP, or JSON) was generated. `version` is an auto-assigned, human label
+ * (`v1.0`, `v2.0`, …) so a letter can name the exact deliverable it attests to,
+ * and `summary` snapshots the findings tallies as generated. The rendered
+ * artifact bytes are stored so the exact file can be re-downloaded:
+ * `downloadable` is true when those bytes are available (older records generated
+ * before artifact storage are not), and `sizeBytes` is the stored file size for
+ * display. `generatedBy` is the operator's display name (null if that user was
+ * later removed).
  */
 export const generatedReportSchema = z.object({
   uuid: uuidSchema,
@@ -248,6 +251,10 @@ export const generatedReportSchema = z.object({
   summary: reportSummarySchema,
   generatedBy: z.string().nullable(),
   createdAt: isoDateSchema,
+  /** True when the stored artifact bytes are available to re-download. */
+  downloadable: z.boolean().default(false),
+  /** Size of the stored artifact in bytes (null when not stored). */
+  sizeBytes: z.number().int().nonnegative().nullable().default(null),
 });
 export type GeneratedReport = z.infer<typeof generatedReportSchema>;
 
@@ -257,7 +264,10 @@ export type GeneratedReport = z.infer<typeof generatedReportSchema>;
  * defaults to the latest in history, the signatory/recipient default to the
  * engagement's first provider/client contact, and the overall-risk statement
  * defaults to the snapshot's highest severity. `frameworkLabel` names the
- * framework when `framework` is `custom`.
+ * framework when `framework` is `custom`. `recipientName`/`recipientTitle` set
+ * the "Attn:" line; `salutationName` sets the "Dear …" greeting independently
+ * (falling back to the recipient name). `showExclusions` opts the scope
+ * exclusions into the letter — they are omitted by default.
  */
 export const attestationLetterInputSchema = z.object({
   framework: attestationFrameworkSchema.default('soc2'),
@@ -268,7 +278,9 @@ export const attestationLetterInputSchema = z.object({
   signatoryEmail: z.string().max(320).optional(),
   recipientName: z.string().max(255).optional(),
   recipientTitle: z.string().max(255).optional(),
+  salutationName: z.string().max(255).optional(),
   overallRisk: severitySchema.optional(),
+  showExclusions: z.boolean().default(false),
 });
 export type AttestationLetterInput = z.infer<typeof attestationLetterInputSchema>;
 

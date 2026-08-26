@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -30,6 +30,7 @@ import {
   MarkdownField,
   Select,
   Spinner,
+  Tabs,
   useToast,
 } from '@reporter/ui';
 import {
@@ -66,7 +67,33 @@ import { reportHistoryKey, useEngagement, useReportHistory, useUpdateEngagement 
 import { useEngagementPermissions } from '../lib/permissions.js';
 import { useAutosave } from '../hooks/useAutosave.js';
 import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
+import { ReportContentForm } from '../components/engagement/ReportContentForm.js';
 import { downloadFile } from '../lib/download.js';
+
+/** The Reports tab's sub-sections, persisted in the `?section=` search param. */
+const SECTIONS = ['content', 'configure', 'generate', 'attestation'] as const;
+type Section = (typeof SECTIONS)[number];
+
+const SECTION_TABS: { key: Section; label: string }[] = [
+  { key: 'content', label: 'Content' },
+  { key: 'configure', label: 'Configure' },
+  { key: 'generate', label: 'Generate & History' },
+  { key: 'attestation', label: 'Attestation' },
+];
+
+/** Humanize a byte count for the report-history size hint (null → ''). */
+function fmtBytes(bytes: number | null): string {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
 
 /** Stable id for a custom section not yet given a real id. */
 function makeCustomId(): string {
@@ -104,9 +131,27 @@ export function ReportsPage() {
   const { slug = '' } = useParams();
   const toast = useToast();
   // The report config is persisted via the engagement update endpoint, which is
-  // admin-gated — so gate these controls on the engagement-admin role.
-  const { canAdmin: canEdit } = useEngagementPermissions(slug);
+  // admin-gated — so gate these controls on the engagement-admin role. `canWrite`
+  // gates the Content sub-tab's editors (report metadata + structured content).
+  const { canAdmin: canEdit, canWrite } = useEngagementPermissions(slug);
   const { data: eng, isLoading, isError, refetch } = useEngagement(slug);
+
+  // The active sub-tab lives in the URL so refresh / deep-links land correctly.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sectionParam = searchParams.get('section');
+  const section: Section = SECTIONS.includes(sectionParam as Section)
+    ? (sectionParam as Section)
+    : 'content';
+  const setSection = (next: Section) => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.set('section', next);
+        return p;
+      },
+      { replace: true },
+    );
+  };
 
   // Seed the config form once per engagement (normalizing an empty config to the
   // canonical default), then autosave edits back through useUpdateEngagement.
@@ -136,8 +181,13 @@ export function ReportsPage() {
   const qc = useQueryClient();
   const { data: history = [] } = useReportHistory(slug);
   const hasHistory = history.length > 0;
+  // Only PDF/ZIP documents can be attested to; a JSON export is a data dump, not
+  // a deliverable, so it must never be the attestation letter's default target.
+  const attestableReports = useMemo(() => history.filter((r) => r.format !== 'json'), [history]);
 
   const [busy, setBusy] = useState<'pdf' | 'zip' | 'json' | 'attestation' | null>(null);
+  // A history row currently re-downloading its stored artifact (by uuid).
+  const [downloadingUuid, setDownloadingUuid] = useState<string | null>(null);
   // Report "type": `custom` renders the configured sections; the others are
   // canned subsets. Drives the exported filename (`<slug>-<type>-<time>.<ext>`).
   const [preset, setPreset] = useState<ReportPreset>('custom');
@@ -151,14 +201,28 @@ export function ReportsPage() {
       // The server sets the authoritative filename (type + timestamp); this is
       // only a fallback if the Content-Disposition header is missing.
       await downloadFile(url, `${slug}-${preset}-report.${format}`);
-      // A PDF/ZIP generation is logged server-side; refresh history so it shows
-      // up and unlocks the attestation letter. (JSON is a data export, not a
-      // report document, so it is not recorded.)
-      if (format !== 'json') qc.invalidateQueries({ queryKey: reportHistoryKey(slug) });
+      // Every generation (PDF, ZIP, and JSON) is logged server-side with its
+      // stored bytes; refresh history so the new entry and its Download button
+      // appear. PDF/ZIP entries also unlock the attestation letter.
+      qc.invalidateQueries({ queryKey: reportHistoryKey(slug) });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export failed');
     } finally {
       setBusy(null);
+    }
+  }
+
+  // Re-download a stored report artifact by its history-row uuid. The server may
+  // 404 for rows generated before artifact storage (guarded by `downloadable`).
+  async function downloadStored(r: GeneratedReport) {
+    setDownloadingUuid(r.uuid);
+    try {
+      const url = `/web/engagements/${slug}/reports/${r.uuid}/download`;
+      await downloadFile(url, `${slug}-${r.version}.${r.format}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setDownloadingUuid(null);
     }
   }
 
@@ -180,9 +244,28 @@ export function ReportsPage() {
   // '' means "use the report snapshot's own overall-risk rating".
   const [overallRisk, setOverallRisk] = useState<string>('');
 
-  // The report the letter attests to (the picked one, else the latest).
+  // "Attn:" recipient + "Dear" salutation, prefilled from the engagement's first
+  // client contact. Seeded once per engagement so an in-progress edit isn't
+  // clobbered when the cached `eng` object is replaced by unrelated mutations.
+  const [recipientName, setRecipientName] = useState<string>('');
+  const [recipientTitle, setRecipientTitle] = useState<string>('');
+  const [salutationName, setSalutationName] = useState<string>('');
+  // Scope exclusions are omitted from the letter unless explicitly opted in.
+  const [showExclusions, setShowExclusions] = useState<boolean>(false);
+  const attSeededSlug = useRef<string | null>(null);
+  useEffect(() => {
+    if (!eng || attSeededSlug.current === eng.slug) return;
+    attSeededSlug.current = eng.slug;
+    const firstClient = eng.clientContacts?.[0];
+    const name = firstClient?.name ?? '';
+    setRecipientName(name);
+    setRecipientTitle(firstClient?.title ?? '');
+    setSalutationName(name);
+  }, [eng]);
+
+  // The report the letter attests to (the picked one, else the latest PDF/ZIP).
   const selectedReport: GeneratedReport | undefined =
-    history.find((r) => r.uuid === attReportUuid) ?? history[0];
+    attestableReports.find((r) => r.uuid === attReportUuid) ?? attestableReports[0];
 
   async function downloadAttestation() {
     if (!selectedReport) return;
@@ -198,6 +281,11 @@ export function ReportsPage() {
         if (contact.email.trim()) params.set('signatoryEmail', contact.email);
       }
       if (overallRisk) params.set('overallRisk', overallRisk);
+      // "Attn:" recipient + optional "Dear" greeting.
+      if (recipientName.trim()) params.set('recipientName', recipientName.trim());
+      if (recipientTitle.trim()) params.set('recipientTitle', recipientTitle.trim());
+      if (salutationName.trim()) params.set('salutationName', salutationName.trim());
+      if (showExclusions) params.set('showExclusions', 'true');
       const url = `/web/engagements/${slug}/attestation-letter.pdf?${params.toString()}`;
       await downloadFile(url, `${slug}-attestation-letter.pdf`);
     } catch (err) {
@@ -292,17 +380,34 @@ export function ReportsPage() {
         <div>
           <h2 className="text-lg font-semibold text-text">Reports</h2>
           <p className="text-sm text-muted">
-            Choose which sections appear, reorder them, then generate the report.
+            Author the report’s content, choose which sections appear, then generate and download
+            the report.
           </p>
         </div>
-        {canEdit && <SaveStatusIndicator status={status} />}
+        {canEdit && section === 'configure' && <SaveStatusIndicator status={status} />}
       </div>
+
+      <Tabs
+        tabs={SECTION_TABS}
+        active={section}
+        onChange={(key) => setSection(key as Section)}
+      />
 
       {isLoading ? (
         <Spinner />
       ) : isError || !eng ? (
         <ErrorState description="Couldn’t load this engagement." onRetry={() => refetch()} />
       ) : (
+        <>
+          {/* Kept mounted (hidden when inactive) so switching sub-tabs never
+              unmounts the content editor — its local form state and any pending
+              autosave must survive a tab switch, exactly as the Configure tab's
+              state does (it lives on this page, which stays mounted). Unmounting
+              it mid-save could reseed a fresh instance from stale cache. */}
+          <div className={section === 'content' ? undefined : 'hidden'}>
+            <ReportContentForm slug={slug} engagement={eng} canWrite={canWrite} />
+          </div>
+          {section === 'configure' ? (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
             {/* Section list */}
@@ -496,7 +601,11 @@ export function ReportsPage() {
                 </Field>
               )}
             </Card>
-
+          </div>
+        </div>
+      ) : section === 'generate' ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4">
             <Card className="space-y-3 p-4">
               <h3 className="text-sm font-semibold text-text">Generate</h3>
               <Field
@@ -544,44 +653,76 @@ export function ReportsPage() {
               </div>
             </Card>
 
-            {/* Report history */}
+          </div>
+
+          {/* Report history */}
+          <div className="space-y-4">
             <Card className="space-y-3 p-4">
               <h3 className="text-sm font-semibold text-text">Report history</h3>
               {hasHistory ? (
                 <ul className="space-y-2">
-                  {history.slice(0, 8).map((r) => (
-                    <li
-                      key={r.uuid}
-                      className="rounded-input border border-border p-2 text-xs text-muted"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-text">
-                          {r.version} · {r.label}
-                        </span>
-                        <Badge>{r.format.toUpperCase()}</Badge>
-                      </div>
-                      <div className="mt-1">
-                        {fmtDateTime(r.createdAt)}
-                        {r.generatedBy ? ` · ${r.generatedBy}` : ''}
-                      </div>
-                      <div className="mt-0.5">{summaryLine(r.summary)}</div>
-                    </li>
-                  ))}
+                  {history.slice(0, 8).map((r) => {
+                    const sizeLabel = fmtBytes(r.sizeBytes);
+                    const downloading = downloadingUuid === r.uuid;
+                    return (
+                      <li
+                        key={r.uuid}
+                        className="rounded-input border border-border p-2 text-xs text-muted"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-medium text-text">
+                            {r.version} · {r.label}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            <Badge>{r.format.toUpperCase()}</Badge>
+                            {sizeLabel && <span className="text-muted">{sizeLabel}</span>}
+                          </span>
+                        </div>
+                        <div className="mt-1">
+                          {fmtDateTime(r.createdAt)}
+                          {r.generatedBy ? ` · ${r.generatedBy}` : ''}
+                        </div>
+                        <div className="mt-0.5">{summaryLine(r.summary)}</div>
+                        <div className="mt-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => downloadStored(r)}
+                            loading={downloading}
+                            disabled={
+                              !r.downloadable || (downloadingUuid !== null && !downloading)
+                            }
+                            title={
+                              r.downloadable
+                                ? undefined
+                                : 'Generated before downloads were stored'
+                            }
+                          >
+                            Download
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
                   {history.length > 8 && (
                     <li className="text-xs text-muted">+ {history.length - 8} earlier</li>
                   )}
                 </ul>
               ) : (
                 <p className="text-xs text-muted">
-                  No reports generated yet. Generate a PDF or ZIP above to start the history.
+                  No reports generated yet. Generate a PDF or ZIP to start the history.
                 </p>
               )}
             </Card>
-
+          </div>
+        </div>
+          ) : section === 'attestation' ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4 lg:col-span-2">
             {/* Attestation letter */}
             <Card className="space-y-3 p-4">
               <h3 className="text-sm font-semibold text-text">Attestation letter</h3>
-              {hasHistory && selectedReport ? (
+              {selectedReport ? (
                 <>
                   <p className="text-xs text-muted">
                     A short, formal letter attesting that this assessment was performed — for a
@@ -594,9 +735,9 @@ export function ReportsPage() {
                       value={selectedReport.uuid}
                       onChange={(e) => setAttReportUuid(e.target.value)}
                     >
-                      {history.map((r) => (
+                      {attestableReports.map((r) => (
                         <option key={r.uuid} value={r.uuid}>
-                          {r.version} · {r.label} · {fmtDate(r.createdAt)}
+                          {r.version} · {r.label} · {r.format.toUpperCase()} · {fmtDate(r.createdAt)}
                         </option>
                       ))}
                     </Select>
@@ -646,9 +787,48 @@ export function ReportsPage() {
                   ) : (
                     <p className="text-xs text-muted">
                       No provider contacts set — the letter will be signed by the organization. Add
-                      contacts on the Settings tab to name a signatory.
+                      contacts on the Content sub-tab to name a signatory.
                     </p>
                   )}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field
+                      label="Attn: recipient"
+                      htmlFor="att-recipient-name"
+                      hint="Prefilled from the first client contact."
+                    >
+                      <Input
+                        id="att-recipient-name"
+                        value={recipientName}
+                        onChange={(e) => setRecipientName(e.target.value)}
+                        placeholder="Recipient name"
+                      />
+                    </Field>
+                    <Field label="Recipient title" htmlFor="att-recipient-title">
+                      <Input
+                        id="att-recipient-title"
+                        value={recipientTitle}
+                        onChange={(e) => setRecipientTitle(e.target.value)}
+                        placeholder="e.g. CISO"
+                      />
+                    </Field>
+                  </div>
+                  <Field
+                    label="Dear"
+                    htmlFor="att-salutation"
+                    hint="Greeting name; defaults to the Attn: recipient."
+                  >
+                    <Input
+                      id="att-salutation"
+                      value={salutationName}
+                      onChange={(e) => setSalutationName(e.target.value)}
+                      placeholder="Greeting name"
+                    />
+                  </Field>
+                  <Checkbox
+                    label="Show scope exclusions"
+                    checked={showExclusions}
+                    onChange={(e) => setShowExclusions(e.target.checked)}
+                  />
                   <Field
                     label="Overall risk"
                     htmlFor="att-risk"
@@ -689,6 +869,8 @@ export function ReportsPage() {
             </Card>
           </div>
         </div>
+          ) : null}
+        </>
       )}
     </div>
   );

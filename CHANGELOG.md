@@ -25,6 +25,29 @@ with `pnpm run version:bump <major|minor|patch>`.
   findings tallies and who generated it, shown on the Reports tab. The
   attestation letter attests to one of these entries so its stated results stay
   consistent with that deliverable even after the engagement's findings change.
+- **Re-download past reports** — the exact bytes of every generated report are
+  now stored, so any past **PDF, ZIP bundle, or JSON export** can be
+  re-downloaded from Report history with a per-entry **Download** button (the
+  identical file that was produced, not a re-render). JSON exports are recorded
+  in history too; entries generated before this release show as non-downloadable.
+- **Reports tab is now a guided set of sub-tabs** — **Content · Configure ·
+  Generate & History · Attestation** — so authoring a report is a clear
+  walkthrough. All report-content authoring (report details, watermark, service
+  scope, strategic recommendations, threat model, assessment execution, client
+  and third-party software, and provider/client contacts) now lives on the
+  **Content** sub-tab.
+- **Attestation letter options** — the letter form now lets you set the
+  **Attn:** recipient (name + title) and the **Dear** greeting directly
+  (prefilled from the first client contact), and adds a **Show scope
+  exclusions** toggle so exclusions can be included in the letter (**off by
+  default**). All other details are still pulled from the engagement's content.
+
+### Changed
+
+- **Report content moved from engagement Settings to the Reports tab.** The
+  Settings tab now covers only the engagement itself (details, members, tags,
+  finding categories); everything report-related is authored under
+  **Reports → Content**.
 
 ## [0.6.0] - 2026-08-20
 

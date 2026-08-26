@@ -173,8 +173,8 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
 
   // Delete an engagement and everything under it. Child rows (roles, prefs, tags,
   // evidence, findings, saved queries and their links) cascade at the DB level;
-  // evidence blobs live outside the DB, so gather their keys first and reclaim
-  // them from the blob store once the rows are gone.
+  // evidence blobs and stored report artifacts live outside the DB, so gather
+  // their keys first and reclaim them from the blob store once the rows are gone.
   app.delete(
     '/engagements/:slug',
     { preHandler: [requireAuth, requireEngagementRole('admin')] },
@@ -186,6 +186,10 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         where: { engagementId: eng.id },
         select: { fullBlobKey: true, thumbBlobKey: true },
       });
+      const reports = await app.db.generatedReport.findMany({
+        where: { engagementId: eng.id },
+        select: { blobKey: true },
+      });
 
       await app.db.engagement.delete({ where: { id: eng.id } });
 
@@ -193,6 +197,9 @@ export async function engagementRoutes(app: FastifyInstance): Promise<void> {
         for (const key of [ev.fullBlobKey, ev.thumbBlobKey]) {
           if (key) await app.blobs.delete(key).catch(() => {});
         }
+      }
+      for (const r of reports) {
+        if (r.blobKey) await app.blobs.delete(r.blobKey).catch(() => {});
       }
       return { ok: true };
     },

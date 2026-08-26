@@ -64,6 +64,7 @@ async function recordReport(
     format: GeneratedReportFormat;
     options: ReportOptions;
     userId: number;
+    artifact: { buffer: Buffer; contentType: string; filename: string };
   },
 ): Promise<void> {
   try {
@@ -334,10 +335,18 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const { options, label } = reportFor(config, preset);
       const html = await buildReportHtml(app, eng, new Date(), options, req.authedUser!.id);
       const pdf = await renderPdf(app, html);
-      await recordReport(app, { eng, preset, format: 'pdf', options, userId: req.authedUser!.id });
+      const filename = `${slug}-${label}-${stamp()}.pdf`;
+      await recordReport(app, {
+        eng,
+        preset,
+        format: 'pdf',
+        options,
+        userId: req.authedUser!.id,
+        artifact: { buffer: pdf, contentType: 'application/pdf', filename },
+      });
       reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `attachment; filename="${slug}-${label}-${stamp()}.pdf"`);
+        .header('Content-Disposition', `attachment; filename="${filename}"`);
       return reply.send(pdf);
     },
   );
@@ -362,16 +371,18 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         files,
       );
       const pdf = await renderPdf(app, html);
-      await recordReport(app, { eng, preset, format: 'zip', options, userId: req.authedUser!.id });
 
       const base = `${slug}-${label}-${stamp()}`;
+      const filename = `${base}.zip`;
       const archive = archiver('zip', { zlib: { level: 9 } });
       archive.on('warning', (err: unknown) => app.log.warn({ err }, 'zip warning'));
       archive.on('error', (err: unknown) => app.log.error({ err }, 'zip error'));
-      reply
-        .header('Content-Type', 'application/zip')
-        .header('Content-Disposition', `attachment; filename="${base}.zip"`);
-      reply.send(archive);
+
+      // Buffer the whole archive so the exact bytes can be both sent to the
+      // client and stored for re-download. Collect chunks as the archiver emits
+      // them, then concat once finalized.
+      const chunks: Buffer[] = [];
+      archive.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       archive.append(pdf, { name: `${base}.pdf` });
       for (const f of files) {
         const buf = await app.blobs.getBuffer(f.blobKey).catch(() => null);
@@ -383,7 +394,20 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         archive.append(manifest, { name: 'supporting-files/SHA256SUMS.txt' });
       }
       await archive.finalize();
-      return reply;
+      const zip = Buffer.concat(chunks);
+
+      await recordReport(app, {
+        eng,
+        preset,
+        format: 'zip',
+        options,
+        userId: req.authedUser!.id,
+        artifact: { buffer: zip, contentType: 'application/zip', filename },
+      });
+      reply
+        .header('Content-Type', 'application/zip')
+        .header('Content-Disposition', `attachment; filename="${filename}"`);
+      return reply.send(zip);
     },
   );
 
@@ -395,16 +419,27 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const q = req.query as Record<string, string | undefined>;
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       const config = reportConfigSchema.parse(eng.reportConfig ?? {});
-      const { options, label } = reportFor(config, presetParam(q.preset));
+      const preset = presetParam(q.preset);
+      const { options, label } = reportFor(config, preset);
       const data = await buildFindingsExport(app, eng, new Date(), {
         includeAll: options.includeAll ?? false,
         includeEvidenceContent: boolParam(q.includeEvidenceContent),
       });
-      reply.header(
-        'Content-Disposition',
-        `attachment; filename="${slug}-${label}-${stamp()}.json"`,
-      );
-      return data;
+      // Serialize once so the bytes we send and the bytes we store are identical.
+      const buffer = Buffer.from(JSON.stringify(data));
+      const filename = `${slug}-${label}-${stamp()}.json`;
+      await recordReport(app, {
+        eng,
+        preset,
+        format: 'json',
+        options,
+        userId: req.authedUser!.id,
+        artifact: { buffer, contentType: 'application/json', filename },
+      });
+      reply
+        .header('Content-Type', 'application/json')
+        .header('Content-Disposition', `attachment; filename="${filename}"`);
+      return reply.send(buffer);
     },
   );
 
@@ -418,6 +453,43 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const { slug } = req.params as { slug: string };
       const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
       return listReportHistory(app, eng.id);
+    },
+  );
+
+  // Re-download a previously generated report's stored artifact bytes. Reports
+  // generated before artifact storage have no blobKey and can't be served.
+  app.get(
+    '/engagements/:slug/reports/:uuid/download',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug, uuid } = req.params as { slug: string; uuid: string };
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const row = await app.db.generatedReport.findFirst({
+        where: { engagementId: eng.id, uuid },
+      });
+      if (!row) throw new HttpError(404, 'Report not found');
+      if (!row.blobKey) {
+        throw new HttpError(
+          404,
+          'This report was generated before downloads were stored and can no longer be re-downloaded.',
+        );
+      }
+      // LocalStore.get() returns a lazy read stream that only errors on read, so an
+      // absent file would surface mid-response as a broken stream instead of a clean
+      // 404. Check existence up front, before any bytes/headers are sent.
+      const present = await app.blobs.exists(row.blobKey).catch(() => false);
+      if (!present) {
+        app.log.error({ key: row.blobKey }, 'report artifact blob missing');
+        throw new HttpError(404, 'Report not found');
+      }
+      const stream = await app.blobs.get(row.blobKey);
+      reply
+        .header('Content-Type', row.contentType ?? 'application/octet-stream')
+        .header(
+          'Content-Disposition',
+          `attachment; filename="${row.filename ?? `${slug}-report-${row.version}`}"`,
+        );
+      return reply.send(stream);
     },
   );
 
@@ -449,6 +521,8 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         signatoryEmail: strParam(q.signatoryEmail),
         recipientName: strParam(q.recipientName),
         recipientTitle: strParam(q.recipientTitle),
+        salutationName: strParam(q.salutationName),
+        showExclusions: boolParam(q.showExclusions),
         overallRisk: severityParam(q.overallRisk),
       });
       const pdf = await renderPdf(app, html);

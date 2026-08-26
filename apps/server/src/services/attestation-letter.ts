@@ -45,6 +45,10 @@ export interface AttestationLetterInputs {
   signatoryEmail?: string;
   recipientName?: string;
   recipientTitle?: string;
+  /** Sets the "Dear …" greeting independently of the recipient (Attn) name. */
+  salutationName?: string;
+  /** Opt the scope section into listing the engagement's exclusions (default off). */
+  showExclusions?: boolean;
   /** Overrides the snapshot's overall-risk rating in the results statement. */
   overallRisk?: Severity;
 }
@@ -212,7 +216,9 @@ export async function buildAttestationLetterHtml(
   const addressBlock = `<div class="addr">${esc(hasClientName ? clientName : engagement.name)}${attn}</div>`;
   // Raw string — escaped exactly once at the render site (`esc(salutation)`),
   // like `opening`. Escaping here too would double-escape special characters.
-  const salutation = recipient ? `Dear ${recipient.name},` : 'Dear Sir or Madam,';
+  // An explicit salutation name wins, else the resolved recipient, else generic.
+  const salutationName = inputs.salutationName?.trim() || recipient?.name;
+  const salutation = salutationName ? `Dear ${salutationName},` : 'Dear Sir or Madam,';
 
   // ---- Opening -----------------------------------------------------------
   const opening =
@@ -233,6 +239,12 @@ export async function buildAttestationLetterHtml(
     .join('')}</tbody></table>`;
 
   // ---- Scope -------------------------------------------------------------
+  // Exclusions are opt-in (`showExclusions`) and must render regardless of
+  // whether the engagement uses structured targets, prose scope, or neither.
+  const exclusions = scopeExclusions.map((s) => s.trim()).filter(Boolean);
+  const showExclusions = Boolean(inputs.showExclusions) && exclusions.length > 0;
+  const exclusionsText = exclusions.join('; ');
+
   let scopeSection = '';
   if (targetNames.length) {
     const bullets = scopeTargets
@@ -242,13 +254,19 @@ export async function buildAttestationLetterHtml(
         const detail = subs.length ? ` ${esc(subs.join(', '))}.` : '';
         return `<li><strong>${esc(t.name.trim())}.</strong>${detail}</li>`;
       });
-    const exclusions = scopeExclusions.map((s) => s.trim()).filter(Boolean);
-    if (exclusions.length) {
-      bullets.push(`<li><strong>Exclusions.</strong> ${esc(exclusions.join('; '))}.</li>`);
+    if (showExclusions) {
+      bullets.push(`<li><strong>Exclusions.</strong> ${esc(exclusionsText)}.</li>`);
     }
     scopeSection = `<h2>Scope of Assessment</h2><ul class="scope">${bullets.join('')}</ul>`;
   } else if (engagement.scope?.trim()) {
-    scopeSection = `<h2>Scope of Assessment</h2>${prose(engagement.scope)}`;
+    const exclusionsPara = showExclusions
+      ? para(`Exclusions. ${exclusionsText}.`)
+      : '';
+    scopeSection = `<h2>Scope of Assessment</h2>${prose(engagement.scope)}${exclusionsPara}`;
+  } else if (showExclusions) {
+    // No structured targets and no prose scope, but exclusions are on: still emit
+    // a heading so the exclusions are attested.
+    scopeSection = `<h2>Scope of Assessment</h2>${para(`Exclusions. ${exclusionsText}.`)}`;
   }
 
   // ---- Methodology -------------------------------------------------------
