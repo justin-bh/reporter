@@ -281,6 +281,7 @@ function registerIpc(): void {
       .filter((e) => e.parentEvidenceUuid === null)
       .map((e) => ({
         uuid: e.uuid,
+        title: e.title,
         description: e.description,
         contentType: e.contentType,
         occurredAt: e.occurredAt,

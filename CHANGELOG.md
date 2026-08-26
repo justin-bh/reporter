@@ -49,6 +49,15 @@ with `pnpm run version:bump <major|minor|patch>`.
   finding categories); everything report-related is authored under
   **Reports → Content**.
 
+### Fixed
+
+- **Desktop "Comment on" picker is now readable.** When filing a capture as a
+  comment on existing evidence, the desktop app's picker listed each item by its
+  bare content type (e.g. `(image)`, `(codeblock)`), making it impossible to tell
+  which piece of evidence you were commenting on. It now shows each item's
+  **title** (falling back to its description, then a friendly type label) plus a
+  short timestamp, so items — even a burst of screenshots — are easy to tell apart.
+
 ## [0.6.0] - 2026-08-20
 
 ### Added
