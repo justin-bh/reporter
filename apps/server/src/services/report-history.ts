@@ -6,6 +6,7 @@
  * the report as generated. Recording is best-effort: callers wrap it so a
  * history hiccup never fails the actual download.
  */
+import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { GeneratedReport as GeneratedReportRow, Prisma } from '@prisma/client';
 import {
@@ -33,6 +34,8 @@ interface RecordArgs {
   options: ReportOptions;
   /** The operator who generated the report (null-safe: SET NULL on user delete). */
   userId: number;
+  /** The rendered artifact bytes to persist so the report can be re-downloaded. */
+  artifact: { buffer: Buffer; contentType: string; filename: string };
 }
 
 /**
@@ -41,16 +44,18 @@ interface RecordArgs {
  */
 export async function recordGeneratedReport(
   app: FastifyInstance,
-  { eng, preset, format, options, userId }: RecordArgs,
+  { eng, preset, format, options, userId, artifact }: RecordArgs,
 ): Promise<void> {
   const summary = await computeReportSummary(app, eng, options);
   // Serialize per-engagement so two concurrent generations (e.g. a PDF and a ZIP
   // back-to-back) can't read the same count and mint duplicate version labels.
   // The transaction-scoped advisory lock is released automatically at commit.
-  await app.db.$transaction(async (tx) => {
+  // Only version assignment + row creation happen inside the lock; the blob write
+  // is done afterwards so the per-engagement advisory lock isn't held during I/O.
+  const created = await app.db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${REPORT_VERSION_LOCK_NS}::int4, ${eng.id}::int4)`;
     const priorCount = await tx.generatedReport.count({ where: { engagementId: eng.id } });
-    await tx.generatedReport.create({
+    return tx.generatedReport.create({
       data: {
         engagementId: eng.id,
         preset,
@@ -62,6 +67,27 @@ export async function recordGeneratedReport(
       },
     });
   });
+
+  // Persist the artifact bytes to the blob store so the report can be
+  // re-downloaded later. If this fails the row stays without a blobKey (recorded
+  // but not downloadable) — never rethrow past the caller's best-effort boundary.
+  try {
+    const key = `reports/${eng.id}/${created.uuid}.${format}`;
+    await app.blobs.put(key, artifact.buffer);
+    const sha = createHash('sha256').update(artifact.buffer).digest('hex');
+    await app.db.generatedReport.update({
+      where: { id: created.id },
+      data: {
+        blobKey: key,
+        filename: artifact.filename,
+        sizeBytes: artifact.buffer.length,
+        contentType: artifact.contentType,
+        sha256: sha,
+      },
+    });
+  } catch (err) {
+    app.log.error({ err }, 'failed to store report artifact; recorded without a download');
+  }
 }
 
 /** Recent report generations for an engagement, newest first (for the UI). */
@@ -82,6 +108,8 @@ export async function listReportHistory(
       version: r.version,
       format: r.format,
       summary: r.summary,
+      downloadable: r.blobKey != null,
+      sizeBytes: r.sizeBytes ?? null,
       generatedBy: r.generatedBy
         ? `${r.generatedBy.firstName} ${r.generatedBy.lastName}`.trim()
         : null,
@@ -94,6 +122,8 @@ export async function listReportHistory(
  * Resolve the report an attestation letter should attest to: the named one
  * (scoped to the engagement) or, absent a uuid, the most recent. Returns null
  * when the engagement has no report history yet — the letter is gated on this.
+ * A JSON export is a portable data dump, not a client deliverable, so it is
+ * never a valid attestation target (a named JSON uuid resolves to null too).
  */
 export function findReportForLetter(
   app: FastifyInstance,
@@ -101,7 +131,11 @@ export function findReportForLetter(
   reportUuid?: string,
 ): Promise<GeneratedReportRow | null> {
   return app.db.generatedReport.findFirst({
-    where: { engagementId, ...(reportUuid ? { uuid: reportUuid } : {}) },
+    where: {
+      engagementId,
+      format: { in: ['pdf', 'zip'] },
+      ...(reportUuid ? { uuid: reportUuid } : {}),
+    },
     orderBy: { createdAt: 'desc' },
   });
 }

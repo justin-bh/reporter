@@ -435,6 +435,15 @@ model GeneratedReport {
   version       String
   format        String
   summary       Json
+  // Stored artifact: the rendered bytes live in the blob store (never the DB) so
+  // the exact deliverable can be re-downloaded. Nullable because the bytes are
+  // stored best-effort after the row is written, and because rows generated
+  // before artifact storage have no file.
+  blobKey       String?  @map("blob_key")
+  filename      String?
+  sizeBytes     Int?     @map("size_bytes")
+  contentType   String?  @map("content_type")
+  sha256        String?
   generatedById Int?     @map("generated_by_id")
   createdAt     DateTime @default(now()) @map("created_at")
 

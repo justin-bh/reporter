@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildTestApp, loginCookie, seedUsers, truncateAll } from './helpers.js';
+import { buildTestApp, loginCookie, seedUsers, truncateAll, WEB_HEADERS } from './helpers.js';
 import {
   findReportForLetter,
   listReportHistory,
@@ -9,6 +9,15 @@ import {
 import { buildAttestationLetterHtml } from '../src/services/attestation-letter.js';
 
 let app: FastifyInstance;
+
+/** A minimal artifact payload for `recordGeneratedReport` in unit-style tests. */
+function pdfArtifact(text = 'PDF-BYTES') {
+  return {
+    buffer: Buffer.from(text),
+    contentType: 'application/pdf',
+    filename: 'acme-report.pdf',
+  };
+}
 
 beforeAll(async () => {
   app = await buildTestApp();
@@ -66,6 +75,7 @@ describe('report history', () => {
       format: 'pdf',
       options: { includeAll: true },
       userId: users.writer.id,
+      artifact: pdfArtifact(),
     });
     await recordGeneratedReport(app, {
       eng,
@@ -73,6 +83,7 @@ describe('report history', () => {
       format: 'zip',
       options: { includeAll: true },
       userId: users.writer.id,
+      artifact: { buffer: Buffer.from('ZIP-BYTES'), contentType: 'application/zip', filename: 'acme.zip' },
     });
 
     const history = await listReportHistory(app, eng.id);
@@ -98,6 +109,7 @@ describe('report history', () => {
       format: 'pdf',
       options: { includeAll: true },
       userId: users.writer.id,
+      artifact: pdfArtifact(),
     });
     const res = await app.inject({
       method: 'GET',
@@ -131,12 +143,15 @@ describe('attestation letter', () => {
       format: 'pdf',
       options: { includeAll: true },
       userId: users.writer.id,
+      artifact: pdfArtifact(),
     });
     const report = await findReportForLetter(app, eng.id);
     expect(report).not.toBeNull();
 
     const html = await buildAttestationLetterHtml(app, report!, new Date('2026-08-26T00:00:00Z'), {
       framework: 'soc2',
+      // Exclusions are opt-in now; enable them so the exclusions assertion holds.
+      showExclusions: true,
     });
 
     // Structure + data mapping.
@@ -147,7 +162,7 @@ describe('attestation letter', () => {
     expect(html).toContain('Report v1.0'); // the attested report
     expect(html).toContain('August 18, 2025 – September 22, 2025'); // testing period
     expect(html).toContain('Fleet API'); // scope bullet
-    expect(html).toContain('AWS-provided infrastructure'); // exclusions
+    expect(html).toContain('AWS-provided infrastructure'); // exclusions (showExclusions)
     expect(html).toContain('We tested things thoroughly.'); // methodology
     expect(html).toContain('three (3) weaknesses'); // results intro
     expect(html).toContain('severity of High'); // highest severity
@@ -169,6 +184,7 @@ describe('attestation letter', () => {
       format: 'pdf',
       options: { includeAll: true },
       userId: users.writer.id,
+      artifact: pdfArtifact(),
     });
     const report = (await findReportForLetter(app, eng.id))!;
 
@@ -205,11 +221,186 @@ describe('attestation letter', () => {
       format: 'pdf',
       options: { includeAll: true },
       userId: users.writer.id,
+      artifact: pdfArtifact(),
     });
     const report = (await findReportForLetter(app, eng.id))!;
     const html = await buildAttestationLetterHtml(app, report, new Date(), { framework: 'soc2' });
     // The top weakness is the Critical (no score) — must not borrow B's 8.9.
     expect(html).toContain('severity of Critical');
     expect(html).not.toContain('8.9');
+  });
+
+  it('omits exclusions by default and includes them when showExclusions is set', async () => {
+    const { users, eng } = await setup();
+    await recordGeneratedReport(app, {
+      eng,
+      preset: 'full',
+      format: 'pdf',
+      options: { includeAll: true },
+      userId: users.writer.id,
+      artifact: pdfArtifact(),
+    });
+    const report = (await findReportForLetter(app, eng.id))!;
+
+    const off = await buildAttestationLetterHtml(app, report, new Date(), { framework: 'soc2' });
+    expect(off).not.toContain('AWS-provided infrastructure');
+    expect(off).not.toContain('Exclusions');
+
+    const on = await buildAttestationLetterHtml(app, report, new Date(), {
+      framework: 'soc2',
+      showExclusions: true,
+    });
+    expect(on).toContain('Exclusions');
+    expect(on).toContain('AWS-provided infrastructure');
+  });
+
+  it('renders exclusions even when the engagement has no scope targets', async () => {
+    const users = await seedUsers(app);
+    // No scopeTargets and no scope prose, but exclusions are present.
+    const eng = await app.db.engagement.create({
+      data: {
+        slug: 'noscope',
+        name: 'No Scope Co',
+        clientName: 'NS Inc',
+        scopeExclusions: ['Third-party SaaS integrations'],
+        roles: { create: [] },
+      },
+    });
+    await app.db.finding.create({
+      data: { engagementId: eng.id, title: 'W', kind: 'weakness', severity: 'low' },
+    });
+    await recordGeneratedReport(app, {
+      eng,
+      preset: 'full',
+      format: 'pdf',
+      options: { includeAll: true },
+      userId: users.writer.id,
+      artifact: pdfArtifact(),
+    });
+    const report = (await findReportForLetter(app, eng.id))!;
+
+    const on = await buildAttestationLetterHtml(app, report, new Date(), {
+      framework: 'soc2',
+      showExclusions: true,
+    });
+    // The latent bug: previously exclusions only rendered with scope targets.
+    expect(on).toContain('Scope of Assessment');
+    expect(on).toContain('Third-party SaaS integrations');
+
+    const off = await buildAttestationLetterHtml(app, report, new Date(), { framework: 'soc2' });
+    expect(off).not.toContain('Third-party SaaS integrations');
+  });
+
+  it('lets salutationName override the "Dear …" greeting', async () => {
+    const { users, eng } = await setup();
+    await recordGeneratedReport(app, {
+      eng,
+      preset: 'full',
+      format: 'pdf',
+      options: { includeAll: true },
+      userId: users.writer.id,
+      artifact: pdfArtifact(),
+    });
+    const report = (await findReportForLetter(app, eng.id))!;
+
+    // Default: falls back to the resolved recipient (first client contact).
+    const dflt = await buildAttestationLetterHtml(app, report, new Date(), { framework: 'soc2' });
+    expect(dflt).toContain('Dear Hemanth Tadepalli,');
+
+    const custom = await buildAttestationLetterHtml(app, report, new Date(), {
+      framework: 'soc2',
+      salutationName: 'Compliance Team',
+    });
+    expect(custom).toContain('Dear Compliance Team,');
+    // Attn line still uses the recipient, not the salutation override.
+    expect(custom).toContain('Attn: Hemanth Tadepalli');
+  });
+});
+
+describe('report artifact storage + download', () => {
+  it('records history as downloadable with a size and serves the stored bytes', async () => {
+    const { users, eng, cookie } = await setup();
+    const bytes = Buffer.from('%PDF-1.4 stored report bytes');
+    await recordGeneratedReport(app, {
+      eng,
+      preset: 'full',
+      format: 'pdf',
+      options: { includeAll: true },
+      userId: users.writer.id,
+      artifact: { buffer: bytes, contentType: 'application/pdf', filename: 'acme-full.pdf' },
+    });
+
+    const history = await listReportHistory(app, eng.id);
+    expect(history).toHaveLength(1);
+    expect(history[0]!.downloadable).toBe(true);
+    expect(history[0]!.sizeBytes).toBe(bytes.length);
+
+    const uuid = history[0]!.uuid;
+    const res = await app.inject({
+      method: 'GET',
+      url: `/web/engagements/acme/reports/${uuid}/download`,
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/pdf');
+    expect(res.headers['content-disposition']).toContain('acme-full.pdf');
+    expect(res.rawPayload.equals(bytes)).toBe(true);
+  });
+
+  it('404s downloading an unknown report or one without stored bytes', async () => {
+    const { users, eng, cookie } = await setup();
+    // A row with no blobKey (simulating a pre-storage record): insert directly.
+    const row = await app.db.generatedReport.create({
+      data: {
+        engagementId: eng.id,
+        preset: 'full',
+        label: 'Full report',
+        version: 'v1.0',
+        format: 'pdf',
+        summary: {},
+        generatedById: users.writer.id,
+      },
+    });
+    const noBytes = await app.inject({
+      method: 'GET',
+      url: `/web/engagements/acme/reports/${row.uuid}/download`,
+      headers: { cookie },
+    });
+    expect(noBytes.statusCode).toBe(404);
+
+    const missing = await app.inject({
+      method: 'GET',
+      url: `/web/engagements/acme/reports/00000000-0000-0000-0000-000000000000/download`,
+      headers: { cookie },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it('records and stores a JSON report generated over the web route', async () => {
+    const { cookie, eng } = await setup();
+    const gen = await app.inject({
+      method: 'GET',
+      url: '/web/engagements/acme/report.json',
+      headers: { cookie, ...WEB_HEADERS },
+    });
+    expect(gen.statusCode).toBe(200);
+    expect(gen.headers['content-type']).toContain('application/json');
+    expect(gen.headers['content-disposition']).toContain('.json');
+
+    const history = await listReportHistory(app, eng.id);
+    expect(history).toHaveLength(1);
+    expect(history[0]!.format).toBe('json');
+    expect(history[0]!.downloadable).toBe(true);
+    expect(history[0]!.sizeBytes).toBeGreaterThan(0);
+
+    // The stored bytes are byte-identical to what generation returned.
+    const dl = await app.inject({
+      method: 'GET',
+      url: `/web/engagements/acme/reports/${history[0]!.uuid}/download`,
+      headers: { cookie },
+    });
+    expect(dl.statusCode).toBe(200);
+    expect(dl.headers['content-type']).toContain('application/json');
+    expect(dl.rawPayload.equals(gen.rawPayload)).toBe(true);
   });
 });

@@ -354,10 +354,11 @@ export const REPORT_PRESET_FILE_LABELS: Record<ReportPreset, string> = {
 /**
  * The formats a report document is generated in. These are the exports the
  * Reports tab records as "a report was generated" (and that an attestation
- * letter can attest to); the portable JSON export is a data dump, not a report
- * document, so it is deliberately excluded.
+ * letter can attest to). Each generation stores its bytes so the exact
+ * deliverable can be re-downloaded later; the JSON export is recorded too so a
+ * client-facing data bundle produced alongside the report stays available.
  */
-export const GENERATED_REPORT_FORMATS = ['pdf', 'zip'] as const;
+export const GENERATED_REPORT_FORMATS = ['pdf', 'zip', 'json'] as const;
 export const generatedReportFormatSchema = z.enum(GENERATED_REPORT_FORMATS);
 export type GeneratedReportFormat = z.infer<typeof generatedReportFormatSchema>;
 
