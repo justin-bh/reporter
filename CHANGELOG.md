@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-27
+
 ### Added
 
 - **Link an existing piece of evidence as a comment on another** — from an
