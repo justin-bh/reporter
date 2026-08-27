@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-27
+
 ### Added
 
 - **Strategic recommendations now link to findings** — every recommendation must
