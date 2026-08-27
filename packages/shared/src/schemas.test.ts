@@ -1,10 +1,45 @@
 import { describe, it, expect } from 'vitest';
 import {
   executionSubsectionSchema,
+  recommendationItemSchema,
+  reportConfigSchema,
   reportSectionEntrySchema,
   updateEngagementInput,
 } from './schemas.js';
 import { WATERMARK_MAX_CHARS } from './enums.js';
+
+describe('recommendationItemSchema', () => {
+  it('defaults findingUuids to [] for a legacy recommendation (no links)', () => {
+    const parsed = recommendationItemSchema.parse({ title: 'Patch TLS' });
+    expect(parsed.findingUuids).toEqual([]);
+    expect(parsed.description).toBe('');
+  });
+
+  it('keeps the linked finding uuids when provided', () => {
+    const uuid = '11111111-1111-4111-8111-111111111111';
+    const parsed = recommendationItemSchema.parse({ title: 'Patch TLS', findingUuids: [uuid] });
+    expect(parsed.findingUuids).toEqual([uuid]);
+  });
+
+  it('rejects a non-uuid finding link', () => {
+    expect(
+      recommendationItemSchema.safeParse({ title: 'Patch TLS', findingUuids: ['nope'] }).success,
+    ).toBe(false);
+  });
+});
+
+describe('reportConfigSchema', () => {
+  it('defaults readinessNa to [] for an unconfigured engagement', () => {
+    expect(reportConfigSchema.parse({}).readinessNa).toEqual([]);
+  });
+
+  it('round-trips readiness N/A overrides', () => {
+    expect(reportConfigSchema.parse({ readinessNa: ['watermark', 'threatModel'] }).readinessNa).toEqual([
+      'watermark',
+      'threatModel',
+    ]);
+  });
+});
 
 describe('executionSubsectionSchema', () => {
   it('defaults a legacy subsection (no kind) to narrative', () => {

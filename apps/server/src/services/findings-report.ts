@@ -15,6 +15,7 @@ import {
   FINDINGS_EXPORT_VERSION,
   FIX_EFFORT_LABELS,
   GOAL_STATUS_LABELS,
+  REPORT_SECTION_LABELS,
   SEVERITY_LABELS,
   SEVERITY_RANK,
   executionTimelineConfigSchema,
@@ -119,6 +120,13 @@ export interface ReportOptions {
   sections?: ReportSectionEntry[];
   /** Free-text custom sections referenced by `custom:<id>` keys in `sections`. */
   customSections?: ReportCustomSection[];
+  /**
+   * Render a single section's HTML for the on-screen Configure preview instead of
+   * the full report document: only this section key is rendered (forced enabled,
+   * using its `sections` sub-item options), wrapped in the report stylesheet with
+   * no cover / details / TOC / watermark. See {@link buildReportHtml}.
+   */
+  previewSectionKey?: string;
 }
 
 export interface JsonExportOptions extends ReportOptions {
@@ -430,6 +438,7 @@ interface FindingParts {
   impact: boolean;
   standards: boolean;
   remediation: boolean;
+  recommendations: boolean;
   attackPath: boolean;
   attachedEvidence: boolean;
 }
@@ -438,9 +447,17 @@ const ALL_FINDING_PARTS: FindingParts = {
   impact: true,
   standards: true,
   remediation: true,
+  recommendations: true,
   attackPath: true,
   attachedEvidence: true,
 };
+
+/** A strategic recommendation cross-referenced from the finding it addresses. */
+interface LinkedRecommendation {
+  /** The recommendation's global 1-based number (R1, R2, …). */
+  num: number;
+  title: string;
+}
 
 /**
  * Render one weakness's detailed subsection (heading, meta, description, impact,
@@ -454,6 +471,7 @@ async function renderFinding(
   label: string,
   budget: Budget,
   parts: FindingParts = ALL_FINDING_PARTS,
+  linkedRecs: LinkedRecommendation[] = [],
 ): Promise<string> {
   // Split into the two buckets. `gather` already orders Attack Path first, each
   // bucket by its own position, so filtering preserves the intended order.
@@ -476,6 +494,12 @@ async function renderFinding(
   const remediationHtml =
     parts.remediation && f.remediation.trim()
       ? `<h4 class="sub">Remediation</h4>${prose(f.remediation)}`
+      : '';
+  const recsHtml =
+    parts.recommendations && linkedRecs.length > 0
+      ? `<h4 class="sub">Related Recommendations</h4><ul class="rec-links">${linkedRecs
+          .map((r) => `<li><strong>R${r.num}</strong> — ${esc(r.title)}</li>`)
+          .join('')}</ul>`
       : '';
 
   // Render evidence sequentially so at most one blob is held in memory at once.
@@ -514,6 +538,7 @@ async function renderFinding(
       ${impactHtml}
       ${standardsHtml}
       ${remediationHtml}
+      ${recsHtml}
       ${pathHtml}
       ${attachedHtml}
     </div>`;
@@ -1152,6 +1177,19 @@ export async function buildReportHtml(
   const scopeExclusions = (engagement.scopeExclusions as unknown as string[]) ?? [];
   const recommendations =
     (engagement.strategicRecommendations as unknown as RecommendationItem[]) ?? [];
+  // Map each finding uuid → the recommendations (by global R# number) that address
+  // it, so Detailed Findings can echo "Related Recommendations" under each finding.
+  // Numbering matches renderRecommendationsTable: index within the title-valid recs.
+  const recsByFinding = new Map<string, LinkedRecommendation[]>();
+  recommendations
+    .filter((r) => r.title.trim())
+    .forEach((r, i) => {
+      for (const fu of r.findingUuids ?? []) {
+        const arr = recsByFinding.get(fu) ?? [];
+        arr.push({ num: i + 1, title: r.title });
+        recsByFinding.set(fu, arr);
+      }
+    });
   const threatDiagrams = (engagement.threatModelDiagrams as unknown as ThreatDiagram[]) ?? [];
   const executionSubsections =
     (engagement.executionNarrative as unknown as ExecutionSubsection[]) ?? [];
@@ -1193,8 +1231,17 @@ export async function buildReportHtml(
         { key: 'appendix', enabled: includeAppendix },
       ];
 
+  // On-screen Configure preview: render only the requested section, forced on so
+  // the author sees its content even while the section is toggled off, reusing its
+  // configured sub-item options. Everything else (order, cover, TOC) is bypassed.
+  const previewKey = opts.previewSectionKey;
+  const isPreview = previewKey !== undefined;
+  const effectiveEntries: ReportSectionEntry[] = isPreview
+    ? [{ key: previewKey!, enabled: true, options: sectionEntries.find((s) => s.key === previewKey)?.options }]
+    : sectionEntries;
+
   // Load the goals tree only when the coverage section is actually enabled.
-  const wantCoverage = sectionEntries.some((s) => s.key === 'scopeCoverage' && s.enabled);
+  const wantCoverage = effectiveEntries.some((s) => s.key === 'scopeCoverage' && s.enabled);
   const coverageTargets: Target[] = wantCoverage ? await fetchGoalsTree(app, eng.id) : [];
   const coverageProgress: EngagementProgress = progressFromTree(coverageTargets);
 
@@ -1390,7 +1437,7 @@ export async function buildReportHtml(
   }
   const rendered: RenderedSection[] = [];
 
-  for (const entry of sectionEntries) {
+  for (const entry of effectiveEntries) {
     if (!entry.enabled) continue;
     const key = entry.key;
     // A section sub-item renders unless its entry explicitly turned it off.
@@ -1541,6 +1588,7 @@ export async function buildReportHtml(
           impact: partOn('impact'),
           standards: partOn('standards'),
           remediation: partOn('remediation'),
+          recommendations: partOn('recommendations'),
           attackPath: partOn('attackPath'),
           attachedEvidence: partOn('attachedEvidence'),
         };
@@ -1557,7 +1605,16 @@ export async function buildReportHtml(
             }
             for (const f of g.findings) {
               n++;
-              findingBlocks.push(await renderFinding(app, f, `W${n}`, budget, findingParts));
+              findingBlocks.push(
+                await renderFinding(
+                  app,
+                  f,
+                  `W${n}`,
+                  budget,
+                  findingParts,
+                  recsByFinding.get(f.uuid) ?? [],
+                ),
+              );
             }
           }
         }
@@ -1576,7 +1633,7 @@ export async function buildReportHtml(
           if (partOn('softwareTested'))
             parts.push(renderSoftwareTable('Client Software Tested', softwareTested));
           if (partOn('thirdParty'))
-            parts.push(renderSoftwareTable('3rd-Party Software Used', thirdPartySoftware));
+            parts.push(renderSoftwareTable('Test Tools Used', thirdPartySoftware));
           if (partOn('filesAttached')) parts.push(renderFilesAttached(supportingFiles));
           rendered.push({
             kicker: 'Reference',
@@ -1595,6 +1652,40 @@ export async function buildReportHtml(
         });
         break;
     }
+  }
+
+  // On-screen Configure preview: return just the requested section, styled like
+  // the report (no cover / details / TOC / watermark). When the section renders
+  // nothing (empty threat model, no execution subsections, …) show a placeholder
+  // so the panel still explains what the section would contain.
+  if (isPreview) {
+    const previewLabel = previewKey!.startsWith('custom:')
+      ? customSections.find((c) => `custom:${c.id}` === previewKey)?.title || 'Custom section'
+      : ((REPORT_SECTION_LABELS as Record<string, string>)[previewKey!] ?? 'Section');
+    const sec = rendered[0];
+    const sectionHtml = sec
+      ? `<section class="section" style="break-before:auto">${sectionHead('', sec.kicker, sec.title)}${sec.inner}</section>`
+      : `<section class="section" style="break-before:auto">${sectionHead('', 'Preview', previewLabel)}<p class="pp muted">This section has no content yet. Fill it out in the Content tab and it will appear here.</p></section>`;
+    const previewCss = reportCss(
+      accent,
+      orgName.toUpperCase(),
+      `${preparedFor.toUpperCase()} — ${footerNote.toUpperCase()}`,
+    );
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${esc(previewLabel)} — section preview</title>
+${FONT_LINKS}
+<style>${previewCss}
+/* Screen-only tweaks: the report CSS is authored for paged print. */
+html, body { background: #fff; }
+.pad { padding: 28px 34px; }
+.section { break-before: auto; }
+</style>
+</head>
+<body>
+  <div class="pad">${sectionHtml}</div>
+</body></html>`;
   }
 
   // Assign section numbers (02, 03, …) in render order, then build the TOC.

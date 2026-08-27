@@ -129,10 +129,13 @@ function reportOptionsFromQuery(q: Record<string, string | undefined>): ReportOp
 /** Report options from a saved report configuration (the Reports section). */
 function reportOptionsFromConfig(config: ReportConfig): ReportOptions {
   return {
-    includeAll: config.includeAllFindings,
-    evidenceGroup: config.evidenceGroup,
+    // Config-driven reports always include only "Ready to report" findings, and the
+    // whole-engagement auto evidence log is retired — curated timeline subsections
+    // authored in the Content tab still render. (The legacy query-param routes keep
+    // their own `includeAll`/`includeTimeline` flags for the client API.)
+    includeAll: false,
     findingGroup: config.findingGroup,
-    includeTimeline: config.includeEvidenceTimeline,
+    includeTimeline: false,
     sections: config.sections,
     customSections: config.customSections,
   };
@@ -440,6 +443,30 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         .header('Content-Type', 'application/json')
         .header('Content-Disposition', `attachment; filename="${filename}"`);
       return reply.send(buffer);
+    },
+  );
+
+  // Live section preview (HTML) for the Reports → Configure panel. Renders a
+  // single section exactly as it would appear in the report, using the saved
+  // custom config's sub-item toggles + content — no cover/TOC/watermark, no
+  // Puppeteer, and never recorded in report history. Shown in a same-origin
+  // iframe, so it authenticates with the session cookie like any /web route.
+  app.get(
+    '/engagements/:slug/report/section-preview.html',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const section = strParam(q.section);
+      if (!section) throw new HttpError(400, 'A section key is required');
+      const eng = await app.db.engagement.findUniqueOrThrow({ where: { slug } });
+      const config = reportConfigSchema.parse(eng.reportConfig ?? {});
+      const options: ReportOptions = { ...reportOptionsFromConfig(config), previewSectionKey: section };
+      const html = await buildReportHtml(app, eng, new Date(), options, req.authedUser!.id);
+      reply
+        .header('Content-Type', 'text/html; charset=utf-8')
+        .header('Cache-Control', 'no-store');
+      return reply.send(html);
     },
   );
 

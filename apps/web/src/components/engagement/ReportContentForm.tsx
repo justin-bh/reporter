@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Card, Checkbox, Field, Input, MarkdownField, Select } from '@reporter/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Badge, Card, Checkbox, Field, Input, MarkdownField, Select } from '@reporter/ui';
 import {
   WATERMARK_LAYERS,
   WATERMARK_LAYER_LABELS,
@@ -16,10 +16,12 @@ import {
   type WatermarkLayer,
   type WatermarkOpacity,
 } from '@reporter/shared';
-import { useUpdateEngagement } from '../../api/hooks.js';
+import { useFindings, useUpdateEngagement } from '../../api/hooks.js';
 import { useAutosave } from '../../hooks/useAutosave.js';
+import { computeReadiness } from '../../lib/report-readiness.js';
 import { SaveStatusIndicator } from '../SaveStatusIndicator.js';
-import { ReportContentEditors } from './ReportContentEditors.js';
+import { ReportContentEditors, type SectionStatus } from './ReportContentEditors.js';
+import { ReportReadiness } from './ReportReadiness.js';
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -64,13 +66,23 @@ export function ReportContentForm({
   slug,
   engagement: eng,
   canWrite,
+  readinessNa,
+  onToggleReadinessNa,
+  canToggleReadinessNa,
 }: {
   slug: string;
   engagement: Engagement;
   canWrite: boolean;
+  /** Readiness item keys the author has marked "Not applicable" (from reportConfig). */
+  readinessNa: string[];
+  /** Toggle an item's N/A state (persisted in reportConfig by the parent page). */
+  onToggleReadinessNa: (key: string, na: boolean) => void;
+  /** N/A lives in the admin-gated reportConfig, so toggling needs admin rights. */
+  canToggleReadinessNa: boolean;
 }) {
   const disabled = !canWrite;
   const disabledTitle = disabled ? 'You need write access to edit this.' : undefined;
+  const { data: findings = [] } = useFindings(slug);
 
   const [form, setForm] = useState<ContentForm>({
     clientName: '',
@@ -122,7 +134,11 @@ export function ReportContentForm({
       wmLayer: eng.watermarkLayer ?? 'behind',
       scopeTargets: eng.scopeTargets ?? [],
       scopeExclusions: eng.scopeExclusions ?? [],
-      recommendations: eng.strategicRecommendations ?? [],
+      // Normalize legacy recommendations that predate finding links.
+      recommendations: (eng.strategicRecommendations ?? []).map((r) => ({
+        ...r,
+        findingUuids: r.findingUuids ?? [],
+      })),
       threatModelNarrative: eng.threatModelNarrative ?? '',
       threatModelDiagrams: eng.threatModelDiagrams ?? [],
       executionNarrative: eng.executionNarrative ?? [],
@@ -168,7 +184,13 @@ export function ReportContentForm({
           .filter((t) => nonEmpty(t.name))
           .map((t) => ({ name: trim(t.name), subsystems: t.subsystems.filter(nonEmpty) })),
         scopeExclusions: v.scopeExclusions.filter(nonEmpty),
-        strategicRecommendations: v.recommendations.filter((r) => nonEmpty(r.title)),
+        strategicRecommendations: v.recommendations
+          .filter((r) => nonEmpty(r.title))
+          .map((r) => ({
+            title: trim(r.title),
+            description: r.description,
+            findingUuids: r.findingUuids ?? [],
+          })),
         threatModelNarrative: nonEmpty(v.threatModelNarrative) ? v.threatModelNarrative : null,
         threatModelDiagrams: v.threatModelDiagrams.filter((d) =>
           d.imageDataUri.startsWith('data:image/'),
@@ -189,8 +211,69 @@ export function ReportContentForm({
     },
   });
 
+  // Report readiness — computed live from the in-progress form so the checklist
+  // ticks as fields are filled. The ready-finding gate reads the findings list.
+  const readyFindingCount = findings.filter((f) => f.readyToReport).length;
+  const readiness = useMemo(
+    () =>
+      computeReadiness(
+        {
+          clientName: form.clientName,
+          assessmentType: form.assessmentType,
+          location: form.location,
+          scope: form.scope,
+          executiveSummary: form.executiveSummary,
+          methodology: form.methodology,
+          watermarkEnabled: form.wmEnabled,
+          scopeTargets: form.scopeTargets,
+          recommendations: form.recommendations,
+          threatModelNarrative: form.threatModelNarrative,
+          threatModelDiagrams: form.threatModelDiagrams,
+          executionNarrative: form.executionNarrative,
+          providerContacts: form.providerContacts,
+          clientContacts: form.clientContacts,
+          thirdPartySoftware: form.thirdPartySoftware,
+          readyFindingCount,
+        },
+        readinessNa,
+      ),
+    [form, readinessNa, readyFindingCount],
+  );
+  const statusOf = (key: string): SectionStatus | undefined => {
+    const it = readiness.items.find((i) => i.key === key);
+    return it ? (it.complete ? 'complete' : it.na ? 'na' : 'incomplete') : undefined;
+  };
+  const sectionStatus: Partial<Record<string, SectionStatus>> = {
+    serviceScope: statusOf('serviceScope'),
+    recommendations: statusOf('recommendations'),
+    threatModel: statusOf('threatModel'),
+    assessmentExecution: statusOf('assessmentExecution'),
+    providerContacts: statusOf('providerContacts'),
+    clientContacts: statusOf('clientContacts'),
+    testTools: statusOf('testTools'),
+  };
+  // The report-details card groups these seven items; badge it if any is missing.
+  const detailsIncomplete = [
+    'clientName',
+    'assessmentType',
+    'location',
+    'scope',
+    'executiveSummary',
+    'methodology',
+    'watermark',
+  ].some((k) => statusOf(k) === 'incomplete');
+  const jump = (anchor: string) =>
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <ReportReadiness
+        result={readiness}
+        disabled={!canToggleReadinessNa}
+        onJump={jump}
+        onToggleNa={onToggleReadinessNa}
+        findingsHref={`/engagements/${slug}/findings`}
+      />
       <Card className="space-y-4 p-4 lg:col-span-2">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -199,7 +282,10 @@ export function ReportContentForm({
               Metadata for the exported report PDF. Leave a field blank to omit it.
             </p>
           </div>
-          {!disabled && <SaveStatusIndicator status={status} />}
+          <div className="flex items-center gap-2">
+            {detailsIncomplete && <Badge tone="warning">Incomplete</Badge>}
+            {!disabled && <SaveStatusIndicator status={status} />}
+          </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Client / organization name" htmlFor="r-client">
@@ -391,6 +477,8 @@ export function ReportContentForm({
         onSoftwareTested={(v) => patchForm('softwareTested', v)}
         thirdPartySoftware={form.thirdPartySoftware}
         onThirdPartySoftware={(v) => patchForm('thirdPartySoftware', v)}
+        findings={findings}
+        sectionStatus={sectionStatus}
       />
     </div>
   );

@@ -323,6 +323,10 @@ table.tbl td.title { color: var(--bh-black); font-weight: 500; }
 .finding-meta .sep { color: var(--stroke-light); margin: 0 8px; }
 .finding h4.sub { font-family: var(--font-cond); font-weight: 700; font-size: 12px; letter-spacing: 0.1em;
                   text-transform: uppercase; color: var(--fg-3); margin: 20px 0 8px; break-after: avoid; }
+/* Recommendations cross-referenced from a finding (Detailed Findings). */
+.rec-links { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--fg-1); }
+.rec-links li { margin: 2px 0; }
+.rec-links strong { font-family: var(--font-mono); color: var(--bh-red); font-weight: 700; }
 
 /* ---- evidence ---- */
 .ev { margin: 0 0 16px; break-inside: avoid; }

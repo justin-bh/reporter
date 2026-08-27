@@ -44,6 +44,14 @@ export const isoDateSchema = z.string().datetime({ offset: true });
 export const recommendationItemSchema = z.object({
   title: z.string().min(1).max(255),
   description: z.string().max(10_000).default(''),
+  /**
+   * The findings this recommendation addresses, by finding `uuid`. Every
+   * recommendation must correlate with at least one finding — the editor enforces
+   * this on save — but the field stays lenient here (defaults to `[]`) so
+   * recommendations authored before the link existed still parse on read. Dangling
+   * uuids (the finding was deleted) are skipped when the report is rendered.
+   */
+  findingUuids: z.array(uuidSchema).max(100).default([]),
 });
 export type RecommendationItem = z.infer<typeof recommendationItemSchema>;
 
@@ -198,6 +206,14 @@ export const reportConfigSchema = z.object({
    * first layout, so an unconfigured engagement's report is unchanged.
    */
   findingGroup: findingGroupingSchema.default('severity'),
+  /**
+   * Report-readiness items the author has explicitly marked "Not applicable".
+   * Keyed by the readiness item ids (see the web app's report-readiness helper);
+   * an N/A item counts as satisfied toward the report's "Ready" status. Stored
+   * here (rather than a new column) so it round-trips with the rest of the report
+   * configuration.
+   */
+  readinessNa: z.array(z.string().max(80)).max(50).default([]),
 });
 export type ReportConfig = z.infer<typeof reportConfigSchema>;
 
