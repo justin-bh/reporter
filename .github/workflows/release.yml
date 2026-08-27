@@ -47,8 +47,13 @@ jobs:
           # Unsigned/ad-hoc builds. Add APPLE/CSC + notarization secrets here for
           # signed releases (macOS), or WIN_CSC_LINK for Windows signing.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      # Run-level artifacts (handy for debugging). `error` so a glob mismatch fails loudly.
+      # Run-level artifacts (handy for debugging), non-essential. `continue-on-error`
+      # so a full Actions artifact-storage quota here can NEVER block the real
+      # release publish below — GitHub Release assets use separate storage.
+      # `error` still surfaces a glob mismatch loudly; `retention-days` bounds
+      # how much these debug copies accumulate against the quota over time.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: desktop-${{ matrix.os }}
           path: |
@@ -59,6 +64,7 @@ jobs:
             apps/desktop/release/*.tar.gz
             apps/desktop/release/*.deb
           if-no-files-found: error
+          retention-days: 7
       # Attach the installers to the tag's GitHub Release (creates it if absent).
       # Linux ships AppImage (universal), tar.gz (portable, zero-dep), pacman
       # (Arch) and deb (Debian/Ubuntu) so it isn't Ubuntu-only.
@@ -87,11 +93,15 @@ jobs:
       # The term bundle imports the compiled dist/ of these libraries.
       - run: pnpm --filter "@reporter/shared" --filter "@reporter/api-client" build
       - run: pnpm --filter @reporter/term run pack
+      # Non-essential debug copy — never let a full artifact-storage quota block
+      # the release publish below (Release assets use separate storage).
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: reporter-term-tarball
           path: apps/term/*.tgz
           if-no-files-found: error
+          retention-days: 7
       - name: Attach tarball to the release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
