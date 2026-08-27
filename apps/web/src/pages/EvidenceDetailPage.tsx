@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   Card,
@@ -9,6 +10,7 @@ import {
   MarkdownField,
   Spinner,
   TagPicker,
+  useConfirm,
   useToast,
 } from '@reporter/ui';
 import { defaultTagColorFor } from '@reporter/shared';
@@ -27,6 +29,7 @@ import { EvidenceContent } from '../components/evidence/EvidenceContent.js';
 import { EvidenceMeta } from '../components/evidence/EvidenceMeta.js';
 import { EvidenceEntryRow } from '../components/evidence/EvidenceEntryRow.js';
 import { CreateEvidenceModal } from '../components/evidence/CreateEvidenceModal.js';
+import { ReparentEvidenceModal } from '../components/evidence/ReparentEvidenceModal.js';
 import {
   DeleteEvidenceDialog,
   type DeleteEvidenceMode,
@@ -43,6 +46,8 @@ export function EvidenceDetailPage() {
   const { slug = '', uuid = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
+  const qc = useQueryClient();
   const { data: evidence, isLoading, isError, refetch } = useEvidence(slug, uuid);
   const { canWrite } = useEngagementPermissions(slug);
   const { data: tags } = useTags(slug);
@@ -71,6 +76,12 @@ export function EvidenceDetailPage() {
   const [form, setForm] = useState<EvidenceForm>({ title: '', description: '', tagIds: [] });
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // `attach` opens the picker to make this top-level item a comment on another;
+  // `move` opens it to move this comment under a different parent. Only one at a time.
+  const [reparenting, setReparenting] = useState<null | 'attach' | 'move'>(null);
+  // A dedicated in-flight flag for linking actions so we can spin the specific
+  // trigger without coupling to the shared autosave's `update.isPending`.
+  const [linkBusy, setLinkBusy] = useState(false);
 
   // Seed the form once per uuid, not on every cache change — starring or a
   // returned mutation value replaces the cached `evidence` object, and reseeding
@@ -119,6 +130,50 @@ export function EvidenceDetailPage() {
   const isComment = evidence.parentEvidenceUuid !== null;
   const commentList = comments.data ?? [];
 
+  // Attach (parent uuid) / move (new parent uuid) / detach (null) all funnel
+  // through one PUT of `parentEvidenceUuid`. The shared hook already refreshes
+  // the timeline and this evidence's detail; here we additionally invalidate the
+  // OLD parent (losing a comment) and the NEW parent (gaining one) so their
+  // comment lists + counts update, since only this component knows those uuids.
+  async function reparent(target: string | null) {
+    const oldParent = evidence?.parentEvidenceUuid ?? null;
+    setLinkBusy(true);
+    try {
+      await update.mutateAsync({ uuid, patch: { parentEvidenceUuid: target } });
+      for (const p of [oldParent, target]) {
+        if (p) {
+          qc.invalidateQueries({ queryKey: ['evidence-comments', slug, p] });
+          qc.invalidateQueries({ queryKey: ['evidence', slug, p] });
+        }
+      }
+      // This item's own thread reflects the change too (attaching hides it,
+      // detaching restores it as a standalone thread host).
+      qc.invalidateQueries({ queryKey: ['evidence-comments', slug, uuid] });
+      setReparenting(null);
+      toast.success(
+        target === null
+          ? 'Detached — now standalone evidence'
+          : oldParent
+            ? 'Moved to another evidence'
+            : 'Now a comment on the selected evidence',
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update linking');
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function detach() {
+    const ok = await confirm({
+      title: 'Detach this comment?',
+      message:
+        'This comment will become a standalone, top-level piece of evidence. Its own comments (if any) stay attached to it.',
+      confirmLabel: 'Detach',
+    });
+    if (ok) await reparent(null);
+  }
+
   async function remove(mode: DeleteEvidenceMode) {
     try {
       await del.mutateAsync({ uuid, comments: mode });
@@ -138,13 +193,35 @@ export function EvidenceDetailPage() {
       </Link>
 
       {isComment && (
-        <div className="mt-3 rounded-card border border-border bg-surface-2 px-4 py-2 text-sm">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-surface-2 px-4 py-2 text-sm">
           <Link
             to={`/engagements/${slug}/evidence/${evidence.parentEvidenceUuid}`}
             className="text-accent hover:underline"
           >
             ↳ This is a comment — view the evidence it’s linked to
           </Link>
+          <div className="flex flex-none gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setReparenting('move')}
+              loading={linkBusy && reparenting === 'move'}
+              disabled={!canWrite || linkBusy}
+              title={canWrite ? undefined : READ_ONLY_TITLE}
+            >
+              Move to another evidence…
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void detach()}
+              loading={linkBusy && reparenting === null}
+              disabled={!canWrite || linkBusy}
+              title={canWrite ? undefined : READ_ONLY_TITLE}
+            >
+              Detach (make standalone)
+            </Button>
+          </div>
         </div>
       )}
 
@@ -156,19 +233,37 @@ export function EvidenceDetailPage() {
 
           {!isComment && (
             <Card className="space-y-3 p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-text">
                   Comments <span className="font-normal text-muted">(Linked Evidence)</span>
                 </h3>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setAdding(true)}
-                  disabled={!canWrite}
-                  title={canWrite ? undefined : READ_ONLY_TITLE}
-                >
-                  Add comment
-                </Button>
+                <div className="flex flex-none gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setReparenting('attach')}
+                    loading={linkBusy && reparenting === 'attach'}
+                    disabled={!canWrite || linkBusy || evidence.commentCount > 0}
+                    title={
+                      !canWrite
+                        ? READ_ONLY_TITLE
+                        : evidence.commentCount > 0
+                          ? `Detach its ${evidence.commentCount} comment(s) first — comments are one level deep.`
+                          : undefined
+                    }
+                  >
+                    Make a comment on…
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setAdding(true)}
+                    disabled={!canWrite}
+                    title={canWrite ? undefined : READ_ONLY_TITLE}
+                  >
+                    Add comment
+                  </Button>
+                </div>
               </div>
               {comments.isLoading ? (
                 <Spinner />
@@ -261,6 +356,16 @@ export function EvidenceDetailPage() {
         onClose={() => setAdding(false)}
         parentEvidenceUuid={evidence.uuid}
         title="Add comment"
+      />
+      <ReparentEvidenceModal
+        slug={slug}
+        open={reparenting !== null}
+        currentUuid={uuid}
+        title={reparenting === 'move' ? 'Move to…' : 'Make a comment on…'}
+        confirmLabel={reparenting === 'move' ? 'Move here' : 'Make a comment'}
+        busy={linkBusy}
+        onPick={(target) => void reparent(target)}
+        onClose={() => setReparenting(null)}
       />
       <DeleteEvidenceDialog
         open={deleting}

@@ -771,12 +771,20 @@ export type CreateEvidenceInput = z.infer<typeof createEvidenceInput>;
  * Partial update of a piece of evidence's editable metadata. Every field is
  * optional so the client can autosave one at a time; `title`, when present, must
  * be non-empty (it is required on the record).
+ *
+ * `parentEvidenceUuid` re-links the evidence after the fact (three states):
+ * omitted leaves the link unchanged, a uuid makes this evidence a comment on the
+ * referenced (top-level, same-engagement) evidence — moving it if it was already
+ * a comment — and `null` detaches it back to standalone top-level evidence. The
+ * server enforces the one-level-deep rule (the target must be top-level, not
+ * itself; and evidence that already has its own comments cannot become a comment).
  */
 export const updateEvidenceInput = z.object({
   title: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
   occurredAt: isoDateSchema.optional(),
   tagIds: z.array(z.number().int().positive()).optional(),
+  parentEvidenceUuid: uuidSchema.nullable().optional(),
 });
 export type UpdateEvidenceInput = z.infer<typeof updateEvidenceInput>;
 
