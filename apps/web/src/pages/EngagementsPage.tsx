@@ -43,6 +43,7 @@ const STATUS_TONE = { active: 'success', complete: 'info', archived: 'neutral' }
 
 type SortColumn =
   | 'name'
+  | 'assessmentType'
   | 'status'
   | 'startedAt'
   | 'endDate'
@@ -55,6 +56,7 @@ type SortColumn =
 // dates start with the most recent.
 const FIRST_CLICK_DIRECTION: Record<SortColumn, SortDirection> = {
   name: 'asc',
+  assessmentType: 'asc',
   status: 'asc',
   startedAt: 'desc',
   endDate: 'desc',
@@ -73,6 +75,16 @@ function compareBy(column: SortColumn, direction: SortDirection) {
     switch (column) {
       case 'name':
         return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      case 'assessmentType': {
+        // Optional free-text field. Empty values always sink to the bottom,
+        // regardless of direction; the rest sort alphabetically.
+        const av = a.assessmentType?.trim() ?? '';
+        const bv = b.assessmentType?.trim() ?? '';
+        if (!av && !bv) return 0;
+        if (!av) return 1;
+        if (!bv) return -1;
+        return dir * av.localeCompare(bv, undefined, { sensitivity: 'base' });
+      }
       case 'status':
         return dir * (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
       case 'startedAt':
@@ -298,12 +310,19 @@ function EngagementCard({ eng }: { eng: Engagement }) {
   return (
     <Card className="flex flex-col gap-3 p-4 transition-colors hover:border-accent/50">
       <div className="flex items-start justify-between gap-2">
-        <Link
-          to={`/engagements/${eng.slug}/evidence`}
-          className="font-semibold text-text hover:text-accent"
-        >
-          {eng.name}
-        </Link>
+        <div className="min-w-0">
+          <Link
+            to={`/engagements/${eng.slug}/evidence`}
+            className="font-semibold text-text hover:text-accent"
+          >
+            {eng.name}
+          </Link>
+          {eng.assessmentType && (
+            <p className="mt-0.5 truncate text-xs text-muted" title={eng.assessmentType}>
+              {eng.assessmentType}
+            </p>
+          )}
+        </div>
         <FavoriteButton eng={eng} />
       </div>
       <div className="flex items-center gap-2 text-xs text-muted">
@@ -369,6 +388,12 @@ function EngagementsTable({
           <SortableTh direction={directionOf('name')} onSort={() => toggleSort('name')}>
             Name
           </SortableTh>
+          <SortableTh
+            direction={directionOf('assessmentType')}
+            onSort={() => toggleSort('assessmentType')}
+          >
+            Assessment type
+          </SortableTh>
           <SortableTh direction={directionOf('status')} onSort={() => toggleSort('status')}>
             Status
           </SortableTh>
@@ -423,6 +448,13 @@ function EngagementsTable({
                 >
                   {eng.name}
                 </Link>
+              </Td>
+              <Td className="text-muted">
+                {eng.assessmentType ? (
+                  <span title={eng.assessmentType}>{eng.assessmentType}</span>
+                ) : (
+                  ''
+                )}
               </Td>
               <Td>
                 <Badge tone={STATUS_TONE[eng.status]}>{eng.status}</Badge>
