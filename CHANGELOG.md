@@ -8,6 +8,14 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Added
+
+- **Assessment type on the Engagements dashboard** — each engagement's report
+  **Assessment type** (e.g. "External Penetration Assessment") now shows on both
+  the dashboard cards (as a subtitle under the engagement name) and the table
+  view (as a new sortable **Assessment type** column). Engagements with no
+  assessment type set simply omit it.
+
 ## [0.8.0] - 2026-08-27
 
 ### Added
