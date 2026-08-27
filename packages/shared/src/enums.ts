@@ -249,7 +249,7 @@ export const REPORT_SECTION_HINTS: Record<ReportSection, string> = {
   assessmentExecution: 'Hand-authored execution narrative and optional evidence log.',
   scopeCoverage: 'Per-target coverage of activities and goals, with status and linked artifacts.',
   detailedFindings: 'Full per-weakness detail cards (attack path, evidence, remediation).',
-  supportingInformation: 'Software tested, third-party software, and files attached.',
+  supportingInformation: 'Software tested, test tools used, and files attached.',
   appendix: 'Severity & CVSS reference table.',
 };
 
@@ -293,12 +293,13 @@ export const REPORT_SECTION_ITEMS: Partial<Record<ReportSection, ReportSectionIt
     { key: 'impact', label: 'Impact', sample: 'The impact statement on each weakness.' },
     { key: 'standards', label: 'Standards mapping', sample: 'Per-finding ISO/SAE 21434 and UN R155 references.' },
     { key: 'remediation', label: 'Remediation', sample: 'Remediation guidance on each weakness.' },
+    { key: 'recommendations', label: 'Related recommendations', sample: 'Strategic recommendations linked to each finding (R1, R3, …).' },
     { key: 'attackPath', label: 'Attack path', sample: 'The ordered, captioned attack-path steps.' },
     { key: 'attachedEvidence', label: 'Attached evidence', sample: 'Non-path evidence attached to each finding.' },
   ],
   supportingInformation: [
     { key: 'softwareTested', label: 'Client software tested', sample: 'Table of in-scope client software and versions.' },
-    { key: 'thirdParty', label: '3rd-party software', sample: 'Table of assessment tooling and versions.' },
+    { key: 'thirdParty', label: 'Test tools used', sample: 'Table of test tools used — 3rd-party software, hardware, etc. — with versions.' },
     { key: 'filesAttached', label: 'Files attached', sample: 'Supporting files with SHA-256 hashes.' },
   ],
 };
@@ -317,7 +318,7 @@ export const REPORT_SECTION_SAMPLE: Record<ReportSection, string> = {
   scopeCoverage: 'Per-target coverage of activities and goals, with status and linked artifacts.',
   detailedFindings:
     'A full detail card per weakness: description, impact, standards, remediation, attack path, and evidence.',
-  supportingInformation: 'Client software tested, 3rd-party software used, and files attached.',
+  supportingInformation: 'Client software tested, test tools used, and files attached.',
   appendix: 'A CVSS v3.1 severity reference table (critical through informational).',
 };
 

@@ -8,6 +8,39 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Added
+
+- **Strategic recommendations now link to findings** — every recommendation must
+  be tied to the finding(s) it addresses (a per-row picker shows each finding
+  with its severity). In the report, the numbered **Strategic Recommendations**
+  table is unchanged, and each finding's Detailed Findings card now also echoes
+  its **Related Recommendations** (e.g. "R1 — …"), so guidance always correlates
+  with a concrete finding. Recommendations authored before this change keep
+  working and simply surface a "Link a finding" prompt until updated.
+- **Report readiness checklist** — the Reports → Content tab now shows a
+  progress bar and a checklist of every item a report needs before it's ready
+  (client name, assessment type, location, scope notes, executive summary,
+  methodology, watermark, service scope, strategic recommendations, threat model,
+  assessment execution, provider/client contacts, test tools used, and at least
+  one finding marked "Ready to report"). Incomplete sections are flagged inline,
+  each item jumps to its editor, and any genuinely-irrelevant item can be marked
+  **Not applicable**. The Generate tab shows a **"Not ready — N left"** badge and
+  asks for confirmation before generating an incomplete report.
+- **Live section preview in Report → Configure** — selecting a section now shows
+  a sticky, live preview of exactly how that section will render in the report
+  (the real output, not a mock-up), refreshing as your edits autosave.
+
+### Changed
+
+- **"3rd-party software used" is now "Test tools used"** (tools, hardware, and
+  3rd-party software), everywhere it appears — the Content editor, the report
+  section configurator, and the rendered report heading.
+- **Report → Configure options simplified** — the "Include all findings" and
+  "Include the evidence timeline" checkboxes were removed. Config-driven reports
+  always include only "Ready to report" findings, and the Assessment Execution
+  timeline is now driven entirely by the timeline subsections authored on the
+  Content tab. "Findings grouping" remains.
+
 ## [0.7.1] - 2026-08-27
 
 ### Added

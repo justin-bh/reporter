@@ -31,14 +31,13 @@ import {
   Select,
   Spinner,
   Tabs,
+  useConfirm,
   useToast,
 } from '@reporter/ui';
 import {
   ATTESTATION_FRAMEWORKS,
   ATTESTATION_FRAMEWORK_LABELS,
   DEFAULT_REPORT_SECTIONS,
-  EVIDENCE_GROUPINGS,
-  EVIDENCE_GROUPING_LABELS,
   FINDING_GROUPINGS,
   FINDING_GROUPING_LABELS,
   REPORT_PRESETS,
@@ -53,7 +52,6 @@ import {
   reportConfigSchema,
   type AttestationFramework,
   type Contact,
-  type EvidenceGrouping,
   type FindingGrouping,
   type GeneratedReport,
   type ReportConfig,
@@ -63,11 +61,19 @@ import {
   type ReportSectionEntry,
   type ReportSectionItem,
 } from '@reporter/shared';
-import { reportHistoryKey, useEngagement, useReportHistory, useUpdateEngagement } from '../api/hooks.js';
+import {
+  reportHistoryKey,
+  useEngagement,
+  useFindings,
+  useReportHistory,
+  useUpdateEngagement,
+} from '../api/hooks.js';
 import { useEngagementPermissions } from '../lib/permissions.js';
 import { useAutosave } from '../hooks/useAutosave.js';
+import { computeReadiness } from '../lib/report-readiness.js';
 import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
 import { ReportContentForm } from '../components/engagement/ReportContentForm.js';
+import { SectionPreview } from '../components/engagement/SectionPreview.js';
 import { downloadFile } from '../lib/download.js';
 
 /** The Reports tab's sub-sections, persisted in the `?section=` search param. */
@@ -178,6 +184,63 @@ export function ReportsPage() {
     },
   });
 
+  // Report-readiness N/A overrides live in reportConfig, so the Configure tab owns
+  // them (single writer) and the Content tab's checklist toggles through here.
+  const toggleReadinessNa = (key: string, na: boolean) =>
+    setConfig((c) => ({
+      ...c,
+      readinessNa: na
+        ? [...new Set([...c.readinessNa, key])]
+        : c.readinessNa.filter((k) => k !== key),
+    }));
+
+  const confirm = useConfirm();
+  const { data: findings = [] } = useFindings(slug);
+  const readyFindingCount = findings.filter((f) => f.readyToReport).length;
+  // Readiness for the Generate gate, from the SAVED engagement (what will render).
+  const readiness = useMemo(
+    () =>
+      computeReadiness(
+        {
+          clientName: eng?.clientName ?? '',
+          assessmentType: eng?.assessmentType ?? '',
+          location: eng?.location ?? '',
+          scope: eng?.scope ?? '',
+          executiveSummary: eng?.executiveSummary ?? '',
+          methodology: eng?.methodology ?? '',
+          watermarkEnabled: eng?.watermarkEnabled ?? true,
+          scopeTargets: eng?.scopeTargets ?? [],
+          recommendations: eng?.strategicRecommendations ?? [],
+          threatModelNarrative: eng?.threatModelNarrative ?? '',
+          threatModelDiagrams: eng?.threatModelDiagrams ?? [],
+          executionNarrative: eng?.executionNarrative ?? [],
+          providerContacts: eng?.providerContacts ?? [],
+          clientContacts: eng?.clientContacts ?? [],
+          thirdPartySoftware: eng?.thirdPartySoftware ?? [],
+          readyFindingCount,
+        },
+        config.readinessNa,
+      ),
+    [eng, config.readinessNa, readyFindingCount],
+  );
+
+  // Live section preview (Configure tab): which section, and a token that bumps to
+  // reload the iframe after content/config autosaves land (eng refetches).
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [previewToken, setPreviewToken] = useState(0);
+  useEffect(() => {
+    // Default the preview to the first enabled section once the config is seeded.
+    if (previewKey === null) {
+      const first = config.sections.find((s) => s.enabled);
+      if (first) setPreviewKey(first.key);
+    }
+  }, [config.sections, previewKey]);
+  useEffect(() => {
+    // React-query structural sharing keeps `eng` stable unless it actually changed,
+    // so this bumps only when a save (content or config) lands.
+    setPreviewToken((t) => t + 1);
+  }, [eng]);
+
   const qc = useQueryClient();
   const { data: history = [] } = useReportHistory(slug);
   const hasHistory = history.length > 0;
@@ -195,6 +258,16 @@ export function ReportsPage() {
   async function generate(format: 'pdf' | 'zip' | 'json') {
     // Flush any pending config edit so the report reflects the latest options.
     await flush();
+    // Readiness is a soft gate: warn (don't block) when required content is missing.
+    if (!readiness.ready) {
+      const remaining = readiness.total - readiness.satisfiedCount;
+      const ok = await confirm({
+        title: 'Report not marked ready',
+        message: `${remaining} required item${remaining === 1 ? '' : 's'} still incomplete on the Content tab. Generate anyway?`,
+        confirmLabel: 'Generate anyway',
+      });
+      if (!ok) return;
+    }
     setBusy(format);
     try {
       const url = `/web/engagements/${slug}/report.${format}?preset=${preset}`;
@@ -319,13 +392,16 @@ export function ReportsPage() {
 
   // Which section rows are expanded to show their sample + sub-item toggles.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const toggleExpand = (key: string) =>
+  const toggleExpand = (key: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+    // Interacting with a section also targets it for the live preview.
+    setPreviewKey(key);
+  };
 
   function setSectionOption(key: string, itemKey: string, value: boolean) {
     setConfig((c) => ({
@@ -374,6 +450,11 @@ export function ReportsPage() {
 
   const orderedKeys = useMemo(() => config.sections.map((s) => s.key), [config.sections]);
 
+  // Human label for the section currently shown in the live preview panel.
+  const previewLabel = previewKey
+    ? sectionMeta({ key: previewKey, enabled: true }, config.customSections).label
+    : '';
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -405,10 +486,17 @@ export function ReportsPage() {
               state does (it lives on this page, which stays mounted). Unmounting
               it mid-save could reseed a fresh instance from stale cache. */}
           <div className={section === 'content' ? undefined : 'hidden'}>
-            <ReportContentForm slug={slug} engagement={eng} canWrite={canWrite} />
+            <ReportContentForm
+              slug={slug}
+              engagement={eng}
+              canWrite={canWrite}
+              readinessNa={config.readinessNa}
+              onToggleReadinessNa={toggleReadinessNa}
+              canToggleReadinessNa={canEdit}
+            />
           </div>
           {section === 'configure' ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,560px)]">
           <div className="space-y-4">
             {/* Section list */}
             <Card className="space-y-3 p-4">
@@ -451,6 +539,7 @@ export function ReportsPage() {
                           missing={meta.missing}
                           enabled={entry.enabled}
                           canEdit={canEdit}
+                          selected={entry.key === previewKey}
                           onToggle={(v) => toggleSection(entry.key, v)}
                           expanded={expanded.has(entry.key)}
                           onToggleExpand={() => toggleExpand(entry.key)}
@@ -530,33 +619,19 @@ export function ReportsPage() {
                 </div>
               )}
             </Card>
-          </div>
-
-          {/* Options + generate */}
-          <div className="space-y-4">
-            <Card className="space-y-4 p-4">
+            {/* Report options */}
+            <Card className="space-y-3 p-4">
               <h3 className="text-sm font-semibold text-text">Options</h3>
-              <Checkbox
-                label="Include all findings (not only “Ready to report”)"
-                checked={config.includeAllFindings}
-                onChange={(e) =>
-                  setConfig((c) => ({ ...c, includeAllFindings: e.target.checked }))
-                }
-                disabled={readOnly}
-              />
               <Field
                 label="Findings grouping"
                 htmlFor="rp-finding-group"
-                hint="How findings are ordered/grouped in the report"
+                hint="How findings are ordered/grouped in the report."
               >
                 <Select
                   id="rp-finding-group"
                   value={config.findingGroup}
                   onChange={(e) =>
-                    setConfig((c) => ({
-                      ...c,
-                      findingGroup: e.target.value as FindingGrouping,
-                    }))
+                    setConfig((c) => ({ ...c, findingGroup: e.target.value as FindingGrouping }))
                   }
                   disabled={readOnly}
                 >
@@ -567,47 +642,51 @@ export function ReportsPage() {
                   ))}
                 </Select>
               </Field>
-              <Checkbox
-                label="Include the evidence timeline in Assessment Execution"
-                checked={config.includeEvidenceTimeline}
-                onChange={(e) =>
-                  setConfig((c) => ({ ...c, includeEvidenceTimeline: e.target.checked }))
-                }
-                disabled={readOnly}
-              />
-              {config.includeEvidenceTimeline && (
-                <Field
-                  label="Evidence timeline grouping"
-                  htmlFor="rp-group"
-                  hint="How the captured evidence is organized in the timeline."
-                >
-                  <Select
-                    id="rp-group"
-                    value={config.evidenceGroup}
-                    onChange={(e) =>
-                      setConfig((c) => ({
-                        ...c,
-                        evidenceGroup: e.target.value as EvidenceGrouping,
-                      }))
-                    }
-                    disabled={readOnly}
-                  >
-                    {EVIDENCE_GROUPINGS.map((g) => (
-                      <option key={g} value={g}>
-                        {EVIDENCE_GROUPING_LABELS[g]}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              )}
+              <p className="text-xs text-muted">
+                Reports include only “Ready to report” findings. The Assessment Execution timeline is
+                built from the timeline subsections you add on the Content tab.
+              </p>
             </Card>
+          </div>
+
+          {/* Live section preview */}
+          <div>
+            <SectionPreview
+              slug={slug}
+              sectionKey={previewKey}
+              sectionLabel={previewLabel}
+              refreshToken={previewToken}
+              onRefresh={() => setPreviewToken((t) => t + 1)}
+            />
           </div>
         </div>
       ) : section === 'generate' ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-4">
             <Card className="space-y-3 p-4">
-              <h3 className="text-sm font-semibold text-text">Generate</h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-text">Generate</h3>
+                {readiness.ready ? (
+                  <Badge tone="success">Ready to report</Badge>
+                ) : (
+                  <Badge tone="warning">
+                    Not ready — {readiness.total - readiness.satisfiedCount} left
+                  </Badge>
+                )}
+              </div>
+              {!readiness.ready && (
+                <p className="rounded-input border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-muted">
+                  Some required content is incomplete. Finish it on the{' '}
+                  <button
+                    type="button"
+                    className="text-accent hover:underline"
+                    onClick={() => setSection('content')}
+                  >
+                    Content tab
+                  </button>{' '}
+                  — you can still generate, but you’ll be asked to confirm.
+                </p>
+              )}
               <Field
                 label="Report type"
                 htmlFor="rp-preset"
@@ -909,6 +988,7 @@ function SortableSectionRow({
   missing,
   enabled,
   canEdit,
+  selected,
   onToggle,
   expanded,
   onToggleExpand,
@@ -923,8 +1003,11 @@ function SortableSectionRow({
   missing: boolean;
   enabled: boolean;
   canEdit: boolean;
+  /** This section is the one shown in the live preview. */
+  selected?: boolean;
   onToggle: (enabled: boolean) => void;
   expanded: boolean;
+  /** Expanding a section also targets it for the live preview (see toggleExpand). */
   onToggleExpand: () => void;
   /** One-line preview of the whole section, shown when expanded. */
   sample?: string;
@@ -949,9 +1032,9 @@ function SortableSectionRow({
     <li
       ref={setNodeRef}
       style={style}
-      className={`flex items-start gap-2 rounded-card border border-border p-3 ${
-        enabled ? 'bg-surface' : 'bg-surface-2'
-      }`}
+      className={`flex items-start gap-2 rounded-card border p-3 ${
+        selected ? 'border-accent ring-1 ring-accent' : 'border-border'
+      } ${enabled ? 'bg-surface' : 'bg-surface-2'}`}
     >
       <button
         {...attributes}

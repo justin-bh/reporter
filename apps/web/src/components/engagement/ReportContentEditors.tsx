@@ -11,6 +11,7 @@ import {
   type ExecutionEvidenceRef,
   type ExecutionSubsection,
   type ExecutionTimelineConfig,
+  type Finding,
   type RecommendationItem,
   type ScopeTarget,
   type SoftwareItem,
@@ -18,12 +19,16 @@ import {
 } from '@reporter/shared';
 import { RepeatableList } from '../common/RepeatableList.js';
 import { EvidencePickerModal } from '../findings/EvidencePickerModal.js';
+import { FindingMultiSelect } from './FindingMultiSelect.js';
 import { TagsFilter } from '../evidence/filters/TagsFilter.js';
 import { TypeFilter } from '../evidence/filters/TypeFilter.js';
 import { useEvidence, useTags } from '../../api/hooks.js';
 import { evidenceHeading } from '../../lib/evidence-label.js';
 import { SaveStatusIndicator } from '../SaveStatusIndicator.js';
 import type { SaveStatus } from '../../hooks/useAutosave.js';
+
+/** Readiness state for a required content section (drives the header badge). */
+export type SectionStatus = 'complete' | 'incomplete' | 'na';
 
 /** A fresh timeline-subsection filter config (all-inclusive, chronological). */
 const DEFAULT_TIMELINE_CONFIG: ExecutionTimelineConfig = {
@@ -87,6 +92,8 @@ export function ReportContentEditors({
   onSoftwareTested,
   thirdPartySoftware,
   onThirdPartySoftware,
+  findings,
+  sectionStatus,
   status,
   onFlush,
 }: Common & {
@@ -111,6 +118,10 @@ export function ReportContentEditors({
   onSoftwareTested: (v: SoftwareItem[]) => void;
   thirdPartySoftware: SoftwareItem[];
   onThirdPartySoftware: (v: SoftwareItem[]) => void;
+  /** Engagement findings, for linking recommendations to the findings they address. */
+  findings: Finding[];
+  /** Per-section readiness state, keyed by readiness item key. */
+  sectionStatus: Partial<Record<string, SectionStatus>>;
   /** Autosave status shown in the footer (replaces the manual Save button). */
   status: SaveStatus;
   /** Flush the debounced autosave immediately (called on field blur). */
@@ -122,6 +133,8 @@ export function ReportContentEditors({
     <>
       <ScopeEditor
         {...common}
+        id="sec-service-scope"
+        status={sectionStatus.serviceScope}
         targets={scopeTargets}
         onTargets={onScopeTargets}
         exclusions={scopeExclusions}
@@ -130,12 +143,17 @@ export function ReportContentEditors({
 
       <RecommendationsEditor
         {...common}
+        id="sec-recommendations"
+        status={sectionStatus.recommendations}
         items={recommendations}
         onChange={onRecommendations}
+        findings={findings}
       />
 
       <ThreatModelEditor
         {...common}
+        id="sec-threat-model"
+        status={sectionStatus.threatModel}
         narrative={threatModelNarrative}
         onNarrative={onThreatModelNarrative}
         diagrams={threatModelDiagrams}
@@ -144,6 +162,8 @@ export function ReportContentEditors({
 
       <ExecutionEditor
         {...common}
+        id="sec-assessment-execution"
+        status={sectionStatus.assessmentExecution}
         slug={slug}
         subsections={executionNarrative}
         onChange={onExecutionNarrative}
@@ -151,6 +171,8 @@ export function ReportContentEditors({
 
       <ContactsEditor
         {...common}
+        id="sec-provider-contacts"
+        status={sectionStatus.providerContacts}
         title="Provider contacts"
         hint="Assessment-team members listed in the report front matter."
         idPrefix="prov"
@@ -160,6 +182,8 @@ export function ReportContentEditors({
 
       <ContactsEditor
         {...common}
+        id="sec-client-contacts"
+        status={sectionStatus.clientContacts}
         title="Client contacts"
         hint="Client-side points of contact for the engagement."
         idPrefix="cli"
@@ -178,8 +202,10 @@ export function ReportContentEditors({
 
       <SoftwareEditor
         {...common}
-        title="3rd-party software used"
-        hint="Tooling used by the assessment team, with versions."
+        id="sec-test-tools"
+        status={sectionStatus.testTools}
+        title="Test tools used"
+        hint="Tools, hardware, and 3rd-party software used by the assessment team, with versions."
         idPrefix="tps"
         items={thirdPartySoftware}
         onChange={onThirdPartySoftware}
@@ -198,17 +224,27 @@ export function ReportContentEditors({
 function SectionCard({
   title,
   hint,
+  id,
+  status,
   children,
 }: {
   title: string;
   hint?: string;
+  /** Anchor id so the readiness checklist can jump here. */
+  id?: string;
+  /** Readiness state — renders an "Incomplete"/"N/A" badge in the header. */
+  status?: SectionStatus;
   children: ReactNode;
 }) {
   return (
-    <Card className="space-y-4 p-4 lg:col-span-2">
-      <div>
-        <h3 className="text-sm font-semibold text-text">{title}</h3>
-        {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+    <Card id={id} className="space-y-4 p-4 scroll-mt-4 lg:col-span-2">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-text">{title}</h3>
+          {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+        </div>
+        {status === 'incomplete' && <Badge tone="warning">Incomplete</Badge>}
+        {status === 'na' && <Badge tone="neutral">N/A</Badge>}
       </div>
       {children}
     </Card>
@@ -220,11 +256,15 @@ function SectionCard({
 function ScopeEditor({
   disabled,
   disabledTitle,
+  id,
+  status,
   targets,
   onTargets,
   exclusions,
   onExclusions,
 }: Common & {
+  id?: string;
+  status?: SectionStatus;
   targets: ScopeTarget[];
   onTargets: (v: ScopeTarget[]) => void;
   exclusions: string[];
@@ -232,6 +272,8 @@ function ScopeEditor({
 }) {
   return (
     <SectionCard
+      id={id}
+      status={status}
       title="Service scope"
       hint="Targets and their in-scope subsystems, plus anything explicitly out of scope."
     >
@@ -314,16 +356,24 @@ function ScopeEditor({
 function RecommendationsEditor({
   disabled,
   disabledTitle,
+  id,
+  status,
   items,
   onChange,
+  findings,
 }: Common & {
+  id?: string;
+  status?: SectionStatus;
   items: RecommendationItem[];
   onChange: (v: RecommendationItem[]) => void;
+  findings: Finding[];
 }) {
   return (
     <SectionCard
+      id={id}
+      status={status}
       title="Strategic recommendations"
-      hint="High-level guidance, numbered R1, R2, … in the report."
+      hint="High-level guidance, numbered R1, R2, … in the report. Each must be linked to the finding(s) it addresses."
     >
       <RepeatableList
         items={items}
@@ -332,33 +382,54 @@ function RecommendationsEditor({
         disabledTitle={disabledTitle}
         addLabel="Add recommendation"
         emptyHint="No recommendations yet."
-        newItem={() => ({ title: '', description: '' })}
-        renderRow={(item, update, index) => (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Badge tone="accent">R{index + 1}</Badge>
+        newItem={() => ({ title: '', description: '', findingUuids: [] })}
+        renderRow={(item, update, index) => {
+          const linked = item.findingUuids ?? [];
+          // Only nag once a recommendation has real content to link.
+          const needsLink = item.title.trim().length > 0 && linked.length === 0;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge tone="accent">R{index + 1}</Badge>
+                {needsLink && <Badge tone="warning">Link a finding</Badge>}
+              </div>
+              <Field label="Title" htmlFor={`rec-title-${index}`}>
+                <Input
+                  id={`rec-title-${index}`}
+                  value={item.title}
+                  onChange={(e) => update({ ...item, title: e.target.value })}
+                  disabled={disabled}
+                  title={disabledTitle}
+                />
+              </Field>
+              <Field label="Description" htmlFor={`rec-desc-${index}`}>
+                <MarkdownField
+                  id={`rec-desc-${index}`}
+                  rows={3}
+                  value={item.description}
+                  onChange={(v) => update({ ...item, description: v })}
+                  disabled={disabled}
+                  title={disabledTitle}
+                />
+              </Field>
+              <Field
+                label="Related findings"
+                htmlFor={`rec-find-${index}`}
+                hint="Required — the finding(s) this recommendation addresses."
+                error={needsLink ? 'Link at least one finding.' : undefined}
+              >
+                <FindingMultiSelect
+                  id={`rec-find-${index}`}
+                  findings={findings}
+                  selected={linked}
+                  onChange={(findingUuids) => update({ ...item, findingUuids })}
+                  disabled={disabled}
+                  disabledTitle={disabledTitle}
+                />
+              </Field>
             </div>
-            <Field label="Title" htmlFor={`rec-title-${index}`}>
-              <Input
-                id={`rec-title-${index}`}
-                value={item.title}
-                onChange={(e) => update({ ...item, title: e.target.value })}
-                disabled={disabled}
-                title={disabledTitle}
-              />
-            </Field>
-            <Field label="Description" htmlFor={`rec-desc-${index}`}>
-              <MarkdownField
-                id={`rec-desc-${index}`}
-                rows={3}
-                value={item.description}
-                onChange={(v) => update({ ...item, description: v })}
-                disabled={disabled}
-                title={disabledTitle}
-              />
-            </Field>
-          </div>
-        )}
+          );
+        }}
       />
     </SectionCard>
   );
@@ -370,11 +441,15 @@ function ThreatModelEditor({
   disabled,
   disabledTitle,
   onFlush,
+  id,
+  status,
   narrative,
   onNarrative,
   diagrams,
   onDiagrams,
 }: Common & {
+  id?: string;
+  status?: SectionStatus;
   narrative: string;
   onNarrative: (v: string) => void;
   diagrams: ThreatDiagram[];
@@ -407,6 +482,8 @@ function ThreatModelEditor({
 
   return (
     <SectionCard
+      id={id}
+      status={status}
       title="Threat model"
       hint="A narrative plus optional diagrams embedded in the report."
     >
@@ -525,10 +602,14 @@ function ThreatModelEditor({
 function ExecutionEditor({
   disabled,
   disabledTitle,
+  id,
+  status,
   slug,
   subsections,
   onChange,
 }: Common & {
+  id?: string;
+  status?: SectionStatus;
   slug: string;
   subsections: ExecutionSubsection[];
   onChange: (v: ExecutionSubsection[]) => void;
@@ -549,6 +630,8 @@ function ExecutionEditor({
 
   return (
     <SectionCard
+      id={id}
+      status={status}
       title="Assessment execution"
       hint="Written narrative subsections with embedded evidence, or activity timelines drawn from the engagement’s captured evidence."
     >
@@ -835,12 +918,16 @@ function ExecutionEvidenceRow({
 function ContactsEditor({
   disabled,
   disabledTitle,
+  id,
+  status,
   title,
   hint,
   idPrefix,
   items,
   onChange,
 }: Common & {
+  id?: string;
+  status?: SectionStatus;
   title: string;
   hint: string;
   idPrefix: string;
@@ -848,7 +935,7 @@ function ContactsEditor({
   onChange: (v: Contact[]) => void;
 }) {
   return (
-    <SectionCard title={title} hint={hint}>
+    <SectionCard id={id} status={status} title={title} hint={hint}>
       <RepeatableList
         items={items}
         onChange={onChange}
@@ -899,12 +986,16 @@ function ContactsEditor({
 function SoftwareEditor({
   disabled,
   disabledTitle,
+  id,
+  status,
   title,
   hint,
   idPrefix,
   items,
   onChange,
 }: Common & {
+  id?: string;
+  status?: SectionStatus;
   title: string;
   hint: string;
   idPrefix: string;
@@ -912,7 +1003,7 @@ function SoftwareEditor({
   onChange: (v: SoftwareItem[]) => void;
 }) {
   return (
-    <SectionCard title={title} hint={hint}>
+    <SectionCard id={id} status={status} title={title} hint={hint}>
       <RepeatableList
         items={items}
         onChange={onChange}

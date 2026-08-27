@@ -298,7 +298,7 @@ describe('report configuration', () => {
     expect(after.reportConfig.customSections[0].title).toBe('Intro');
   });
 
-  it('config-driven JSON export honors includeAllFindings', async () => {
+  it('config-driven JSON export always uses only Ready-to-report findings', async () => {
     const { cookie } = await setup();
     // One ready + one not-ready finding.
     const ready = await post('/web/engagements/op1/findings', cookie, {
@@ -322,7 +322,10 @@ describe('report configuration', () => {
     let exp = await get('/web/engagements/op1/report.json', cookie);
     expect(exp.findings.map((f: { title: string }) => f.title)).toEqual(['Ready']);
 
-    // Flip includeAllFindings → both appear.
+    // The "include all findings" report-config option was retired from the UI:
+    // config-driven exports are always Ready-only, even if a stored config still
+    // carries the (now-vestigial) flag. (The legacy /findings/export.json route
+    // keeps its own `includeAll` query param for the client API.)
     await app.inject({
       method: 'PUT',
       url: '/web/engagements/op1',
@@ -330,6 +333,6 @@ describe('report configuration', () => {
       payload: { reportConfig: { includeAllFindings: true } },
     });
     exp = await get('/web/engagements/op1/report.json', cookie);
-    expect(exp.findings.map((f: { title: string }) => f.title).sort()).toEqual(['Draft', 'Ready']);
+    expect(exp.findings.map((f: { title: string }) => f.title)).toEqual(['Ready']);
   });
 });
