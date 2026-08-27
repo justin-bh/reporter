@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { parseQuery, updateEvidenceInput } from '@reporter/shared';
 import { requireAuth, requireEngagementRole, HttpError } from '../../auth/guards.js';
@@ -161,7 +162,8 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Update title / description / tags / occurredAt.
+  // Update title / description / tags / occurredAt, and optionally re-parent the
+  // evidence (attach/move/detach its comment link) via `parentEvidenceUuid`.
   app.put(
     '/engagements/:slug/evidence/:uuid',
     { preHandler: [requireAuth, requireEngagementRole('write')] },
@@ -173,13 +175,65 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
       const ev = await app.db.evidence.findFirst({ where: { uuid, engagementId: eng.id } });
       if (!ev) throw new HttpError(404, 'Evidence not found');
 
+      // Re-parenting the comment link (attach/move/detach). Only touched when the
+      // field is present: `undefined` leaves the link unchanged, `null` detaches to
+      // top-level, a uuid attaches/moves this evidence as a comment on the referenced
+      // (top-level, same-engagement) item. Comments are one level deep. The self
+      // check is cheap and stateless, so it's done up front.
+      const reparent = body.parentEvidenceUuid !== undefined;
+      if (reparent && body.parentEvidenceUuid !== null && body.parentEvidenceUuid === ev.uuid) {
+        throw new HttpError(400, "Evidence can't be a comment on itself.");
+      }
+      let parentEvidenceId: number | null = null;
+
       await app.db.$transaction(async (tx) => {
+        if (reparent && body.parentEvidenceUuid !== null) {
+          // Attach/move: resolve the target, then lock BOTH the subject and target
+          // rows FOR UPDATE (ordered by id to avoid deadlock) and re-check the
+          // one-level-deep invariant under the lock. Validating inside the transaction
+          // closes the check-then-act race where two concurrent re-parents could
+          // otherwise slip past and build a cycle (A↔B) or a 2-level chain.
+          const target = await tx.evidence.findFirst({
+            where: { uuid: body.parentEvidenceUuid, engagementId: eng.id },
+            select: { id: true },
+          });
+          if (!target) throw new HttpError(400, 'Target evidence not found in this engagement.');
+
+          const ids = [ev.id, target.id].sort((a, b) => a - b);
+          await tx.$queryRaw`SELECT id FROM evidence WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`;
+
+          // Target must (still) be top-level — no commenting on a comment.
+          const targetRow = await tx.evidence.findUnique({
+            where: { id: target.id },
+            select: { parentEvidenceId: true },
+          });
+          if (!targetRow) throw new HttpError(400, 'Target evidence not found in this engagement.');
+          if (targetRow.parentEvidenceId !== null) {
+            throw new HttpError(
+              400,
+              'Cannot comment on a comment (linked evidence is one level deep)',
+            );
+          }
+          // The evidence being re-linked must (still) not host its own comments — a
+          // comment can't have children.
+          const childCount = await tx.evidence.count({ where: { parentEvidenceId: ev.id } });
+          if (childCount > 0) {
+            throw new HttpError(
+              400,
+              `Detach its ${childCount} comment(s) first — comments are one level deep.`,
+            );
+          }
+          parentEvidenceId = target.id;
+        }
+
         await tx.evidence.update({
           where: { id: ev.id },
           data: {
             title: body.title ?? undefined,
             description: body.description ?? undefined,
             occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
+            // Only re-link when the field was present (value may be null for detach).
+            ...(reparent ? { parentEvidenceId } : {}),
           },
         });
         if (body.tagIds) {

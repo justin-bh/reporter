@@ -8,6 +8,17 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Added
+
+- **Link an existing piece of evidence as a comment on another** — from an
+  evidence's detail view you can now **make it a comment on** another existing
+  piece of evidence (a searchable picker lists the engagement's top-level
+  evidence by title + timestamp), **move** a comment to a different parent, or
+  **detach** it back to standalone. Comments stay one level deep: an item that
+  already has its own comments can't itself become one (the action explains why),
+  and the same rule is enforced on the server under a row lock so concurrent
+  edits can't create a cycle.
+
 ## [0.7.0] - 2026-08-26
 
 ### Added
