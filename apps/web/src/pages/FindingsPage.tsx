@@ -302,7 +302,13 @@ function CreateFindingModal({
     [title, description, category, kind],
   );
 
-  const { requestClose } = useUnsavedGuard({ isDirty, enabled: open, onClose });
+  const { requestClose } = useUnsavedGuard({
+    isDirty,
+    enabled: open,
+    onClose,
+    onSave: submit,
+    canSave: Boolean(title),
+  });
 
   async function submit() {
     try {

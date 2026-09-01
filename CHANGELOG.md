@@ -15,6 +15,21 @@ with `pnpm run version:bump <major|minor|patch>`.
   the dashboard cards (as a subtitle under the engagement name) and the table
   view (as a new sortable **Assessment type** column). Engagements with no
   assessment type set simply omit it.
+- **"Save your changes?" prompt when closing a form with unsaved edits** —
+  closing the Add evidence / New finding forms (Cancel, Esc, or a click outside)
+  while the form is complete now offers **Save**, **Discard**, or **Keep
+  editing**, so you can always save without hunting for the button — even after a
+  long description has scrolled it out of view. Incomplete forms still show the
+  simpler Discard / Keep editing confirm.
+
+### Fixed
+
+- **Modals can no longer grow off the screen** — every dialog now caps its
+  height to the viewport, keeps its title bar and action buttons pinned, and
+  scrolls its body internally. Previously a tall body (e.g. a long evidence
+  description, or its rendered markdown **Preview**) could push the header and
+  the Save/Cancel buttons past the top and bottom of the screen with no way to
+  scroll back to them.
 
 ## [0.8.0] - 2026-08-27
 
