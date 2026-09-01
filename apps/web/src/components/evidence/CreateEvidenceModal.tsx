@@ -7,7 +7,6 @@ import {
   Modal,
   Select,
   TagPicker,
-  Textarea,
   useToast,
 } from '@reporter/ui';
 import {
@@ -16,6 +15,7 @@ import {
   type CreateEvidenceInput,
   type EvidenceType,
 } from '@reporter/shared';
+import { HttpRequestField } from './HttpRequestField.js';
 import { useCreateEvidence, useCreateTag, useTags } from '../../api/hooks.js';
 import { useEngagementPermissions } from '../../lib/permissions.js';
 import { useUnsavedGuard } from '../../hooks/useUnsavedGuard.js';
@@ -321,17 +321,18 @@ export function CreateEvidenceModal({
               />
             </div>
           </Field>
+        ) : type === 'http-request-cycle' ? (
+          <Field label="HTTP data" htmlFor="ev-content" hint="HAR, JSON, or a raw request/response">
+            <HttpRequestField id="ev-content" value={content} onChange={setContent} rows={8} />
+          </Field>
         ) : (
-          <Field
-            label={type === 'http-request-cycle' ? 'HTTP data (HAR JSON)' : 'Content'}
-            htmlFor="ev-content"
-          >
-            <Textarea
+          <Field label="Content" htmlFor="ev-content">
+            <MarkdownField
               id="ev-content"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={setContent}
               rows={8}
-              className="font-mono"
+              className={type === 'codeblock' ? 'font-mono' : undefined}
             />
           </Field>
         )}

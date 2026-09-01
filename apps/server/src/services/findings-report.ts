@@ -127,6 +127,18 @@ export interface ReportOptions {
    * no cover / details / TOC / watermark. See {@link buildReportHtml}.
    */
   previewSectionKey?: string;
+  /**
+   * Sanitize: show each evidence item's capture timestamp in the evidence log's
+   * `when` label. When omitted, the historical behavior (shown) applies; the
+   * config-driven report routes pass the saved value, whose schema default is
+   * hidden — so a configured report hides timestamps unless the author opts in.
+   */
+  showEvidenceTimestamps?: boolean;
+  /**
+   * Sanitize: show each evidence item's operator (capturer) name in the evidence
+   * log's `who` label. Same default semantics as {@link showEvidenceTimestamps}.
+   */
+  showEvidenceOperators?: boolean;
 }
 
 export interface JsonExportOptions extends ReportOptions {
@@ -400,6 +412,14 @@ async function renderEvidence(
     let text = buf.toString('utf8');
     if (text.length > 20000) text = text.slice(0, 20000) + '\n… (truncated)';
     const lang = e.contentSubtype ? ` <span class="ev-lang">${esc(e.contentSubtype)}</span>` : '';
+    // Notes, events, and code blocks are authored as markdown (the Add-evidence
+    // "Content" field is a markdown editor with a Preview tab), so render them the
+    // same way here — the PDF then matches that preview. HTTP (HAR JSON) and any
+    // other blob stays verbatim in a <pre>.
+    if (e.contentType === 'none' || e.contentType === 'event' || e.contentType === 'codeblock') {
+      const body = prose(text) || '<p class="ev-note">(No content.)</p>';
+      return `<div class="ev"><figcaption>${caption}${lang}</figcaption>${body}</div>`;
+    }
     return `<div class="ev"><figcaption>${caption}${lang}</figcaption><pre class="ev-code">${esc(text)}</pre></div>`;
   }
   return `<div class="ev"><p class="ev-note">${caption}</p></div>`;
@@ -556,11 +576,18 @@ interface TimelineEvidence {
   tags: { name: string; colorName: string }[];
 }
 
+/** Which per-evidence-item labels the evidence log shows (sanitize toggles). */
+interface EvidenceMetaVisibility {
+  timestamps: boolean;
+  operators: boolean;
+}
+
 /** Render a single timeline evidence item (when / who / desc / tags / body). */
 async function renderTimelineItem(
   app: FastifyInstance,
   e: TimelineEvidence,
   budget: Budget,
+  show: EvidenceMetaVisibility,
 ): Promise<string> {
   const tags = e.tags.length
     ? `<div class="tl-tags">${e.tags.map((t) => tagChip(t.name, t.colorName)).join('')}</div>`
@@ -585,9 +612,14 @@ async function renderTimelineItem(
     },
     budget,
   );
+  const whenTag = show.timestamps
+    ? `<span class="tl-when">${shortDateTime(e.occurredAt)}</span>`
+    : '';
+  const whoTag = show.operators ? `<span class="tl-who">${esc(e.operatorName)}</span>` : '';
+  const meta = whenTag || whoTag ? `<div>${whenTag}${whoTag}</div>` : '';
   return `
     <div class="tl-item">
-      <div><span class="tl-when">${shortDateTime(e.occurredAt)}</span><span class="tl-who">${esc(e.operatorName)}</span></div>
+      ${meta}
       ${title}
       ${desc}
       ${tags}
@@ -601,12 +633,13 @@ async function renderTimeline(
   items: TimelineEvidence[],
   group: EvidenceGrouping,
   budget: Budget,
+  show: EvidenceMetaVisibility,
 ): Promise<string> {
   if (items.length === 0) return '<p class="pp muted">No evidence recorded for this engagement.</p>';
 
   if (group === 'chronological') {
     const parts: string[] = [];
-    for (const e of items) parts.push(await renderTimelineItem(app, e, budget));
+    for (const e of items) parts.push(await renderTimelineItem(app, e, budget, show));
     return parts.join('\n');
   }
 
@@ -642,7 +675,7 @@ async function renderTimeline(
   for (const key of order) {
     const arr = groups.get(key)!;
     const parts: string[] = [];
-    for (const e of arr) parts.push(await renderTimelineItem(app, e, budget));
+    for (const e of arr) parts.push(await renderTimelineItem(app, e, budget, show));
     sections.push(
       `<h3 class="group-head">${esc(key)} <span class="group-count">(${arr.length})</span></h3>${parts.join('\n')}`,
     );
@@ -1075,6 +1108,7 @@ async function renderExecutionNarrative(
   subsections: ExecutionSubsection[],
   evidenceByUuid: Map<string, GatheredEvidence>,
   budget: Budget,
+  show: EvidenceMetaVisibility,
 ): Promise<string> {
   const parts: string[] = [];
   for (const sub of subsections) {
@@ -1086,7 +1120,7 @@ async function renderExecutionNarrative(
       const body =
         items.length === 0
           ? '<p class="pp muted">No evidence matches this timeline’s filters.</p>'
-          : await renderTimeline(app, items, cfg.group, budget);
+          : await renderTimeline(app, items, cfg.group, budget, show);
       parts.push(`<h3 class="block-h">${esc(sub.title)}</h3>${body}`);
       continue;
     }
@@ -1121,6 +1155,14 @@ export async function buildReportHtml(
   const includeTimeline = opts.includeTimeline === true;
   const includeAppendix = opts.includeAppendix !== false;
   const evidenceGroup: EvidenceGrouping = opts.evidenceGroup ?? 'chronological';
+  // Sanitize toggles fail closed: a caller that doesn't set them hides the
+  // evidence-log timestamp/operator, so no route can leak capture times or
+  // operator identities by omission. Config routes pass the saved values (schema
+  // default: hidden); the legacy query routes accept explicit opt-in params.
+  const showEvidenceMeta: EvidenceMetaVisibility = {
+    timestamps: opts.showEvidenceTimestamps ?? false,
+    operators: opts.showEvidenceOperators ?? false,
+  };
 
   const [settings, engagement, findings, members] = await Promise.all([
     getReportSettings(app),
@@ -1540,6 +1582,7 @@ export async function buildReportHtml(
             executionSubsections,
             evidenceByUuid,
             budget,
+            showEvidenceMeta,
           );
         }
 
@@ -1562,7 +1605,7 @@ export async function buildReportHtml(
             tags: e.tags.map((t) => ({ name: t.tag.name, colorName: t.tag.colorName })),
           }));
           const groupLabel = EVIDENCE_GROUPING_LABELS[evidenceGroup];
-          const body = await renderTimeline(app, tlItems, evidenceGroup, budget);
+          const body = await renderTimeline(app, tlItems, evidenceGroup, budget, showEvidenceMeta);
           timelineHtml = `<h3 class="block-h">Evidence Log · ${esc(groupLabel)}</h3>${body}`;
         }
 
