@@ -21,6 +21,18 @@ with `pnpm run version:bump <major|minor|patch>`.
   editing**, so you can always save without hunting for the button — even after a
   long description has scrolled it out of view. Incomplete forms still show the
   simpler Discard / Keep editing confirm.
+- **Markdown in the evidence "Content" field** — Add evidence now uses the same
+  Write / Preview markdown editor for the **Content** of notes, events, and code
+  blocks that Description already used, and those bodies render as markdown both
+  in the app and in the exported report.
+- **HTTP request field/value preview** — the Add evidence **HTTP data** field has
+  a Write / Preview toggle that parses HAR JSON, loose JSON, or a raw HTTP
+  request/response into a field/value view: method/URL/status, header, query and
+  cookie tables, and request/response bodies rendered as an expandable JSON tree.
+- **"Sanitize" report option** — under Assessment Execution in the report
+  configurator, **Show timestamps** and **Show operator** (both off by default)
+  control whether each evidence item's capture time and operator name appear
+  anywhere in the generated report. Saved with the engagement's report config.
 
 ### Fixed
 

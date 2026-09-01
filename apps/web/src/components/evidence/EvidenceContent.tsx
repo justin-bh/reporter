@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Spinner } from '@reporter/ui';
+import { MarkdownPreview, Spinner } from '@reporter/ui';
 import type { Evidence } from '@reporter/shared';
 import 'asciinema-player/dist/bundle/asciinema-player.css';
 import { evidenceHeading } from '../../lib/evidence-label.js';
@@ -86,7 +86,7 @@ function NoteEventViewer({
       ) : (
         <>
           {showCaption && hasTitle && <Caption text={evidence.title} />}
-          <NoteText text={evidence.description} />
+          <MarkdownBody text={evidence.description} />
         </>
       )}
     </div>
@@ -173,11 +173,7 @@ function CodeblockViewer({ slug, uuid }: { slug: string; uuid: string; language?
   const { loading, text, error } = useTextContent(slug, uuid);
   if (loading) return <Spinner />;
   if (error) return <p className="text-sm text-danger">Couldn't load the code block.</p>;
-  return (
-    <pre className="max-h-[60vh] min-w-0 overflow-auto rounded-card border border-border bg-surface-2 p-4 text-sm">
-      <code className="font-mono text-text">{text}</code>
-    </pre>
-  );
+  return <MarkdownBody text={text} />;
 }
 
 /** Fetches and renders a note/event body blob. */
@@ -185,13 +181,18 @@ function NoteBodyViewer({ slug, uuid }: { slug: string; uuid: string }) {
   const { loading, text, error } = useTextContent(slug, uuid);
   if (loading) return <Spinner />;
   if (error) return <p className="text-sm text-danger">Couldn't load this note.</p>;
-  return <NoteText text={text} />;
+  return <MarkdownBody text={text} />;
 }
 
-function NoteText({ text }: { text: string }) {
+/**
+ * Render an evidence text body (note / event / code block) as markdown, matching
+ * the Add-evidence "Content" editor's Preview tab and the exported report. Wrapped
+ * in a subtle panel so it reads as a distinct body block.
+ */
+function MarkdownBody({ text }: { text: string }) {
   return (
-    <div className="min-w-0 whitespace-pre-wrap break-words rounded-card border border-border bg-surface-2 p-4 text-sm text-text">
-      {text || <span className="text-muted">No content.</span>}
+    <div className="min-w-0 break-words rounded-card border border-border bg-surface-2 p-4 text-sm text-text">
+      <MarkdownPreview source={text} />
     </div>
   );
 }

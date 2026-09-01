@@ -6,3 +6,4 @@ export * from './proposal.js';
 export * from './standards.js';
 export * from './timeline-query.js';
 export * from './markdown.js';
+export * from './http-preview.js';

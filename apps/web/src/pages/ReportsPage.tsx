@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -547,6 +547,16 @@ export function ReportsPage() {
                           items={items}
                           options={entry.options}
                           onToggleOption={(itemKey, v) => setSectionOption(entry.key, itemKey, v)}
+                          extra={
+                            entry.key === 'assessmentExecution' ? (
+                              <SanitizeControl
+                                showTimestamps={config.showEvidenceTimestamps}
+                                showOperators={config.showEvidenceOperators}
+                                canEdit={canEdit}
+                                onChange={(patch) => setConfig((c) => ({ ...c, ...patch }))}
+                              />
+                            ) : undefined
+                          }
                         />
                       );
                     })}
@@ -996,6 +1006,7 @@ function SortableSectionRow({
   items,
   options,
   onToggleOption,
+  extra,
 }: {
   id: string;
   label: string;
@@ -1016,6 +1027,8 @@ function SortableSectionRow({
   /** Current sub-item overrides keyed by item id (absent/true = included). */
   options?: Record<string, boolean>;
   onToggleOption: (itemKey: string, value: boolean) => void;
+  /** Extra section-specific controls shown at the bottom of the expanded panel. */
+  extra?: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -1103,8 +1116,11 @@ function SortableSectionRow({
                 )}
               </div>
             ) : (
-              <p className="text-xs text-muted">This section has no separately toggleable parts.</p>
+              !extra && (
+                <p className="text-xs text-muted">This section has no separately toggleable parts.</p>
+              )
             )}
+            {extra}
           </div>
         )}
       </div>
@@ -1119,5 +1135,91 @@ function SortableSectionRow({
         />
       </label>
     </li>
+  );
+}
+
+/**
+ * "Sanitize" control shown under Assessment Execution. Expands to two opt-ins for
+ * the evidence timestamp and operator name. Both are OFF by default (the report
+ * config defaults to hidden), so a report never leaks capture times or operator
+ * identities unless the author turns them on. The effect is report-wide — it
+ * governs every evidence-log item wherever it appears — so a note clarifies that.
+ */
+function SanitizeControl({
+  showTimestamps,
+  showOperators,
+  canEdit,
+  onChange,
+}: {
+  showTimestamps: boolean;
+  showOperators: boolean;
+  canEdit: boolean;
+  onChange: (patch: {
+    showEvidenceTimestamps?: boolean;
+    showEvidenceOperators?: boolean;
+  }) => void;
+}) {
+  // Auto-open when something is already un-sanitized so the active state is visible.
+  const [open, setOpen] = useState(showTimestamps || showOperators);
+  const panelId = 'sanitize-panel';
+  return (
+    <div className="space-y-1.5 border-t border-border pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <span
+          className={`select-none text-xs text-muted transition-transform ${open ? 'rotate-90' : ''}`}
+          aria-hidden="true"
+        >
+          ▶
+        </span>
+        <span className="text-xs font-medium text-text">Sanitize</span>
+        {!showTimestamps && !showOperators && <Badge tone="neutral">On</Badge>}
+      </button>
+      {open && (
+        <div id={panelId} className="space-y-1.5 pl-6">
+          <p className="text-xs text-muted">
+            Applies to evidence throughout the report. Off by default so capture times
+            and operator names stay out of the report.
+          </p>
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={showTimestamps}
+              onChange={(e) => onChange({ showEvidenceTimestamps: e.target.checked })}
+              disabled={!canEdit}
+              aria-label="Show timestamps"
+              className="mt-0.5 h-4 w-4 rounded border-border text-accent accent-[var(--accent)] disabled:opacity-50"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm text-text">Show timestamps</span>
+              <span className="block text-xs text-muted">
+                Show each evidence item&apos;s capture date/time in the evidence log.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={showOperators}
+              onChange={(e) => onChange({ showEvidenceOperators: e.target.checked })}
+              disabled={!canEdit}
+              aria-label="Show operator"
+              className="mt-0.5 h-4 w-4 rounded border-border text-accent accent-[var(--accent)] disabled:opacity-50"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm text-text">Show operator</span>
+              <span className="block text-xs text-muted">
+                Show the operator who captured each evidence item.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+    </div>
   );
 }

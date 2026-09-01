@@ -123,6 +123,10 @@ function reportOptionsFromQuery(q: Record<string, string | undefined>): ReportOp
     includeNarrative: boolParamDefaultTrue(q.includeNarrative),
     includeTimeline: boolParam(q.includeTimeline),
     includeAppendix: boolParamDefaultTrue(q.includeAppendix),
+    // Sanitize defaults to hidden here too; these legacy routes opt in explicitly
+    // (they don't read the engagement's saved report config).
+    showEvidenceTimestamps: boolParam(q.showEvidenceTimestamps),
+    showEvidenceOperators: boolParam(q.showEvidenceOperators),
   };
 }
 
@@ -138,6 +142,8 @@ function reportOptionsFromConfig(config: ReportConfig): ReportOptions {
     includeTimeline: false,
     sections: config.sections,
     customSections: config.customSections,
+    showEvidenceTimestamps: config.showEvidenceTimestamps,
+    showEvidenceOperators: config.showEvidenceOperators,
   };
 }
 
@@ -160,6 +166,8 @@ function reportFor(
       includeTimeline: false,
       sections: reportPresetSections(preset),
       customSections: [],
+      showEvidenceTimestamps: config.showEvidenceTimestamps,
+      showEvidenceOperators: config.showEvidenceOperators,
     },
     label,
   };

@@ -201,6 +201,18 @@ export const reportConfigSchema = z.object({
   /** How that evidence log is grouped. */
   evidenceGroup: evidenceGroupingSchema.default('chronological'),
   /**
+   * Sanitize option: show each evidence item's capture timestamp in the rendered
+   * report (the `when` label on evidence-log items). Defaults to `false` (hidden)
+   * so a report never leaks capture times unless the author opts in.
+   */
+  showEvidenceTimestamps: z.boolean().default(false),
+  /**
+   * Sanitize option: show each evidence item's operator (capturer) name in the
+   * rendered report (the `who` label on evidence-log items). Defaults to `false`
+   * (hidden) so operator identities stay out of the report unless opted in.
+   */
+  showEvidenceOperators: z.boolean().default(false),
+  /**
    * How findings are organized in the Assessment Findings + Detailed Findings
    * sections. Defaults to `severity`, reproducing the prior flat, most-severe-
    * first layout, so an unconfigured engagement's report is unchanged.
