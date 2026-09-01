@@ -105,7 +105,13 @@ export function CreateEvidenceModal({
     setTagIds([]);
   }, []);
 
-  const { requestClose } = useUnsavedGuard({ isDirty, enabled: open, onClose });
+  const { requestClose } = useUnsavedGuard({
+    isDirty,
+    enabled: open,
+    onClose,
+    onSave: submit,
+    canSave: canSubmit,
+  });
 
   // Clear the form whenever the modal closes so nothing carries into the next open
   // — important since this same modal is reused as the per-parent comment composer.
