@@ -251,6 +251,8 @@ export function ReportsPage() {
   const [busy, setBusy] = useState<'pdf' | 'zip' | 'json' | 'attestation' | null>(null);
   // A history row currently re-downloading its stored artifact (by uuid).
   const [downloadingUuid, setDownloadingUuid] = useState<string | null>(null);
+  // Report history collapses to the most recent few until expanded.
+  const [showAllHistory, setShowAllHistory] = useState(false);
   // Report "type": `custom` renders the configured sections; the others are
   // canned subsets. Drives the exported filename (`<slug>-<type>-<time>.<ext>`).
   const [preset, setPreset] = useState<ReportPreset>('custom');
@@ -750,7 +752,7 @@ export function ReportsPage() {
               <h3 className="text-sm font-semibold text-text">Report history</h3>
               {hasHistory ? (
                 <ul className="space-y-2">
-                  {history.slice(0, 8).map((r) => {
+                  {(showAllHistory ? history : history.slice(0, 8)).map((r) => {
                     const sizeLabel = fmtBytes(r.sizeBytes);
                     const downloading = downloadingUuid === r.uuid;
                     return (
@@ -794,7 +796,15 @@ export function ReportsPage() {
                     );
                   })}
                   {history.length > 8 && (
-                    <li className="text-xs text-muted">+ {history.length - 8} earlier</li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllHistory((v) => !v)}
+                        className="rounded-input px-1 text-xs font-medium text-accent hover:underline"
+                      >
+                        {showAllHistory ? 'Show less' : `Show ${history.length - 8} earlier`}
+                      </button>
+                    </li>
                   )}
                 </ul>
               ) : (
@@ -1178,7 +1188,12 @@ function SanitizeControl({
           ▶
         </span>
         <span className="text-xs font-medium text-text">Sanitize</span>
-        {!showTimestamps && !showOperators && <Badge tone="neutral">On</Badge>}
+        {(() => {
+          const hidden = [!showTimestamps, !showOperators].filter(Boolean).length;
+          return hidden > 0 ? (
+            <Badge tone="neutral">{hidden === 2 ? 'Hiding both' : 'Hiding 1'}</Badge>
+          ) : null;
+        })()}
       </button>
       {open && (
         <div id={panelId} className="space-y-1.5 pl-6">

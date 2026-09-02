@@ -777,7 +777,7 @@ function ExecutionTimelineEditor({
         Renders the engagement’s captured evidence, filtered and grouped — no hand-picked evidence.
       </p>
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Group by" htmlFor={groupId}>
+        <Field label="Group evidence by" htmlFor={groupId}>
           <Select
             id={groupId}
             value={cfg.group}

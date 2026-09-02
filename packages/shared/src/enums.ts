@@ -336,7 +336,7 @@ export const REPORT_PRESET_LABELS: Record<ReportPreset, string> = {
   full: 'Full report',
   executive: 'Executive summary',
   findings: 'Findings only',
-  custom: 'Custom (configured sections)',
+  custom: 'Your configured sections',
 };
 export const REPORT_PRESET_HINTS: Record<ReportPreset, string> = {
   full: 'Every default section, in the standard order.',
