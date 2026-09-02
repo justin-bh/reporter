@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MarkdownField, Select, Spinner } from '@reporter/ui';
 import {
   EVIDENCE_GROUPINGS,
@@ -24,11 +24,32 @@ import { TagsFilter } from '../evidence/filters/TagsFilter.js';
 import { TypeFilter } from '../evidence/filters/TypeFilter.js';
 import { useEvidence, useTags } from '../../api/hooks.js';
 import { evidenceHeading } from '../../lib/evidence-label.js';
-import { SaveStatusIndicator } from '../SaveStatusIndicator.js';
-import type { SaveStatus } from '../../hooks/useAutosave.js';
 
 /** Readiness state for a required content section (drives the header badge). */
 export type SectionStatus = 'complete' | 'incomplete' | 'na';
+
+/** Anchor ids of the collapsible content sections, in render order. */
+export const CONTENT_SECTION_IDS = [
+  'sec-service-scope',
+  'sec-recommendations',
+  'sec-threat-model',
+  'sec-assessment-execution',
+  'sec-provider-contacts',
+  'sec-client-contacts',
+  'sec-client-software',
+  'sec-test-tools',
+] as const;
+
+/**
+ * Drives the Content-tab accordion. Each {@link SectionCard} reads its own
+ * open/closed state by id, so the parent form can collapse/expand all sections
+ * (and expand one when the readiness checklist jumps to it) without threading
+ * open-state through every editor.
+ */
+export const SectionCollapseContext = createContext<{
+  collapsed: Set<string>;
+  toggle: (id: string) => void;
+} | null>(null);
 
 /** A fresh timeline-subsection filter config (all-inclusive, chronological). */
 const DEFAULT_TIMELINE_CONFIG: ExecutionTimelineConfig = {
@@ -94,10 +115,14 @@ export function ReportContentEditors({
   onThirdPartySoftware,
   findings,
   sectionStatus,
-  status,
+  scope,
+  onScope,
   onFlush,
 }: Common & {
   slug: string;
+  /** Free-text scope notes, shown inside the Service scope section. */
+  scope: string;
+  onScope: (v: string) => void;
   scopeTargets: ScopeTarget[];
   onScopeTargets: (v: ScopeTarget[]) => void;
   scopeExclusions: string[];
@@ -122,8 +147,6 @@ export function ReportContentEditors({
   findings: Finding[];
   /** Per-section readiness state, keyed by readiness item key. */
   sectionStatus: Partial<Record<string, SectionStatus>>;
-  /** Autosave status shown in the footer (replaces the manual Save button). */
-  status: SaveStatus;
   /** Flush the debounced autosave immediately (called on field blur). */
   onFlush?: () => void;
 }) {
@@ -139,6 +162,8 @@ export function ReportContentEditors({
         onTargets={onScopeTargets}
         exclusions={scopeExclusions}
         onExclusions={onScopeExclusions}
+        scope={scope}
+        onScope={onScope}
       />
 
       <RecommendationsEditor
@@ -193,6 +218,7 @@ export function ReportContentEditors({
 
       <SoftwareEditor
         {...common}
+        id="sec-client-software"
         title="Client software tested"
         hint="Software and versions in scope for the assessment."
         idPrefix="cst"
@@ -210,13 +236,6 @@ export function ReportContentEditors({
         items={thirdPartySoftware}
         onChange={onThirdPartySoftware}
       />
-
-      <Card className="flex items-center justify-between p-4 lg:col-span-2">
-        <p className="text-sm text-muted">
-          Structured report content autosaves together with the other report details.
-        </p>
-        {!disabled && <SaveStatusIndicator status={status} />}
-      </Card>
     </>
   );
 }
@@ -230,23 +249,51 @@ function SectionCard({
 }: {
   title: string;
   hint?: string;
-  /** Anchor id so the readiness checklist can jump here. */
+  /** Anchor id so the readiness checklist can jump here (and collapse key). */
   id?: string;
-  /** Readiness state — renders an "Incomplete"/"N/A" badge in the header. */
+  /** Readiness state — renders a status marker in the header. */
   status?: SectionStatus;
   children: ReactNode;
 }) {
+  const ctx = useContext(SectionCollapseContext);
+  // Sections without an id (or with no accordion context) are always open.
+  const open = !ctx || !id ? true : !ctx.collapsed.has(id);
+  const panelId = id ? `${id}-panel` : undefined;
   return (
     <Card id={id} className="space-y-4 p-4 scroll-mt-4 lg:col-span-2">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-text">{title}</h3>
-          {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
-        </div>
-        {status === 'incomplete' && <Badge tone="warning">Incomplete</Badge>}
-        {status === 'na' && <Badge tone="neutral">N/A</Badge>}
+        <button
+          type="button"
+          onClick={() => id && ctx?.toggle(id)}
+          aria-expanded={open}
+          aria-controls={panelId}
+          disabled={!ctx || !id}
+          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+        >
+          {ctx && id && (
+            <span
+              aria-hidden="true"
+              className={`mt-0.5 select-none text-xs text-muted transition-transform ${open ? 'rotate-90' : ''}`}
+            >
+              ▶
+            </span>
+          )}
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-text">{title}</span>
+            {hint && open && <span className="mt-1 block text-xs text-muted">{hint}</span>}
+          </span>
+        </button>
+        <span className="shrink-0">
+          {status === 'incomplete' && <Badge tone="warning">Incomplete</Badge>}
+          {status === 'na' && <Badge tone="neutral">N/A</Badge>}
+          {status === 'complete' && <Badge tone="success">Ready</Badge>}
+        </span>
       </div>
-      {children}
+      {open && (
+        <div id={panelId} className="space-y-4">
+          {children}
+        </div>
+      )}
     </Card>
   );
 }
@@ -256,12 +303,15 @@ function SectionCard({
 function ScopeEditor({
   disabled,
   disabledTitle,
+  onFlush,
   id,
   status,
   targets,
   onTargets,
   exclusions,
   onExclusions,
+  scope,
+  onScope,
 }: Common & {
   id?: string;
   status?: SectionStatus;
@@ -269,6 +319,8 @@ function ScopeEditor({
   onTargets: (v: ScopeTarget[]) => void;
   exclusions: string[];
   onExclusions: (v: string[]) => void;
+  scope: string;
+  onScope: (v: string) => void;
 }) {
   return (
     <SectionCard
@@ -346,6 +398,24 @@ function ScopeEditor({
             />
           )}
         />
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <Field
+          label="Additional scope notes"
+          htmlFor="r-scope"
+          hint="Optional free-text notes shown above the scope tables."
+        >
+          <MarkdownField
+            id="r-scope"
+            rows={3}
+            value={scope}
+            onChange={(v) => onScope(v)}
+            onBlur={onFlush}
+            disabled={disabled}
+            title={disabledTitle}
+          />
+        </Field>
       </div>
     </SectionCard>
   );
@@ -457,29 +527,6 @@ function ThreatModelEditor({
 }) {
   const [error, setError] = useState<string | null>(null);
 
-  async function addDiagram(file: File | undefined) {
-    setError(null);
-    if (!file) return;
-    if (diagrams.length >= MAX_DIAGRAMS) {
-      setError(`You can add up to ${MAX_DIAGRAMS} diagrams.`);
-      return;
-    }
-    if (file.size > MAX_DIAGRAM_BYTES) {
-      setError('That image is too large — keep each diagram under 2 MB.');
-      return;
-    }
-    try {
-      const imageDataUri = await readFileAsDataUri(file);
-      if (!imageDataUri.startsWith('data:image/')) {
-        setError('That file is not an image.');
-        return;
-      }
-      onDiagrams([...diagrams, { imageDataUri, caption: '' }]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not read the image');
-    }
-  }
-
   return (
     <SectionCard
       id={id}
@@ -570,27 +617,6 @@ function ThreatModelEditor({
             </div>
           )}
         />
-        {/* A quick-add file picker for appending diagrams with an image in one step. */}
-        {diagrams.length < MAX_DIAGRAMS && (
-          <div className="mt-2">
-            <label className="text-xs text-muted">
-              Or add a diagram directly:{' '}
-              <input
-                type="file"
-                accept={DIAGRAM_ACCEPT}
-                aria-label="Add a diagram"
-                disabled={disabled}
-                title={disabledTitle}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = '';
-                  void addDiagram(file);
-                }}
-                className="text-sm text-muted file:mr-3 file:rounded-input file:border file:border-border file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-text hover:file:bg-surface disabled:opacity-50"
-              />
-            </label>
-          </div>
-        )}
         {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       </div>
     </SectionCard>
@@ -751,7 +777,7 @@ function ExecutionTimelineEditor({
         Renders the engagement’s captured evidence, filtered and grouped — no hand-picked evidence.
       </p>
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Group by" htmlFor={groupId}>
+        <Field label="Group evidence by" htmlFor={groupId}>
           <Select
             id={groupId}
             value={cfg.group}

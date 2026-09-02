@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Badge, Button, Checkbox, EmptyState, Field, Input, Modal, Select, useToast } from '@reporter/ui';
+import {
+  Badge,
+  Button,
+  Checkbox,
+  EmptyState,
+  Field,
+  Input,
+  Modal,
+  Select,
+  useConfirm,
+  useToast,
+} from '@reporter/ui';
 import {
   isRetestTitle,
   proposalToImportDraft,
@@ -26,6 +37,7 @@ export function ImportProposalModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const confirmDlg = useConfirm();
   const importProposal = useImportProposal(slug);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -126,7 +138,31 @@ export function ImportProposalModal({
     updateTargets(targets);
   }
 
-  async function confirm() {
+  // Guard the destructive parts of an import: Replace wipes the current tree, and
+  // Apply-metadata overwrites the report's client/scope/contacts/date fields (also
+  // editable on Reports → Content). Confirm before either.
+  async function handleImport() {
+    if (!draft) return;
+    const parts: string[] = [];
+    if (mode === 'replace') {
+      parts.push('delete the existing goal tree (all current targets, activities, and goals)');
+    }
+    if (applyMetadata) {
+      parts.push('overwrite the report’s client, scope, contacts, and date fields (Reports → Content)');
+    }
+    if (parts.length > 0) {
+      const ok = await confirmDlg({
+        title: 'Import proposal?',
+        message: `This will ${parts.join(', and ')}. Continue?`,
+        confirmLabel: 'Import',
+        danger: mode === 'replace',
+      });
+      if (!ok) return;
+    }
+    await runImport();
+  }
+
+  async function runImport() {
     if (!draft) return;
     try {
       const r = await importProposal.mutateAsync({
@@ -159,7 +195,7 @@ export function ImportProposalModal({
             Cancel
           </Button>
           <Button
-            onClick={confirm}
+            onClick={handleImport}
             loading={importProposal.isPending}
             disabled={!draft || targetCount === 0}
           >
@@ -197,7 +233,7 @@ export function ImportProposalModal({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <Field
-                label="Existing goals"
+                label="Import mode"
                 htmlFor="imp-mode"
                 hint="Merge appends to the current tree; Replace clears it first."
               >

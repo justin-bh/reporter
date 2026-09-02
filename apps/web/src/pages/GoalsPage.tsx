@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Badge,
@@ -15,12 +15,7 @@ import {
   useConfirm,
   useToast,
 } from '@reporter/ui';
-import {
-  GOAL_STATUS_LABELS,
-  type Activity,
-  type Goal,
-  type Target,
-} from '@reporter/shared';
+import { GOAL_STATUS_LABELS, type Activity, type Goal, type Target } from '@reporter/shared';
 import {
   useCreateActivity,
   useCreateGoal,
@@ -31,6 +26,9 @@ import {
   useEngagement,
   useGoals,
   useLinkGoalEvidence,
+  useReorderActivities,
+  useReorderGoals,
+  useReorderTargets,
   useUpdateActivity,
   useUpdateEngagement,
   useUpdateGoal,
@@ -44,15 +42,55 @@ import { GoalStatusControl } from '../components/goals/GoalStatusControl.js';
 import { ImportProposalModal } from '../components/goals/ImportProposalModal.js';
 import { FindingPickerModal } from '../components/goals/FindingPickerModal.js';
 import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.js';
+import { InlineAdd } from '../components/common/InlineAdd.js';
+import { RowMenu } from '../components/common/RowMenu.js';
+import { SortableList, SortableRow } from '../components/common/Sortable.js';
+
+/** Per-node collapse state shared down the tree, keyed `t:<id>` / `a:<id>`. */
+interface CollapseState {
+  collapsed: Set<string>;
+  toggle: (key: string) => void;
+}
 
 export function GoalsPage() {
   const { slug = '' } = useParams();
   const { canWrite, canAdmin } = useEngagementPermissions(slug);
   const { data: tree, isLoading, isError, refetch } = useGoals(slug);
+  const toast = useToast();
   const [importOpen, setImportOpen] = useState(false);
-  const [addTargetOpen, setAddTargetOpen] = useState(false);
+  const createTarget = useCreateTarget(slug);
+  const reorderTargets = useReorderTargets(slug);
 
-  const hasTargets = (tree?.targets.length ?? 0) > 0;
+  const targets = tree?.targets ?? [];
+  const hasTargets = targets.length > 0;
+
+  // Collapse state (Target/Activity). Goals are leaves and always shown.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const allKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const t of targets) {
+      keys.push(`t:${t.id}`);
+      for (const a of t.activities) keys.push(`a:${a.id}`);
+    }
+    return keys;
+  }, [targets]);
+  const allCollapsed = allKeys.length > 0 && allKeys.every((k) => collapsed.has(k));
+  const collapseState: CollapseState = { collapsed, toggle };
+
+  async function addTarget(name: string) {
+    try {
+      await createTarget.mutateAsync({ name, description: '' });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add target');
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -60,10 +98,19 @@ export function GoalsPage() {
         <div>
           <h2 className="text-lg font-semibold text-text">Goals</h2>
           <p className="text-sm text-muted">
-            Track scope as Target → Activity → Goal. Progress rolls up from each goal’s status.
+            Scope tree: Target → Activity → Goal. Progress rolls up from each goal’s status.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {hasTargets && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(allKeys))}
+            >
+              {allCollapsed ? 'Expand all' : 'Collapse all'}
+            </Button>
+          )}
           <Button
             variant="secondary"
             onClick={() => setImportOpen(true)}
@@ -72,17 +119,10 @@ export function GoalsPage() {
           >
             Import proposal
           </Button>
-          <Button
-            onClick={() => setAddTargetOpen(true)}
-            disabled={!canWrite}
-            title={canWrite ? undefined : READ_ONLY_TITLE}
-          >
-            Add target
-          </Button>
         </div>
       </div>
 
-      <ObjectivesNarrative slug={slug} canEdit={canAdmin} />
+      <ObjectivesNarrative slug={slug} canEdit={canAdmin} canWrite={canWrite} />
 
       {tree && tree.progress.total > 0 && (
         <Card className="space-y-2 p-4">
@@ -110,7 +150,7 @@ export function GoalsPage() {
           title="No targets yet"
           description="Import a proposal to build the goals tree automatically, or add a target to start manually."
           action={
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
                 onClick={() => setImportOpen(true)}
@@ -119,43 +159,63 @@ export function GoalsPage() {
               >
                 Import proposal
               </Button>
-              <Button
-                onClick={() => setAddTargetOpen(true)}
+              <InlineAdd
+                label="Add target"
+                placeholder="Target name — e.g. Web application"
+                onAdd={addTarget}
                 disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              >
-                Add target
-              </Button>
+                disabledTitle={READ_ONLY_TITLE}
+              />
             </div>
           }
         />
       ) : (
         <div className="space-y-3">
-          {(tree?.targets ?? []).map((target) => (
-            <TargetCard key={target.id} slug={slug} target={target} canWrite={canWrite} />
-          ))}
+          <SortableList ids={targets.map((t) => t.id)} onReorder={(ids) => reorderTargets.mutate(ids)}>
+            <div className="space-y-3">
+              {targets.map((target) => (
+                <SortableRow key={target.id} id={target.id} disabled={!canWrite}>
+                  {(handle) => (
+                    <TargetCard
+                      slug={slug}
+                      target={target}
+                      canWrite={canWrite}
+                      handle={handle}
+                      collapse={collapseState}
+                    />
+                  )}
+                </SortableRow>
+              ))}
+            </div>
+          </SortableList>
+          <InlineAdd
+            label="Add target"
+            placeholder="Target name — e.g. Web application"
+            onAdd={addTarget}
+            disabled={!canWrite}
+            disabledTitle={READ_ONLY_TITLE}
+          />
         </div>
       )}
 
       <ImportProposalModal slug={slug} open={importOpen} onClose={() => setImportOpen(false)} />
-      <TargetModal
-        slug={slug}
-        open={addTargetOpen}
-        onClose={() => setAddTargetOpen(false)}
-        mode="create"
-      />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Objectives narrative — autosaved to the engagement.
+// Objectives narrative — autosaved to the engagement (admin-gated).
 // ---------------------------------------------------------------------------
 
-// The objectives narrative lives on the engagement and saves via the engagement
-// update endpoint, which requires the engagement-admin role — so it gates on
-// `canEdit` (admin), unlike the goal tree above (write).
-function ObjectivesNarrative({ slug, canEdit }: { slug: string; canEdit: boolean }) {
+function ObjectivesNarrative({
+  slug,
+  canEdit,
+  canWrite,
+}: {
+  slug: string;
+  canEdit: boolean;
+  canWrite: boolean;
+}) {
   const { data: eng } = useEngagement(slug);
   const update = useUpdateEngagement(slug);
 
@@ -188,6 +248,7 @@ function ObjectivesNarrative({ slug, canEdit }: { slug: string; canEdit: boolean
           <h3 className="text-sm font-semibold text-text">Objectives</h3>
           <p className="mt-0.5 text-xs text-muted">
             A short narrative of the engagement’s objectives (shown in the report’s scope coverage).
+            {!canEdit && canWrite && ' Only engagement admins can edit this.'}
           </p>
         </div>
         {canEdit && <SaveStatusIndicator status={status} />}
@@ -206,6 +267,43 @@ function ObjectivesNarrative({ slug, canEdit }: { slug: string; canEdit: boolean
 }
 
 // ---------------------------------------------------------------------------
+// Rollup helpers for collapsed summaries
+// ---------------------------------------------------------------------------
+
+function goalCounts(goals: Goal[]): { total: number; complete: number } {
+  let complete = 0;
+  for (const g of goals) if (g.status === 'complete') complete++;
+  return { total: goals.length, complete };
+}
+
+/** A muted "N/M complete" summary chip for a collapsed node. */
+function CountSummary({ prefix, complete, total }: { prefix?: string; complete: number; total: number }) {
+  return (
+    <span className="text-xs font-normal text-muted">
+      {prefix}
+      {total === 0 ? 'empty' : `${complete}/${total} complete`}
+    </span>
+  );
+}
+
+/** A small ▸/▾ collapse toggle. */
+function Caret({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={label}
+      className={`shrink-0 select-none px-0.5 text-xs text-muted transition-transform hover:text-text ${
+        open ? 'rotate-90' : ''
+      }`}
+    >
+      ▶
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Target card
 // ---------------------------------------------------------------------------
 
@@ -213,16 +311,26 @@ function TargetCard({
   slug,
   target,
   canWrite,
+  handle,
+  collapse,
 }: {
   slug: string;
   target: Target;
   canWrite: boolean;
+  handle: ReactNode;
+  collapse: CollapseState;
 }) {
   const confirm = useConfirm();
   const toast = useToast();
   const del = useDeleteTarget(slug);
+  const createActivity = useCreateActivity(slug);
+  const reorderActivities = useReorderActivities(slug);
   const [editing, setEditing] = useState(false);
-  const [addActivity, setAddActivity] = useState(false);
+
+  const key = `t:${target.id}`;
+  const open = !collapse.collapsed.has(key);
+  const allGoals = target.activities.flatMap((a) => a.goals);
+  const counts = goalCounts(allGoals);
 
   async function remove() {
     const ok = await confirm({
@@ -240,69 +348,84 @@ function TargetCard({
     }
   }
 
+  async function addActivity(name: string) {
+    try {
+      await createActivity.mutateAsync({ targetId: target.id, input: { name, category: '' } });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add activity');
+    }
+  }
+
   return (
     <Card className="space-y-3 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-text">{target.name}</h3>
-          {target.description && (
+      <div className="flex items-center gap-2">
+        {handle}
+        <Caret open={open} onClick={() => collapse.toggle(key)} label={`Toggle ${target.name}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <h3 className="truncate text-base font-semibold text-text">{target.name}</h3>
+            {!open && (
+              <CountSummary
+                prefix={`${target.activities.length} ${target.activities.length === 1 ? 'activity' : 'activities'} · `}
+                complete={counts.complete}
+                total={counts.total}
+              />
+            )}
+          </div>
+          {open && target.description && (
             <p className="mt-0.5 text-sm text-muted">{target.description}</p>
           )}
         </div>
         {canWrite && (
-          <div className="flex shrink-0 items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-            <button
-              type="button"
-              onClick={remove}
-              aria-label={`Delete target ${target.name}`}
-              title="Delete target"
-              className="px-1.5 text-muted hover:text-danger"
+          <RowMenu
+            label={`Target actions for ${target.name}`}
+            items={[
+              { label: 'Edit target…', onSelect: () => setEditing(true) },
+              { label: 'Delete target', onSelect: () => void remove(), danger: true },
+            ]}
+          />
+        )}
+      </div>
+
+      {open && (
+        <div className="space-y-2 pl-6">
+          {target.activities.length === 0 ? (
+            <p className="text-sm text-muted">No activities yet.</p>
+          ) : (
+            <SortableList
+              ids={target.activities.map((a) => a.id)}
+              onReorder={(ids) => reorderActivities.mutate({ targetId: target.id, orderedIds: ids })}
             >
-              ✕
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        {target.activities.length === 0 ? (
-          <p className="text-sm text-muted">No activities yet.</p>
-        ) : (
-          target.activities.map((activity) => (
-            <ActivityBlock
-              key={activity.id}
-              slug={slug}
-              targetId={target.id}
-              activity={activity}
-              canWrite={canWrite}
+              <div className="space-y-2">
+                {target.activities.map((activity) => (
+                  <SortableRow key={activity.id} id={activity.id} disabled={!canWrite}>
+                    {(aHandle) => (
+                      <ActivityBlock
+                        slug={slug}
+                        activity={activity}
+                        canWrite={canWrite}
+                        handle={aHandle}
+                        collapse={collapse}
+                      />
+                    )}
+                  </SortableRow>
+                ))}
+              </div>
+            </SortableList>
+          )}
+          {canWrite && (
+            <InlineAdd
+              label="Add activity"
+              placeholder="Activity name"
+              onAdd={addActivity}
+              disabled={!canWrite}
+              disabledTitle={READ_ONLY_TITLE}
             />
-          ))
-        )}
-      </div>
-
-      {canWrite && (
-        <Button size="sm" variant="secondary" onClick={() => setAddActivity(true)}>
-          Add activity
-        </Button>
+          )}
+        </div>
       )}
 
-      <TargetModal
-        slug={slug}
-        open={editing}
-        onClose={() => setEditing(false)}
-        mode="edit"
-        target={target}
-      />
-      <ActivityModal
-        slug={slug}
-        targetId={target.id}
-        open={addActivity}
-        onClose={() => setAddActivity(false)}
-        mode="create"
-      />
+      <TargetModal slug={slug} open={editing} onClose={() => setEditing(false)} target={target} />
     </Card>
   );
 }
@@ -313,20 +436,27 @@ function TargetCard({
 
 function ActivityBlock({
   slug,
-  targetId,
   activity,
   canWrite,
+  handle,
+  collapse,
 }: {
   slug: string;
-  targetId: number;
   activity: Activity;
   canWrite: boolean;
+  handle: ReactNode;
+  collapse: CollapseState;
 }) {
   const confirm = useConfirm();
   const toast = useToast();
   const del = useDeleteActivity(slug);
+  const createGoal = useCreateGoal(slug);
+  const reorderGoals = useReorderGoals(slug);
   const [editing, setEditing] = useState(false);
-  const [addGoal, setAddGoal] = useState(false);
+
+  const key = `a:${activity.id}`;
+  const open = !collapse.collapsed.has(key);
+  const counts = goalCounts(activity.goals);
 
   async function remove() {
     const ok = await confirm({
@@ -344,65 +474,78 @@ function ActivityBlock({
     }
   }
 
+  async function addGoal(title: string) {
+    try {
+      await createGoal.mutateAsync({ activityId: activity.id, input: { title, notes: '', isRetest: false } });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add goal');
+    }
+  }
+
   return (
     <div className="rounded-card border border-border bg-surface-2 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-text">
-            {activity.name}
+      <div className="flex items-center gap-2">
+        {handle}
+        <Caret open={open} onClick={() => collapse.toggle(key)} label={`Toggle ${activity.name}`} />
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-text">
+            <span className="truncate">{activity.name}</span>
             {activity.category && (
-              <span className="ml-1.5 text-xs font-normal text-muted">· {activity.category}</span>
+              <span className="text-xs font-normal text-muted">· {activity.category}</span>
+            )}
+            {!open && (
+              <CountSummary prefix="· " complete={counts.complete} total={counts.total} />
             )}
           </p>
         </div>
         {canWrite && (
-          <div className="flex shrink-0 items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-            <button
-              type="button"
-              onClick={remove}
-              aria-label={`Delete activity ${activity.name}`}
-              title="Delete activity"
-              className="px-1.5 text-muted hover:text-danger"
-            >
-              ✕
-            </button>
-          </div>
+          <RowMenu
+            label={`Activity actions for ${activity.name}`}
+            items={[
+              { label: 'Edit activity…', onSelect: () => setEditing(true) },
+              { label: 'Delete activity', onSelect: () => void remove(), danger: true },
+            ]}
+          />
         )}
       </div>
 
-      <ul className="mt-2 flex flex-col gap-2">
-        {activity.goals.length === 0 ? (
-          <li className="text-sm text-muted">No goals yet.</li>
-        ) : (
-          activity.goals.map((goal) => (
-            <GoalRow key={goal.id} slug={slug} goal={goal} canWrite={canWrite} />
-          ))
-        )}
-      </ul>
-
-      {canWrite && (
-        <Button size="sm" variant="ghost" className="mt-2" onClick={() => setAddGoal(true)}>
-          Add goal
-        </Button>
+      {open && (
+        <div className="mt-2 space-y-2 pl-6">
+          {activity.goals.length === 0 ? (
+            <p className="text-sm text-muted">No goals yet.</p>
+          ) : (
+            <SortableList
+              ids={activity.goals.map((g) => g.id)}
+              onReorder={(ids) => reorderGoals.mutate({ activityId: activity.id, orderedIds: ids })}
+            >
+              <ul className="flex flex-col gap-2">
+                {activity.goals.map((goal) => (
+                  <SortableRow key={goal.id} id={goal.id} disabled={!canWrite}>
+                    {(gHandle) => (
+                      <GoalRow slug={slug} goal={goal} canWrite={canWrite} handle={gHandle} />
+                    )}
+                  </SortableRow>
+                ))}
+              </ul>
+            </SortableList>
+          )}
+          {canWrite && (
+            <InlineAdd
+              label="Add goal"
+              placeholder="Goal title"
+              onAdd={addGoal}
+              disabled={!canWrite}
+              disabledTitle={READ_ONLY_TITLE}
+            />
+          )}
+        </div>
       )}
 
       <ActivityModal
         slug={slug}
-        targetId={targetId}
         open={editing}
         onClose={() => setEditing(false)}
-        mode="edit"
         activity={activity}
-      />
-      <GoalModal
-        slug={slug}
-        activityId={activity.id}
-        open={addGoal}
-        onClose={() => setAddGoal(false)}
-        mode="create"
       />
     </div>
   );
@@ -412,7 +555,17 @@ function ActivityBlock({
 // Goal row
 // ---------------------------------------------------------------------------
 
-function GoalRow({ slug, goal, canWrite }: { slug: string; goal: Goal; canWrite: boolean }) {
+function GoalRow({
+  slug,
+  goal,
+  canWrite,
+  handle,
+}: {
+  slug: string;
+  goal: Goal;
+  canWrite: boolean;
+  handle: ReactNode;
+}) {
   const confirm = useConfirm();
   const toast = useToast();
   const updateGoal = useUpdateGoal(slug);
@@ -449,10 +602,7 @@ function GoalRow({ slug, goal, canWrite }: { slug: string; goal: Goal; canWrite:
   async function onPickEvidence(picked: { uuid: string }[]) {
     if (picked.length === 0) return;
     try {
-      await linkEvidence.mutateAsync({
-        goalId: goal.id,
-        evidenceUuids: picked.map((e) => e.uuid),
-      });
+      await linkEvidence.mutateAsync({ goalId: goal.id, evidenceUuids: picked.map((e) => e.uuid) });
       toast.success(`Linked ${picked.length} evidence`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not link evidence');
@@ -461,67 +611,52 @@ function GoalRow({ slug, goal, canWrite }: { slug: string; goal: Goal; canWrite:
 
   return (
     <li className="rounded-input border border-border bg-surface p-2.5">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center gap-2">
+        {handle}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="min-w-0 truncate text-sm text-text">{goal.title}</span>
           {goal.isRetest && <Badge tone="warning">Retest</Badge>}
         </div>
-        {canWrite && (
-          <button
-            type="button"
-            onClick={remove}
-            aria-label={`Delete goal ${goal.title}`}
-            title="Delete goal"
-            className="px-1 text-muted hover:text-danger"
-          >
-            ✕
-          </button>
-        )}
-      </div>
-
-      {goal.notes && <p className="mt-1 text-xs text-muted">{goal.notes}</p>}
-
-      <div className="mt-2 flex flex-wrap items-center gap-2">
         <GoalStatusControl
           value={goal.status}
           onChange={(status) => void setStatus(status)}
           disabled={!canWrite}
           disabledTitle={READ_ONLY_TITLE}
         />
-        {!canWrite && (
-          <span className="text-xs text-muted">{GOAL_STATUS_LABELS[goal.status]}</span>
-        )}
-        {canWrite && (
-          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-            Edit
-          </Button>
-        )}
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-muted">
-          Evidence ({goal.numEvidence}) · Findings ({goal.numFindings})
-        </span>
+        {!canWrite && <span className="text-xs text-muted">{GOAL_STATUS_LABELS[goal.status]}</span>}
         {canWrite && (
           <>
-            <Button size="sm" variant="secondary" onClick={() => setPickEvidence(true)}>
-              Link evidence
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setPickFinding(true)}>
-              Link finding
-            </Button>
+            <RowMenu
+              triggerLabel="＋ Link…"
+              label={`Link to ${goal.title}`}
+              items={[
+                { label: `Link evidence (${goal.numEvidence})`, onSelect: () => setPickEvidence(true) },
+                { label: `Link finding (${goal.numFindings})`, onSelect: () => setPickFinding(true) },
+              ]}
+            />
+            <RowMenu
+              label={`Goal actions for ${goal.title}`}
+              items={[
+                { label: 'Edit goal…', onSelect: () => setEditing(true) },
+                { label: 'Delete goal', onSelect: () => void remove(), danger: true },
+              ]}
+            />
           </>
         )}
       </div>
 
-      <GoalModal
-        slug={slug}
-        activityId={0}
-        open={editing}
-        onClose={() => setEditing(false)}
-        mode="edit"
-        goal={goal}
-      />
+      {(goal.notes || goal.numEvidence > 0 || goal.numFindings > 0) && (
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-7 text-xs text-muted">
+          {(goal.numEvidence > 0 || goal.numFindings > 0) && (
+            <span>
+              Evidence ({goal.numEvidence}) · Findings ({goal.numFindings})
+            </span>
+          )}
+          {goal.notes && <span className="min-w-0">{goal.notes}</span>}
+        </div>
+      )}
+
+      <GoalModal slug={slug} open={editing} onClose={() => setEditing(false)} goal={goal} />
       {/*
         Reuse the finding's evidence picker in selection mode. On pick, link the
         chosen evidence to this goal. We don't know linked uuids from the tree, so
@@ -547,46 +682,36 @@ function GoalRow({ slug, goal, canWrite }: { slug: string; goal: Goal; canWrite:
 }
 
 // ---------------------------------------------------------------------------
-// Target / Activity / Goal add-edit modals
+// Target / Activity / Goal edit modals (the "full" editor; quick-add is inline)
 // ---------------------------------------------------------------------------
 
 function TargetModal({
   slug,
   open,
   onClose,
-  mode,
   target,
 }: {
   slug: string;
   open: boolean;
   onClose: () => void;
-  mode: 'create' | 'edit';
-  target?: Target;
+  target: Target;
 }) {
   const toast = useToast();
-  const create = useCreateTarget(slug);
   const update = useUpdateTarget(slug);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
   useEffect(() => {
     if (open) {
-      setName(target?.name ?? '');
-      setDescription(target?.description ?? '');
+      setName(target.name);
+      setDescription(target.description ?? '');
     }
   }, [open, target]);
 
-  const busy = create.isPending || update.isPending;
-
   async function submit() {
     try {
-      if (mode === 'edit' && target) {
-        await update.mutateAsync({ id: target.id, patch: { name, description } });
-        toast.success('Target updated');
-      } else {
-        await create.mutateAsync({ name, description });
-        toast.success('Target added');
-      }
+      await update.mutateAsync({ id: target.id, patch: { name, description } });
+      toast.success('Target updated');
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save target');
@@ -597,14 +722,14 @@ function TargetModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={mode === 'edit' ? 'Edit target' : 'Add target'}
+      title="Edit target"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={update.isPending}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={busy} disabled={!name.trim()}>
-            {mode === 'edit' ? 'Save' : 'Add'}
+          <Button onClick={submit} loading={update.isPending} disabled={!name.trim()}>
+            Save
           </Button>
         </>
       }
@@ -614,12 +739,7 @@ function TargetModal({
           <Input id="t-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </Field>
         <Field label="Description" htmlFor="t-desc" hint="Optional">
-          <MarkdownField
-            id="t-desc"
-            rows={3}
-            value={description}
-            onChange={(v) => setDescription(v)}
-          />
+          <MarkdownField id="t-desc" rows={3} value={description} onChange={(v) => setDescription(v)} />
         </Field>
       </div>
     </Modal>
@@ -628,43 +748,31 @@ function TargetModal({
 
 function ActivityModal({
   slug,
-  targetId,
   open,
   onClose,
-  mode,
   activity,
 }: {
   slug: string;
-  targetId: number;
   open: boolean;
   onClose: () => void;
-  mode: 'create' | 'edit';
-  activity?: Activity;
+  activity: Activity;
 }) {
   const toast = useToast();
-  const create = useCreateActivity(slug);
   const update = useUpdateActivity(slug);
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
 
   useEffect(() => {
     if (open) {
-      setName(activity?.name ?? '');
-      setCategory(activity?.category ?? '');
+      setName(activity.name);
+      setCategory(activity.category ?? '');
     }
   }, [open, activity]);
 
-  const busy = create.isPending || update.isPending;
-
   async function submit() {
     try {
-      if (mode === 'edit' && activity) {
-        await update.mutateAsync({ id: activity.id, patch: { name, category } });
-        toast.success('Activity updated');
-      } else {
-        await create.mutateAsync({ targetId, input: { name, category } });
-        toast.success('Activity added');
-      }
+      await update.mutateAsync({ id: activity.id, patch: { name, category } });
+      toast.success('Activity updated');
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save activity');
@@ -675,14 +783,14 @@ function ActivityModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={mode === 'edit' ? 'Edit activity' : 'Add activity'}
+      title="Edit activity"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={update.isPending}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={busy} disabled={!name.trim()}>
-            {mode === 'edit' ? 'Save' : 'Add'}
+          <Button onClick={submit} loading={update.isPending} disabled={!name.trim()}>
+            Save
           </Button>
         </>
       }
@@ -705,21 +813,16 @@ function ActivityModal({
 
 function GoalModal({
   slug,
-  activityId,
   open,
   onClose,
-  mode,
   goal,
 }: {
   slug: string;
-  activityId: number;
   open: boolean;
   onClose: () => void;
-  mode: 'create' | 'edit';
-  goal?: Goal;
+  goal: Goal;
 }) {
   const toast = useToast();
-  const create = useCreateGoal(slug);
   const update = useUpdateGoal(slug);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
@@ -727,23 +830,16 @@ function GoalModal({
 
   useEffect(() => {
     if (open) {
-      setTitle(goal?.title ?? '');
-      setNotes(goal?.notes ?? '');
-      setIsRetest(goal?.isRetest ?? false);
+      setTitle(goal.title);
+      setNotes(goal.notes ?? '');
+      setIsRetest(goal.isRetest);
     }
   }, [open, goal]);
 
-  const busy = create.isPending || update.isPending;
-
   async function submit() {
     try {
-      if (mode === 'edit' && goal) {
-        await update.mutateAsync({ id: goal.id, patch: { title, notes, isRetest } });
-        toast.success('Goal updated');
-      } else {
-        await create.mutateAsync({ activityId, input: { title, notes, isRetest } });
-        toast.success('Goal added');
-      }
+      await update.mutateAsync({ id: goal.id, patch: { title, notes, isRetest } });
+      toast.success('Goal updated');
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save goal');
@@ -754,14 +850,14 @@ function GoalModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={mode === 'edit' ? 'Edit goal' : 'Add goal'}
+      title="Edit goal"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={update.isPending}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={busy} disabled={!title.trim()}>
-            {mode === 'edit' ? 'Save' : 'Add'}
+          <Button onClick={submit} loading={update.isPending} disabled={!title.trim()}>
+            Save
           </Button>
         </>
       }
@@ -771,12 +867,7 @@ function GoalModal({
           <Input id="g-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         </Field>
         <Field label="Notes" htmlFor="g-notes" hint="Optional">
-          <Textarea
-            id="g-notes"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
+          <Textarea id="g-notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-text">
           <input
