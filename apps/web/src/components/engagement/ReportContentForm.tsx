@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Card, Checkbox, Field, Input, MarkdownField, Select } from '@reporter/ui';
+import { Badge, Button, Card, Checkbox, Field, Input, MarkdownField, Select } from '@reporter/ui';
 import {
   WATERMARK_LAYERS,
   WATERMARK_LAYER_LABELS,
@@ -20,7 +20,12 @@ import { useFindings, useUpdateEngagement } from '../../api/hooks.js';
 import { useAutosave } from '../../hooks/useAutosave.js';
 import { computeReadiness } from '../../lib/report-readiness.js';
 import { SaveStatusIndicator } from '../SaveStatusIndicator.js';
-import { ReportContentEditors, type SectionStatus } from './ReportContentEditors.js';
+import {
+  CONTENT_SECTION_IDS,
+  ReportContentEditors,
+  SectionCollapseContext,
+  type SectionStatus,
+} from './ReportContentEditors.js';
 import { ReportReadiness } from './ReportReadiness.js';
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -262,8 +267,32 @@ export function ReportContentForm({
     'methodology',
     'watermark',
   ].some((k) => statusOf(k) === 'incomplete');
-  const jump = (anchor: string) =>
-    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Content-tab accordion: the structured sections start collapsed so the whole
+  // report structure is visible at a glance; jumping from the readiness checklist
+  // expands the target section, then scrolls to it.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(CONTENT_SECTION_IDS));
+  const toggleSection = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allCollapsed = CONTENT_SECTION_IDS.every((id) => collapsed.has(id));
+  const jump = (anchor: string) => {
+    if (CONTENT_SECTION_IDS.includes(anchor as (typeof CONTENT_SECTION_IDS)[number])) {
+      setCollapsed((prev) => {
+        if (!prev.has(anchor)) return prev;
+        const next = new Set(prev);
+        next.delete(anchor);
+        return next;
+      });
+    }
+    // Expand first; scroll after the panel has rendered.
+    requestAnimationFrame(() =>
+      document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  };
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -318,21 +347,6 @@ export function ReportContentForm({
             id="r-location"
             value={form.location}
             onChange={(e) => patchForm('location', e.target.value)}
-            onBlur={() => void flush()}
-            disabled={disabled}
-            title={disabledTitle}
-          />
-        </Field>
-        <Field
-          label="Scope notes"
-          htmlFor="r-scope"
-          hint="Optional free-text notes. Use the structured Service scope section below for the report’s scope tables."
-        >
-          <MarkdownField
-            id="r-scope"
-            rows={3}
-            value={form.scope}
-            onChange={(v) => patchForm('scope', v)}
             onBlur={() => void flush()}
             disabled={disabled}
             title={disabledTitle}
@@ -451,14 +465,27 @@ export function ReportContentForm({
         </div>
       </Card>
 
-      <ReportContentEditors
-        slug={slug}
-        disabled={disabled}
-        disabledTitle={disabledTitle}
-        status={disabled ? 'idle' : status}
-        onFlush={() => void flush()}
-        scopeTargets={form.scopeTargets}
-        onScopeTargets={(v) => patchForm('scopeTargets', v)}
+      <div className="flex items-center justify-between gap-2 lg:col-span-2">
+        <p className="text-sm font-medium text-text">Report sections</p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(CONTENT_SECTION_IDS))}
+        >
+          {allCollapsed ? 'Expand all' : 'Collapse all'}
+        </Button>
+      </div>
+
+      <SectionCollapseContext.Provider value={{ collapsed, toggle: toggleSection }}>
+        <ReportContentEditors
+          slug={slug}
+          disabled={disabled}
+          disabledTitle={disabledTitle}
+          onFlush={() => void flush()}
+          scope={form.scope}
+          onScope={(v) => patchForm('scope', v)}
+          scopeTargets={form.scopeTargets}
+          onScopeTargets={(v) => patchForm('scopeTargets', v)}
         scopeExclusions={form.scopeExclusions}
         onScopeExclusions={(v) => patchForm('scopeExclusions', v)}
         recommendations={form.recommendations}
@@ -477,9 +504,10 @@ export function ReportContentForm({
         onSoftwareTested={(v) => patchForm('softwareTested', v)}
         thirdPartySoftware={form.thirdPartySoftware}
         onThirdPartySoftware={(v) => patchForm('thirdPartySoftware', v)}
-        findings={findings}
-        sectionStatus={sectionStatus}
-      />
+          findings={findings}
+          sectionStatus={sectionStatus}
+        />
+      </SectionCollapseContext.Provider>
     </div>
   );
 }
