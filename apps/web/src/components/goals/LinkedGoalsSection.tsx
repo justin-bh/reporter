@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button, Card, Spinner, useToast } from '@reporter/ui';
+import { useState, type ReactNode } from 'react';
+import { Button, Card, Spinner, cn, useToast } from '@reporter/ui';
 import { GOAL_STATUS_LABELS, type LinkedGoal } from '@reporter/shared';
 import {
   useGoalsForEvidence,
@@ -9,7 +9,6 @@ import {
   useUnlinkGoalEvidence,
   useUnlinkGoalFinding,
 } from '../../api/hooks.js';
-import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { GoalStatusDot } from './GoalStatusDot.js';
 import { GoalPickerModal } from './GoalPickerModal.js';
 
@@ -23,11 +22,14 @@ export function LinkedGoalsSection({
   kind,
   uuid,
   canWrite,
+  bare = false,
 }: {
   slug: string;
   kind: 'evidence' | 'finding';
   uuid: string;
   canWrite: boolean;
+  /** Render without the outer Card + "Linked goals" heading (a host provides them). */
+  bare?: boolean;
 }) {
   const toast = useToast();
   const [picking, setPicking] = useState(false);
@@ -71,20 +73,18 @@ export function LinkedGoalsSection({
     }
   }
 
-  return (
-    <Card className="space-y-3 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-text">Linked goals</h3>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => setPicking(true)}
-          disabled={!canWrite}
-          title={canWrite ? undefined : READ_ONLY_TITLE}
-        >
-          Add to goal
-        </Button>
-      </div>
+  const body: ReactNode = (
+    <>
+      {(!bare || canWrite) && (
+        <div className={cn('flex items-center gap-2', bare ? 'justify-end' : 'justify-between')}>
+          {!bare && <h3 className="text-sm font-semibold text-text">Linked goals</h3>}
+          {canWrite && (
+            <Button size="sm" variant="secondary" onClick={() => setPicking(true)}>
+              Add to goal
+            </Button>
+          )}
+        </div>
+      )}
 
       {query.isLoading ? (
         <Spinner size={18} />
@@ -134,6 +134,8 @@ export function LinkedGoalsSection({
         excludeGoalIds={goals.map((g) => g.id)}
         busy={linking.isPending}
       />
-    </Card>
+    </>
   );
+
+  return bare ? <div className="space-y-3">{body}</div> : <Card className="space-y-3 p-4">{body}</Card>;
 }

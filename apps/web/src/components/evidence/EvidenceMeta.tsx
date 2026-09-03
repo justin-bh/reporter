@@ -15,6 +15,12 @@ export function EvidenceMeta({ evidence }: { evidence: Evidence }) {
         {formatDayHeading(evidence.occurredAt)} at {formatTime(evidence.occurredAt)}
       </time>
       <span>({formatRelative(evidence.occurredAt)})</span>
+      {evidence.lastEditedBy && (
+        <span title={formatDateTime(evidence.updatedAt)}>
+          · edited by {evidence.lastEditedBy.firstName} {evidence.lastEditedBy.lastName}{' '}
+          {formatRelative(evidence.updatedAt)}
+        </span>
+      )}
       {evidence.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {evidence.tags.map((t) => (

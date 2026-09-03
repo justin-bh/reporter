@@ -134,6 +134,8 @@ export function serializeReportSettings(s: DbReportSettings): ReportSettings {
 
 type EvidenceWithRelations = DbEvidence & {
   operator: Pick<DbUser, 'slug' | 'firstName' | 'lastName'>;
+  /** The last editor (any field), when the evidence has been edited since creation. */
+  lastEditedBy?: Pick<DbUser, 'slug' | 'firstName' | 'lastName'> | null;
   tags: { tag: DbTag }[];
   /** Present when the include resolves the comment parent; used for parentEvidenceUuid. */
   parent?: Pick<DbEvidence, 'uuid'> | null;
@@ -158,6 +160,14 @@ export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: stri
     originalFilename: e.originalFilename,
     occurredAt: e.occurredAt.toISOString(),
     createdAt: e.createdAt.toISOString(),
+    updatedAt: e.updatedAt.toISOString(),
+    lastEditedBy: e.lastEditedBy
+      ? {
+          slug: e.lastEditedBy.slug,
+          firstName: e.lastEditedBy.firstName,
+          lastName: e.lastEditedBy.lastName,
+        }
+      : null,
     tags: e.tags.map((et) => serializeTag(et.tag)),
     hasContent: Boolean(e.fullBlobKey),
     hasThumbnail: Boolean(e.thumbBlobKey),
@@ -222,6 +232,7 @@ export function serializeSavedQuery(q: DbSavedQuery): SavedQuery {
 export function evidenceInclude(userId: number) {
   return {
     operator: { select: { slug: true, firstName: true, lastName: true } },
+    lastEditedBy: { select: { slug: true, firstName: true, lastName: true } },
     tags: { include: { tag: true } },
     // Comment-linking: the parent (for `parentEvidenceUuid`) and the count of
     // comments pointing at this item (for `commentCount`).

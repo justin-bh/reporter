@@ -1,7 +1,11 @@
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { parseQuery, updateEvidenceInput } from '@reporter/shared';
+
+/** Evidence content types whose body is editable text (stored as a blob). */
+const EDITABLE_TEXT_TYPES = new Set(['none', 'event', 'codeblock', 'http-request-cycle']);
 import { requireAuth, requireEngagementRole, HttpError } from '../../auth/guards.js';
 import { parsePagination } from '../../helpers/pagination.js';
 import { createEvidence, listEvidence } from '../../services/evidence.js';
@@ -186,6 +190,31 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
       }
       let parentEvidenceId: number | null = null;
 
+      // Content edit: replace the stored text blob. Only text evidence has an
+      // editable body; images/recordings keep their uploaded file. The new blob is
+      // written up front (outside the DB tx, mirroring create); the old one is
+      // reclaimed only after the row update commits. Empty content clears the blob.
+      const editingContent = body.content !== undefined;
+      if (editingContent && !EDITABLE_TEXT_TYPES.has(ev.contentType)) {
+        throw new HttpError(400, "This evidence type's content can't be edited.");
+      }
+      let blobPatch: { fullBlobKey: string | null; sha256: string | null; sizeBytes: number | null } | undefined;
+      if (editingContent) {
+        const text = body.content ?? '';
+        if (text === '') {
+          blobPatch = { fullBlobKey: null, sha256: null, sizeBytes: null };
+        } else {
+          const buf = Buffer.from(text, 'utf8');
+          const key = randomUUID();
+          await app.blobs.put(key, buf);
+          blobPatch = {
+            fullBlobKey: key,
+            sha256: createHash('sha256').update(buf).digest('hex'),
+            sizeBytes: buf.length,
+          };
+        }
+      }
+
       await app.db.$transaction(async (tx) => {
         if (reparent && body.parentEvidenceUuid !== null) {
           // Attach/move: resolve the target, then lock BOTH the subject and target
@@ -232,8 +261,12 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
             title: body.title ?? undefined,
             description: body.description ?? undefined,
             occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
+            // Record who made this edit (any field), which also bumps updatedAt.
+            lastEditedById: req.authedUser!.id,
             // Only re-link when the field was present (value may be null for detach).
             ...(reparent ? { parentEvidenceId } : {}),
+            // Swap the content blob when the body was edited.
+            ...(blobPatch ?? {}),
           },
         });
         if (body.tagIds) {
@@ -247,6 +280,11 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
           });
         }
       });
+
+      // Reclaim the replaced/cleared content blob now the swap has committed.
+      if (editingContent && ev.fullBlobKey && ev.fullBlobKey !== blobPatch?.fullBlobKey) {
+        await app.blobs.delete(ev.fullBlobKey).catch(() => {});
+      }
 
       const updated = await app.db.evidence.findUniqueOrThrow({
         where: { id: ev.id },

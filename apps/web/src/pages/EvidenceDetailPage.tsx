@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,7 +8,9 @@ import {
   Field,
   Input,
   MarkdownField,
+  MarkdownPreview,
   Spinner,
+  TagChip,
   TagPicker,
   useConfirm,
   useToast,
@@ -23,9 +25,7 @@ import {
   useUpdateEvidence,
 } from '../api/hooks.js';
 import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js';
-import { useAutosave } from '../hooks/useAutosave.js';
-import { SaveStatusIndicator } from '../components/SaveStatusIndicator.js';
-import { EvidenceContent } from '../components/evidence/EvidenceContent.js';
+import { EvidenceBody } from '../components/evidence/EvidenceBody.js';
 import { EvidenceMeta } from '../components/evidence/EvidenceMeta.js';
 import { EvidenceEntryRow } from '../components/evidence/EvidenceEntryRow.js';
 import { CreateEvidenceModal } from '../components/evidence/CreateEvidenceModal.js';
@@ -35,6 +35,7 @@ import {
   type DeleteEvidenceMode,
 } from '../components/evidence/DeleteEvidenceDialog.js';
 import { LinkedGoalsSection } from '../components/goals/LinkedGoalsSection.js';
+import { AccordionSection } from '../components/common/AccordionSection.js';
 
 interface EvidenceForm {
   title: string;
@@ -73,53 +74,54 @@ export function EvidenceDetailPage() {
       }
     : undefined;
 
-  const [form, setForm] = useState<EvidenceForm>({ title: '', description: '', tagIds: [] });
+  // Accordion + deliberate-edit state. Details/Linked-goals collapse to a
+  // read-only view; expanding Details seeds an edit draft that only persists on an
+  // explicit Save (collapsing/Cancel discards).
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [goalsOpen, setGoalsOpen] = useState(false);
+  const [draft, setDraft] = useState<EvidenceForm>({ title: '', description: '', tagIds: [] });
+  const [savingDetails, setSavingDetails] = useState(false);
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // `attach` opens the picker to make this top-level item a comment on another;
   // `move` opens it to move this comment under a different parent. Only one at a time.
   const [reparenting, setReparenting] = useState<null | 'attach' | 'move'>(null);
-  // A dedicated in-flight flag for linking actions so we can spin the specific
-  // trigger without coupling to the shared autosave's `update.isPending`.
   const [linkBusy, setLinkBusy] = useState(false);
 
-  // Seed the form once per uuid, not on every cache change — starring or a
-  // returned mutation value replaces the cached `evidence` object, and reseeding
-  // then would clobber an in-progress edit (mirrors FindingDetailPage's guard).
-  const seededUuid = useRef<string | null>(null);
-  // Baseline is the last-saved server value the autosave compares against. It's
-  // undefined until the record loads, then tracks each accepted edit.
-  const [baseline, setBaseline] = useState<EvidenceForm | undefined>(undefined);
-  useEffect(() => {
-    if (evidence && seededUuid.current !== evidence.uuid) {
-      seededUuid.current = evidence.uuid;
-      const seeded: EvidenceForm = {
+  function openDetails(open: boolean) {
+    if (open && evidence) {
+      setDraft({
         title: evidence.title,
         description: evidence.description,
         tagIds: evidence.tags.map((t) => t.id),
-      };
-      setForm(seeded);
-      setBaseline(seeded);
+      });
     }
-  }, [evidence]);
+    setDetailsOpen(open);
+  }
 
-  const { status, flush } = useAutosave<EvidenceForm>({
-    value: form,
-    baseline,
-    isValid: (v) => v.title.trim().length > 0,
-    save: async (v) => {
-      const patch = {
-        title: v.title.trim(),
-        description: v.description,
-        tagIds: v.tagIds,
-      };
-      await update.mutateAsync({ uuid, patch });
-      // Advance the baseline so the form is considered clean at what we just saved.
-      setBaseline(v);
-    },
-  });
-
-  const titleInvalid = form.title.trim().length === 0;
+  async function saveDetails() {
+    if (!draft.title.trim()) {
+      toast.error('A title is required.');
+      return;
+    }
+    setSavingDetails(true);
+    try {
+      await update.mutateAsync({
+        uuid,
+        patch: {
+          title: draft.title.trim(),
+          description: draft.description,
+          tagIds: draft.tagIds,
+        },
+      });
+      toast.success('Details saved');
+      setDetailsOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save details');
+    } finally {
+      setSavingDetails(false);
+    }
+  }
 
   if (isLoading) return <Spinner size={26} />;
   if (isError)
@@ -131,10 +133,7 @@ export function EvidenceDetailPage() {
   const commentList = comments.data ?? [];
 
   // Attach (parent uuid) / move (new parent uuid) / detach (null) all funnel
-  // through one PUT of `parentEvidenceUuid`. The shared hook already refreshes
-  // the timeline and this evidence's detail; here we additionally invalidate the
-  // OLD parent (losing a comment) and the NEW parent (gaining one) so their
-  // comment lists + counts update, since only this component knows those uuids.
+  // through one PUT of `parentEvidenceUuid`.
   async function reparent(target: string | null) {
     const oldParent = evidence?.parentEvidenceUuid ?? null;
     setLinkBusy(true);
@@ -146,8 +145,6 @@ export function EvidenceDetailPage() {
           qc.invalidateQueries({ queryKey: ['evidence', slug, p] });
         }
       }
-      // This item's own thread reflects the change too (attaching hides it,
-      // detaching restores it as a standalone thread host).
       qc.invalidateQueries({ queryKey: ['evidence-comments', slug, uuid] });
       setReparenting(null);
       toast.success(
@@ -225,86 +222,49 @@ export function EvidenceDetailPage() {
         </div>
       )}
 
-      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-3">
-          {/* Caption off here: the title is shown once, in the editable Title
-              field above the description in the Edit card. */}
-          <EvidenceContent evidence={evidence} slug={slug} showCaption={false} />
+      <div className="mt-3 min-w-0 space-y-4">
+        {/* Meta header (type, capturer, when, last-edited, tags) — above content. */}
+        <Card className="p-4">
+          <EvidenceMeta evidence={evidence} />
+        </Card>
 
-          {!isComment && (
-            <Card className="space-y-3 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-text">
-                  Comments <span className="font-normal text-muted">(Linked Evidence)</span>
-                </h3>
-                <div className="flex flex-none gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setReparenting('attach')}
-                    loading={linkBusy && reparenting === 'attach'}
-                    disabled={!canWrite || linkBusy || evidence.commentCount > 0}
-                    title={
-                      !canWrite
-                        ? READ_ONLY_TITLE
-                        : evidence.commentCount > 0
-                          ? `Detach its ${evidence.commentCount} comment(s) first — comments are one level deep.`
-                          : undefined
-                    }
-                  >
-                    Make a comment on…
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setAdding(true)}
-                    disabled={!canWrite}
-                    title={canWrite ? undefined : READ_ONLY_TITLE}
-                  >
-                    Add comment
-                  </Button>
-                </div>
-              </div>
-              {comments.isLoading ? (
-                <Spinner />
-              ) : commentList.length === 0 ? (
-                <p className="text-sm text-muted">
-                  No comments yet. Add one to link related evidence or record an update on this
-                  item.
-                </p>
+        {/* Details: collapsed = read-only; expand = deliberate edit. */}
+        <AccordionSection
+          title="Details"
+          open={detailsOpen}
+          onOpenChange={openDetails}
+          summary={
+            <div className="space-y-2">
+              <p className="text-base font-semibold text-text">
+                {evidence.title || <span className="text-muted">Untitled</span>}
+              </p>
+              {evidence.description.trim() ? (
+                <MarkdownPreview source={evidence.description} />
               ) : (
-                <ul className="flex flex-col gap-2">
-                  {commentList.map((c) => (
-                    <EvidenceEntryRow key={c.uuid} slug={slug} ev={c} />
-                  ))}
-                </ul>
+                <p className="text-sm text-muted">No description.</p>
               )}
-            </Card>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <Card className="p-4">
-            <EvidenceMeta evidence={evidence} />
-          </Card>
-
-          <Card className="space-y-4 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-text">Edit</h3>
-              {canWrite && <SaveStatusIndicator status={status} />}
+              {evidence.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {evidence.tags.map((t) => (
+                    <TagChip key={t.id} name={t.name} colorName={t.colorName} />
+                  ))}
+                </div>
+              )}
             </div>
+          }
+        >
+          <div className="space-y-4">
             <Field
               label="Title"
               htmlFor="d-title"
               required
-              error={canWrite && titleInvalid ? 'A title is required.' : undefined}
+              error={!draft.title.trim() ? 'A title is required.' : undefined}
             >
               <Input
                 id="d-title"
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                onBlur={() => void flush()}
-                invalid={canWrite && titleInvalid}
+                value={draft.title}
+                onChange={(e) => setDraft((f) => ({ ...f, title: e.target.value }))}
+                invalid={!draft.title.trim()}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}
               />
@@ -313,9 +273,8 @@ export function EvidenceDetailPage() {
               <MarkdownField
                 id="d-desc"
                 rows={3}
-                value={form.description}
-                onChange={(v) => setForm((f) => ({ ...f, description: v }))}
-                onBlur={() => void flush()}
+                value={draft.description}
+                onChange={(v) => setDraft((f) => ({ ...f, description: v }))}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}
               />
@@ -323,14 +282,14 @@ export function EvidenceDetailPage() {
             <Field label="Tags">
               <TagPicker
                 tags={tags ?? []}
-                selectedIds={form.tagIds}
-                onChange={(tagIds) => setForm((f) => ({ ...f, tagIds }))}
+                selectedIds={draft.tagIds}
+                onChange={(tagIds) => setDraft((f) => ({ ...f, tagIds }))}
                 onCreateTag={onCreateTag}
                 disabled={!canWrite}
                 title={canWrite ? undefined : READ_ONLY_TITLE}
               />
             </Field>
-            <div className="flex justify-between">
+            <div className="flex items-center justify-between gap-2">
               <Button
                 variant="danger"
                 size="sm"
@@ -341,13 +300,90 @@ export function EvidenceDetailPage() {
               >
                 Delete
               </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(false)} disabled={savingDetails}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => void saveDetails()}
+                  loading={savingDetails}
+                  disabled={!canWrite || !draft.title.trim()}
+                  title={canWrite ? undefined : READ_ONLY_TITLE}
+                >
+                  Save
+                </Button>
+              </div>
             </div>
-          </Card>
+          </div>
+        </AccordionSection>
 
-          {!isComment && (
-            <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
-          )}
-        </div>
+        {/* Linked goals: collapsed = read-only list; expand = add/unlink. */}
+        {!isComment && (
+          <AccordionSection
+            title="Linked goals"
+            open={goalsOpen}
+            onOpenChange={setGoalsOpen}
+            summary={
+              <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={false} bare />
+            }
+          >
+            <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} bare />
+          </AccordionSection>
+        )}
+
+        {/* The evidence content — its own deliberate Edit → Save. */}
+        <EvidenceBody slug={slug} evidence={evidence} canWrite={canWrite} />
+
+        {!isComment && (
+          <Card className="space-y-3 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-text">
+                Comments <span className="font-normal text-muted">(Linked Evidence)</span>
+              </h3>
+              <div className="flex flex-none gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setReparenting('attach')}
+                  loading={linkBusy && reparenting === 'attach'}
+                  disabled={!canWrite || linkBusy || evidence.commentCount > 0}
+                  title={
+                    !canWrite
+                      ? READ_ONLY_TITLE
+                      : evidence.commentCount > 0
+                        ? `Detach its ${evidence.commentCount} comment(s) first — comments are one level deep.`
+                        : undefined
+                  }
+                >
+                  Make a comment on…
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setAdding(true)}
+                  disabled={!canWrite}
+                  title={canWrite ? undefined : READ_ONLY_TITLE}
+                >
+                  Add comment
+                </Button>
+              </div>
+            </div>
+            {comments.isLoading ? (
+              <Spinner />
+            ) : commentList.length === 0 ? (
+              <p className="text-sm text-muted">
+                No comments yet. Add one to link related evidence or record an update on this item.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {commentList.map((c) => (
+                  <EvidenceEntryRow key={c.uuid} slug={slug} ev={c} />
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
       </div>
 
       <CreateEvidenceModal

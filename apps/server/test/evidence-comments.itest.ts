@@ -322,3 +322,48 @@ describe('re-parenting evidence via PUT', () => {
     expect(bDetail.json().commentCount).toBe(1);
   });
 });
+
+/** GET the raw content blob text for a piece of evidence. */
+async function getContent(cookie: string, slug: string, uuid: string) {
+  return app.inject({
+    method: 'GET',
+    url: `/web/engagements/${slug}/evidence/${uuid}/content`,
+    headers: { cookie },
+  });
+}
+
+describe('evidence content editing + last editor', () => {
+  it('replaces the content blob and records who edited it', async () => {
+    const { cookie } = await setup();
+    const created = (await createNote(cookie, 'op1', { content: 'original body' })).json();
+    expect(created.lastEditedBy).toBeNull();
+    expect(created.hasContent).toBe(true);
+    expect((await getContent(cookie, 'op1', created.uuid)).body).toBe('original body');
+
+    const res = await updateEvidence(cookie, 'op1', created.uuid, { content: '# edited\nnew body' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.lastEditedBy).toMatchObject({ firstName: 'Wendy', lastName: 'Writer' });
+    expect(body.hasContent).toBe(true);
+    expect(new Date(body.updatedAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(body.createdAt).getTime(),
+    );
+    expect((await getContent(cookie, 'op1', created.uuid)).body).toBe('# edited\nnew body');
+  });
+
+  it('records the last editor even for a metadata-only edit', async () => {
+    const { cookie } = await setup();
+    const created = (await createNote(cookie, 'op1', { content: 'x' })).json();
+    const res = await updateEvidence(cookie, 'op1', created.uuid, { title: 'Renamed' });
+    expect(res.json().lastEditedBy).toMatchObject({ firstName: 'Wendy' });
+  });
+
+  it('clears the stored blob when content is set to empty', async () => {
+    const { cookie } = await setup();
+    const created = (await createNote(cookie, 'op1', { content: 'to be cleared' })).json();
+    const res = await updateEvidence(cookie, 'op1', created.uuid, { content: '' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().hasContent).toBe(false);
+    expect((await getContent(cookie, 'op1', created.uuid)).statusCode).toBe(404);
+  });
+});

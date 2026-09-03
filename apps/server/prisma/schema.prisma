@@ -91,7 +91,8 @@ model User {
   roles        UserEngagementRole[]
   prefs        UserEngagementPref[]
   evidencePrefs UserEvidencePref[]
-  evidence     Evidence[]
+  evidence     Evidence[]         @relation("EvidenceOperator")
+  editedEvidence Evidence[]       @relation("EvidenceLastEditor")
   generatedReports GeneratedReport[]
 
   @@map("users")
@@ -486,9 +487,13 @@ model Evidence {
   occurredAt     DateTime @map("occurred_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
+  // Who last edited any field of this evidence (null until first edit). Distinct
+  // from `operatorId`, which is always the original capturer.
+  lastEditedById Int?     @map("last_edited_by_id")
 
   engagement Engagement          @relation(fields: [engagementId], references: [id], onDelete: Cascade)
-  operator  User               @relation(fields: [operatorId], references: [id])
+  operator  User               @relation("EvidenceOperator", fields: [operatorId], references: [id])
+  lastEditedBy User?            @relation("EvidenceLastEditor", fields: [lastEditedById], references: [id])
   parent    Evidence?          @relation("EvidenceComments", fields: [parentEvidenceId], references: [id], onDelete: SetNull)
   comments  Evidence[]         @relation("EvidenceComments")
   tags      EvidenceTag[]
