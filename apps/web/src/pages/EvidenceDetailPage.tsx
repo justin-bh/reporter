@@ -178,9 +178,14 @@ export function EvidenceDetailPage() {
 
   return (
     <div>
-      <Link to={`/engagements/${slug}/evidence`} className="text-sm text-muted hover:text-text">
-        ← Back to timeline
-      </Link>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <Link to={`/engagements/${slug}/evidence`} className="text-sm text-muted hover:text-text">
+          ← Back to timeline
+        </Link>
+        <h2 className="min-w-0 break-words text-xl font-semibold text-text">
+          {evidence.title.trim() || <span className="text-muted">Untitled evidence</span>}
+        </h2>
+      </div>
 
       {isComment && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-surface-2 px-4 py-2 text-sm">
@@ -301,9 +306,8 @@ export function EvidenceDetailPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-base font-semibold text-text">
-                {evidence.title || <span className="text-muted">Untitled</span>}
-              </p>
+              {/* Title is shown as the page heading above; here it's the editable
+                  field (in edit mode) so it isn't repeated in the read-only view. */}
               {evidence.description.trim() ? (
                 <MarkdownPreview source={evidence.description} />
               ) : (
