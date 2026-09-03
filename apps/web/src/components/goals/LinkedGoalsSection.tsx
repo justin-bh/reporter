@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Button, Card, Spinner, cn, useToast } from '@reporter/ui';
+import { useState } from 'react';
+import { Button, Card, Spinner, useToast } from '@reporter/ui';
 import { GOAL_STATUS_LABELS, type LinkedGoal } from '@reporter/shared';
 import {
   useGoalsForEvidence,
@@ -22,14 +22,11 @@ export function LinkedGoalsSection({
   kind,
   uuid,
   canWrite,
-  bare = false,
 }: {
   slug: string;
   kind: 'evidence' | 'finding';
   uuid: string;
   canWrite: boolean;
-  /** Render without the outer Card + "Linked goals" heading (a host provides them). */
-  bare?: boolean;
 }) {
   const toast = useToast();
   const [picking, setPicking] = useState(false);
@@ -73,18 +70,16 @@ export function LinkedGoalsSection({
     }
   }
 
-  const body: ReactNode = (
-    <>
-      {(!bare || canWrite) && (
-        <div className={cn('flex items-center gap-2', bare ? 'justify-end' : 'justify-between')}>
-          {!bare && <h3 className="text-sm font-semibold text-text">Linked goals</h3>}
-          {canWrite && (
-            <Button size="sm" variant="secondary" onClick={() => setPicking(true)}>
-              Add to goal
-            </Button>
-          )}
-        </div>
-      )}
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-text">Linked goals</h3>
+        {canWrite && (
+          <Button size="sm" variant="secondary" onClick={() => setPicking(true)}>
+            Add to goal
+          </Button>
+        )}
+      </div>
 
       {query.isLoading ? (
         <Spinner size={18} />
@@ -114,11 +109,10 @@ export function LinkedGoalsSection({
                 <button
                   type="button"
                   onClick={() => unlink(g.id)}
-                  aria-label={`Unlink ${g.title}`}
-                  title="Unlink"
-                  className="px-1 text-muted hover:text-danger"
+                  aria-label={`Remove ${g.title}`}
+                  className="shrink-0 text-xs font-medium text-muted hover:text-danger"
                 >
-                  ✕
+                  Remove
                 </button>
               )}
             </li>
@@ -134,8 +128,6 @@ export function LinkedGoalsSection({
         excludeGoalIds={goals.map((g) => g.id)}
         busy={linking.isPending}
       />
-    </>
+    </Card>
   );
-
-  return bare ? <div className="space-y-3">{body}</div> : <Card className="space-y-3 p-4">{body}</Card>;
 }

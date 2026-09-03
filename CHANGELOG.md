@@ -10,6 +10,13 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Comments on evidence** — a lightweight, plain-text discussion thread on each
+  piece of evidence, for internal notes (never shown in the exported report). Any
+  writer can post a markdown comment; authors can edit or delete their own (with an
+  "edited" marker). The old "Comments (Linked Evidence)" section is renamed to
+  **Linked evidence** to end the naming overlap, and the evidence Details / Linked
+  goals panels use an explicit **Edit** / **Add to goal** button (each linked goal
+  has a **Remove**) instead of the expand-to-edit accordion.
 - **Edit evidence content, deliberately** — notes, events, code blocks, and HTTP
   requests can now have their body edited from the evidence detail page. Editing
   is explicit: an **Edit** button unlocks the field and a dedicated **Save**

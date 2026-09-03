@@ -12,6 +12,7 @@ import type {
   CreateTagInput,
   CreateTargetInput,
   Evidence,
+  EvidenceComment,
   Finding,
   FindingCategory,
   FindingDetail,
@@ -168,12 +169,49 @@ export const useEvidence = (slug: string, uuid: string) =>
     enabled: Boolean(slug && uuid),
   });
 
-/** Comments (linked evidence) attached to a piece of evidence, oldest first. */
+/** Linked evidence (child evidence) attached to a piece of evidence, oldest first. */
+export const useLinkedEvidence = (slug: string, uuid: string) =>
+  useQuery({
+    queryKey: ['linked-evidence', slug, uuid],
+    queryFn: () => api.get<Evidence[]>(`/web/engagements/${slug}/evidence/${uuid}/linked-evidence`),
+  });
+
+/** Plain-text comments (discussion thread) on a piece of evidence, oldest first. */
 export const useEvidenceComments = (slug: string, uuid: string) =>
   useQuery({
     queryKey: ['evidence-comments', slug, uuid],
-    queryFn: () => api.get<Evidence[]>(`/web/engagements/${slug}/evidence/${uuid}/comments`),
+    queryFn: () => api.get<EvidenceComment[]>(`/web/engagements/${slug}/evidence/${uuid}/comments`),
   });
+
+export function useAddEvidenceComment(slug: string, uuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) =>
+      api.post<EvidenceComment>(`/web/engagements/${slug}/evidence/${uuid}/comments`, { body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['evidence-comments', slug, uuid] }),
+  });
+}
+
+export function useUpdateEvidenceComment(slug: string, uuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { commentUuid: string; body: string }) =>
+      api.put<EvidenceComment>(
+        `/web/engagements/${slug}/evidence/comments/${args.commentUuid}`,
+        { body: args.body },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['evidence-comments', slug, uuid] }),
+  });
+}
+
+export function useDeleteEvidenceComment(slug: string, uuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commentUuid: string) =>
+      api.del(`/web/engagements/${slug}/evidence/comments/${commentUuid}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['evidence-comments', slug, uuid] }),
+  });
+}
 
 /** An operator as it appears on evidence (for the timeline operator filter). */
 export type EvidenceOperator = Evidence['operator'];
@@ -197,10 +235,10 @@ export function useCreateEvidence(slug: string) {
     },
     onSuccess: (_d, v) => {
       invalidateTimeline(qc, slug);
-      // Adding a comment changes the parent's comment list + count.
+      // Adding linked evidence changes the parent's linked-evidence list + count.
       const parent = v.metadata.parentEvidenceUuid;
       if (parent) {
-        qc.invalidateQueries({ queryKey: ['evidence-comments', slug, parent] });
+        qc.invalidateQueries({ queryKey: ['linked-evidence', slug, parent] });
         qc.invalidateQueries({ queryKey: ['evidence', slug, parent] });
       }
     },
@@ -217,7 +255,7 @@ export function useToggleEvidenceStar(slug: string, uuid: string) {
       qc.invalidateQueries({ queryKey: ['timeline', slug] });
       qc.invalidateQueries({ queryKey: ['evidence', slug, uuid] });
       // Starred rows also appear in comment threads.
-      qc.invalidateQueries({ queryKey: ['evidence-comments', slug] });
+      qc.invalidateQueries({ queryKey: ['linked-evidence', slug] });
     },
   });
 }
@@ -250,7 +288,7 @@ export function useDeleteEvidence(slug: string) {
       qc.invalidateQueries({ queryKey: ['evidence', slug] });
       // Deleting a comment must drop it from its parent's thread; we don't know the
       // parent here, so refresh every cached comment thread in this engagement.
-      qc.invalidateQueries({ queryKey: ['evidence-comments', slug] });
+      qc.invalidateQueries({ queryKey: ['linked-evidence', slug] });
     },
   });
 }

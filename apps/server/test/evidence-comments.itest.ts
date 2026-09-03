@@ -72,12 +72,44 @@ async function getEvidence(cookie: string, slug: string, uuid: string) {
   });
 }
 
-/** GET the comments (linked evidence) on a piece of evidence. */
-async function getComments(cookie: string, slug: string, uuid: string) {
+/** GET the linked evidence (child evidence) on a piece of evidence. */
+async function getLinkedEvidence(cookie: string, slug: string, uuid: string) {
+  return app.inject({
+    method: 'GET',
+    url: `/web/engagements/${slug}/evidence/${uuid}/linked-evidence`,
+    headers: { cookie },
+  });
+}
+
+/** Plain-comment (discussion) helpers. */
+function addComment(cookie: string, slug: string, uuid: string, body: string) {
+  return app.inject({
+    method: 'POST',
+    url: `/web/engagements/${slug}/evidence/${uuid}/comments`,
+    headers: { ...WEB_HEADERS, cookie, 'content-type': 'application/json' },
+    payload: { body },
+  });
+}
+function listComments(cookie: string, slug: string, uuid: string) {
   return app.inject({
     method: 'GET',
     url: `/web/engagements/${slug}/evidence/${uuid}/comments`,
     headers: { cookie },
+  });
+}
+function editComment(cookie: string, slug: string, cuuid: string, body: string) {
+  return app.inject({
+    method: 'PUT',
+    url: `/web/engagements/${slug}/evidence/comments/${cuuid}`,
+    headers: { ...WEB_HEADERS, cookie, 'content-type': 'application/json' },
+    payload: { body },
+  });
+}
+function deleteComment(cookie: string, slug: string, cuuid: string) {
+  return app.inject({
+    method: 'DELETE',
+    url: `/web/engagements/${slug}/evidence/comments/${cuuid}`,
+    headers: { ...WEB_HEADERS, cookie },
   });
 }
 
@@ -107,7 +139,7 @@ describe('evidence comments (linked evidence)', () => {
     // The comments endpoint returns the linked evidence.
     const list = await app.inject({
       method: 'GET',
-      url: `/web/engagements/op1/evidence/${parent.uuid}/comments`,
+      url: `/web/engagements/op1/evidence/${parent.uuid}/linked-evidence`,
       headers: { cookie },
     });
     expect(list.statusCode).toBe(200);
@@ -215,7 +247,7 @@ describe('re-parenting evidence via PUT', () => {
     const bDetail = await getEvidence(cookie, 'op1', b.uuid);
     expect(bDetail.json().commentCount).toBe(1);
 
-    const comments = await getComments(cookie, 'op1', b.uuid);
+    const comments = await getLinkedEvidence(cookie, 'op1', b.uuid);
     expect(comments.json()).toHaveLength(1);
     expect(comments.json()[0].uuid).toBe(a.uuid);
   });
@@ -253,7 +285,7 @@ describe('re-parenting evidence via PUT', () => {
     const cDetail = await getEvidence(cookie, 'op1', c.uuid);
     expect(cDetail.json().commentCount).toBe(1);
 
-    const cComments = await getComments(cookie, 'op1', c.uuid);
+    const cComments = await getLinkedEvidence(cookie, 'op1', c.uuid);
     expect(cComments.json().map((e: { uuid: string }) => e.uuid)).toEqual([a.uuid]);
   });
 
@@ -365,5 +397,67 @@ describe('evidence content editing + last editor', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().hasContent).toBe(false);
     expect((await getContent(cookie, 'op1', created.uuid)).statusCode).toBe(404);
+  });
+});
+
+describe('evidence discussion comments (plain notes)', () => {
+  it('adds and lists a comment with its author', async () => {
+    const { cookie } = await setup();
+    const ev = (await createNote(cookie, 'op1', { content: 'body' })).json();
+
+    const res = await addComment(cookie, 'op1', ev.uuid, 'First note for the team.');
+    expect(res.statusCode).toBe(201);
+    const comment = res.json();
+    expect(comment.body).toBe('First note for the team.');
+    expect(comment.author).toMatchObject({ firstName: 'Wendy', lastName: 'Writer' });
+    expect(comment.edited).toBe(false);
+
+    const list = await listComments(cookie, 'op1', ev.uuid);
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toHaveLength(1);
+    expect(list.json()[0].uuid).toBe(comment.uuid);
+  });
+
+  it('lets the author edit and delete their own comment', async () => {
+    const { cookie } = await setup();
+    const ev = (await createNote(cookie, 'op1', { content: 'body' })).json();
+    const comment = (await addComment(cookie, 'op1', ev.uuid, 'draft')).json();
+
+    const edited = await editComment(cookie, 'op1', comment.uuid, 'revised');
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().body).toBe('revised');
+    expect(edited.json().edited).toBe(true);
+
+    const del = await deleteComment(cookie, 'op1', comment.uuid);
+    expect(del.statusCode).toBe(200);
+    expect((await listComments(cookie, 'op1', ev.uuid)).json()).toHaveLength(0);
+  });
+
+  it('forbids editing or deleting another user’s comment', async () => {
+    const { users, eng, cookie } = await setup();
+    const ev = (await createNote(cookie, 'op1', { content: 'body' })).json();
+    const comment = (await addComment(cookie, 'op1', ev.uuid, 'mine')).json();
+
+    await app.db.userEngagementRole.create({
+      data: { engagementId: eng.id, userId: users.admin.id, role: 'write' },
+    });
+    const adminCookie = await loginCookie(app, 'admin@test.local', 'password123');
+
+    expect((await editComment(adminCookie, 'op1', comment.uuid, 'hijack')).statusCode).toBe(403);
+    expect((await deleteComment(adminCookie, 'op1', comment.uuid)).statusCode).toBe(403);
+    expect((await listComments(cookie, 'op1', ev.uuid)).json()[0].body).toBe('mine');
+  });
+
+  it('deletes comments when their evidence is deleted', async () => {
+    const { cookie } = await setup();
+    const ev = (await createNote(cookie, 'op1', { content: 'body' })).json();
+    await addComment(cookie, 'op1', ev.uuid, 'note');
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/web/engagements/op1/evidence/${ev.uuid}`,
+      headers: { ...WEB_HEADERS, cookie },
+    });
+    expect(del.statusCode).toBe(200);
+    expect((await getEvidence(cookie, 'op1', ev.uuid)).statusCode).toBe(404);
   });
 });

@@ -2,14 +2,23 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { parseQuery, updateEvidenceInput } from '@reporter/shared';
+import {
+  createEvidenceCommentInput,
+  parseQuery,
+  updateEvidenceCommentInput,
+  updateEvidenceInput,
+} from '@reporter/shared';
 
 /** Evidence content types whose body is editable text (stored as a blob). */
 const EDITABLE_TEXT_TYPES = new Set(['none', 'event', 'codeblock', 'http-request-cycle']);
 import { requireAuth, requireEngagementRole, HttpError } from '../../auth/guards.js';
 import { parsePagination } from '../../helpers/pagination.js';
 import { createEvidence, listEvidence } from '../../services/evidence.js';
-import { evidenceInclude, serializeEvidence } from '../../services/serializers.js';
+import {
+  evidenceInclude,
+  serializeEvidence,
+  serializeEvidenceComment,
+} from '../../services/serializers.js';
 import { evidenceContentMime, parseEvidenceRequest } from '../shared-evidence.js';
 
 async function engagementBySlug(app: FastifyInstance, slug: string) {
@@ -144,10 +153,10 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // List the comments (linked evidence) attached to this piece of evidence,
+  // List the linked evidence (child evidence) attached to this piece of evidence,
   // oldest first — a chronological thread of follow-ups/updates.
   app.get(
-    '/engagements/:slug/evidence/:uuid/comments',
+    '/engagements/:slug/evidence/:uuid/linked-evidence',
     { preHandler: [requireAuth, requireEngagementRole('read')] },
     async (req) => {
       const { slug, uuid } = req.params as { slug: string; uuid: string };
@@ -157,12 +166,117 @@ export async function evidenceRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true },
       });
       if (!parent) throw new HttpError(404, 'Evidence not found');
-      const comments = await app.db.evidence.findMany({
+      const linked = await app.db.evidence.findMany({
         where: { parentEvidenceId: parent.id },
         include: evidenceInclude(req.authedUser!.id),
         orderBy: { occurredAt: 'asc' },
       });
-      return comments.map((c) => serializeEvidence(c, slug));
+      return linked.map((c) => serializeEvidence(c, slug));
+    },
+  );
+
+  // --- Plain-text comments (a discussion thread on the evidence) ---
+  const commentAuthorInclude = {
+    author: { select: { slug: true, firstName: true, lastName: true } },
+  } as const;
+
+  /** Resolve the evidence row (scoped to the engagement) or 404. */
+  async function evidenceOr404(engId: number, uuid: string) {
+    const ev = await app.db.evidence.findFirst({
+      where: { uuid, engagementId: engId },
+      select: { id: true },
+    });
+    if (!ev) throw new HttpError(404, 'Evidence not found');
+    return ev;
+  }
+
+  // List comments on a piece of evidence, oldest first.
+  app.get(
+    '/engagements/:slug/evidence/:uuid/comments',
+    { preHandler: [requireAuth, requireEngagementRole('read')] },
+    async (req) => {
+      const { slug, uuid } = req.params as { slug: string; uuid: string };
+      const eng = await engagementBySlug(app, slug);
+      const ev = await evidenceOr404(eng.id, uuid);
+      const comments = await app.db.evidenceComment.findMany({
+        where: { evidenceId: ev.id },
+        include: commentAuthorInclude,
+        orderBy: { createdAt: 'asc' },
+      });
+      return comments.map(serializeEvidenceComment);
+    },
+  );
+
+  // Add a comment (any writer).
+  app.post(
+    '/engagements/:slug/evidence/:uuid/comments',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
+    async (req, reply) => {
+      const { slug, uuid } = req.params as { slug: string; uuid: string };
+      const eng = await engagementBySlug(app, slug);
+      const ev = await evidenceOr404(eng.id, uuid);
+      const body = createEvidenceCommentInput.parse(req.body);
+      // Pin created == updated at insert so `edited` (updatedAt > createdAt) is a
+      // clean strict comparison — otherwise the tiny app/DB clock skew between the
+      // `@default(now())` and `@updatedAt` values could read as "edited".
+      const now = new Date();
+      const created = await app.db.evidenceComment.create({
+        data: {
+          evidenceId: ev.id,
+          authorId: req.authedUser!.id,
+          body: body.body,
+          createdAt: now,
+          updatedAt: now,
+        },
+        include: commentAuthorInclude,
+      });
+      reply.code(201);
+      return serializeEvidenceComment(created);
+    },
+  );
+
+  // Edit a comment — author only.
+  app.put(
+    '/engagements/:slug/evidence/comments/:commentUuid',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
+    async (req) => {
+      const { slug, commentUuid } = req.params as { slug: string; commentUuid: string };
+      const eng = await engagementBySlug(app, slug);
+      const body = updateEvidenceCommentInput.parse(req.body);
+      const existing = await app.db.evidenceComment.findFirst({
+        where: { uuid: commentUuid, evidence: { engagementId: eng.id } },
+        select: { id: true, authorId: true },
+      });
+      if (!existing) throw new HttpError(404, 'Comment not found');
+      if (existing.authorId !== req.authedUser!.id) {
+        throw new HttpError(403, 'You can only edit your own comments.');
+      }
+      const updated = await app.db.evidenceComment.update({
+        where: { id: existing.id },
+        data: { body: body.body },
+        include: commentAuthorInclude,
+      });
+      return serializeEvidenceComment(updated);
+    },
+  );
+
+  // Delete a comment — author only.
+  app.delete(
+    '/engagements/:slug/evidence/comments/:commentUuid',
+    { preHandler: [requireAuth, requireEngagementRole('write')] },
+    async (req) => {
+      const { slug, commentUuid } = req.params as { slug: string; commentUuid: string };
+      const eng = await engagementBySlug(app, slug);
+      const existing = await app.db.evidenceComment.findFirst({
+        where: { uuid: commentUuid, evidence: { engagementId: eng.id } },
+        select: { id: true, authorId: true },
+      });
+      if (!existing) throw new HttpError(404, 'Comment not found');
+      if (existing.authorId !== req.authedUser!.id) {
+        throw new HttpError(403, 'You can only delete your own comments.');
+      }
+      await app.db.evidenceComment.delete({ where: { id: existing.id } });
+      return { ok: true };
     },
   );
 

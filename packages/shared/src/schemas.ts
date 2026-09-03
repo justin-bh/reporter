@@ -826,6 +826,32 @@ export const updateEvidenceInput = z.object({
 });
 export type UpdateEvidenceInput = z.infer<typeof updateEvidenceInput>;
 
+/**
+ * A plain-text discussion comment on a piece of evidence (the user-facing
+ * "Comments" thread — distinct from linked evidence). Internal only; never
+ * appears in the exported report. `edited` is true once the body has been changed
+ * after posting.
+ */
+export const evidenceCommentSchema = z.object({
+  uuid: uuidSchema,
+  body: z.string(),
+  author: userSchema.pick({ slug: true, firstName: true, lastName: true }),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  edited: z.boolean(),
+});
+export type EvidenceComment = z.infer<typeof evidenceCommentSchema>;
+
+export const createEvidenceCommentInput = z.object({
+  body: z.string().min(1).max(20_000),
+});
+export type CreateEvidenceCommentInput = z.infer<typeof createEvidenceCommentInput>;
+
+export const updateEvidenceCommentInput = z.object({
+  body: z.string().min(1).max(20_000),
+});
+export type UpdateEvidenceCommentInput = z.infer<typeof updateEvidenceCommentInput>;
+
 export const createFindingInput = z.object({
   title: z.string().min(1).max(255),
   description: z.string().default(''),

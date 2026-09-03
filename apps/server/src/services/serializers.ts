@@ -1,6 +1,7 @@
 import type {
   ApiKey as DbApiKey,
   Evidence as DbEvidence,
+  EvidenceComment as DbEvidenceComment,
   EvidenceFinding as DbEvidenceFinding,
   Finding as DbFinding,
   FindingCategory,
@@ -14,6 +15,7 @@ import {
   reportConfigSchema,
   type ApiKey,
   type Evidence,
+  type EvidenceComment,
   type EngagementProgress,
   type FindingEvidence,
   type Finding,
@@ -174,6 +176,22 @@ export function serializeEvidence(e: EvidenceWithRelations, engagementSlug: stri
     parentEvidenceUuid: e.parent?.uuid ?? null,
     commentCount: e._count?.comments ?? 0,
     starred: e.userPrefs?.[0]?.isFavorite ?? false,
+  };
+}
+
+/** Serialize a plain-text evidence comment. `edited` is true once the body has
+ *  changed after posting; the create handler pins created == updated so this is a
+ *  clean strict comparison. */
+export function serializeEvidenceComment(
+  c: DbEvidenceComment & { author: Pick<DbUser, 'slug' | 'firstName' | 'lastName'> },
+): EvidenceComment {
+  return {
+    uuid: c.uuid,
+    body: c.body,
+    author: { slug: c.author.slug, firstName: c.author.firstName, lastName: c.author.lastName },
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+    edited: c.updatedAt.getTime() > c.createdAt.getTime(),
   };
 }
 

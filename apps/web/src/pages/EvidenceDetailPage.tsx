@@ -20,7 +20,7 @@ import {
   useCreateTag,
   useDeleteEvidence,
   useEvidence,
-  useEvidenceComments,
+  useLinkedEvidence,
   useTags,
   useUpdateEvidence,
 } from '../api/hooks.js';
@@ -28,6 +28,7 @@ import { READ_ONLY_TITLE, useEngagementPermissions } from '../lib/permissions.js
 import { EvidenceBody } from '../components/evidence/EvidenceBody.js';
 import { EvidenceMeta } from '../components/evidence/EvidenceMeta.js';
 import { EvidenceEntryRow } from '../components/evidence/EvidenceEntryRow.js';
+import { EvidenceCommentsCard } from '../components/evidence/EvidenceCommentsCard.js';
 import { CreateEvidenceModal } from '../components/evidence/CreateEvidenceModal.js';
 import { ReparentEvidenceModal } from '../components/evidence/ReparentEvidenceModal.js';
 import {
@@ -35,7 +36,6 @@ import {
   type DeleteEvidenceMode,
 } from '../components/evidence/DeleteEvidenceDialog.js';
 import { LinkedGoalsSection } from '../components/goals/LinkedGoalsSection.js';
-import { AccordionSection } from '../components/common/AccordionSection.js';
 
 interface EvidenceForm {
   title: string;
@@ -52,7 +52,7 @@ export function EvidenceDetailPage() {
   const { data: evidence, isLoading, isError, refetch } = useEvidence(slug, uuid);
   const { canWrite } = useEngagementPermissions(slug);
   const { data: tags } = useTags(slug);
-  const comments = useEvidenceComments(slug, uuid);
+  const linkedEvidence = useLinkedEvidence(slug, uuid);
   const update = useUpdateEvidence(slug);
   const del = useDeleteEvidence(slug);
   const createTag = useCreateTag(slug);
@@ -74,11 +74,9 @@ export function EvidenceDetailPage() {
       }
     : undefined;
 
-  // Accordion + deliberate-edit state. Details/Linked-goals collapse to a
-  // read-only view; expanding Details seeds an edit draft that only persists on an
-  // explicit Save (collapsing/Cancel discards).
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [goalsOpen, setGoalsOpen] = useState(false);
+  // Deliberate Details edit: an explicit Edit button seeds a draft; only Save
+  // persists it (Cancel discards). Mirrors the Content section's Edit → Save flow.
+  const [editingDetails, setEditingDetails] = useState(false);
   const [draft, setDraft] = useState<EvidenceForm>({ title: '', description: '', tagIds: [] });
   const [savingDetails, setSavingDetails] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -88,15 +86,14 @@ export function EvidenceDetailPage() {
   const [reparenting, setReparenting] = useState<null | 'attach' | 'move'>(null);
   const [linkBusy, setLinkBusy] = useState(false);
 
-  function openDetails(open: boolean) {
-    if (open && evidence) {
-      setDraft({
-        title: evidence.title,
-        description: evidence.description,
-        tagIds: evidence.tags.map((t) => t.id),
-      });
-    }
-    setDetailsOpen(open);
+  function startEditDetails() {
+    if (!evidence) return;
+    setDraft({
+      title: evidence.title,
+      description: evidence.description,
+      tagIds: evidence.tags.map((t) => t.id),
+    });
+    setEditingDetails(true);
   }
 
   async function saveDetails() {
@@ -108,14 +105,10 @@ export function EvidenceDetailPage() {
     try {
       await update.mutateAsync({
         uuid,
-        patch: {
-          title: draft.title.trim(),
-          description: draft.description,
-          tagIds: draft.tagIds,
-        },
+        patch: { title: draft.title.trim(), description: draft.description, tagIds: draft.tagIds },
       });
       toast.success('Details saved');
-      setDetailsOpen(false);
+      setEditingDetails(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save details');
     } finally {
@@ -128,9 +121,9 @@ export function EvidenceDetailPage() {
     return <ErrorState description="Couldn’t load this evidence." onRetry={() => refetch()} />;
   if (!evidence) return <p className="text-danger">Evidence not found.</p>;
 
-  // A comment is one level deep, so only top-level evidence hosts a comment thread.
+  // A comment is one level deep, so only top-level evidence hosts linked evidence.
   const isComment = evidence.parentEvidenceUuid !== null;
-  const commentList = comments.data ?? [];
+  const linkedList = linkedEvidence.data ?? [];
 
   // Attach (parent uuid) / move (new parent uuid) / detach (null) all funnel
   // through one PUT of `parentEvidenceUuid`.
@@ -141,18 +134,18 @@ export function EvidenceDetailPage() {
       await update.mutateAsync({ uuid, patch: { parentEvidenceUuid: target } });
       for (const p of [oldParent, target]) {
         if (p) {
-          qc.invalidateQueries({ queryKey: ['evidence-comments', slug, p] });
+          qc.invalidateQueries({ queryKey: ['linked-evidence', slug, p] });
           qc.invalidateQueries({ queryKey: ['evidence', slug, p] });
         }
       }
-      qc.invalidateQueries({ queryKey: ['evidence-comments', slug, uuid] });
+      qc.invalidateQueries({ queryKey: ['linked-evidence', slug, uuid] });
       setReparenting(null);
       toast.success(
         target === null
           ? 'Detached — now standalone evidence'
           : oldParent
             ? 'Moved to another evidence'
-            : 'Now a comment on the selected evidence',
+            : 'Now linked to the selected evidence',
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not update linking');
@@ -163,9 +156,9 @@ export function EvidenceDetailPage() {
 
   async function detach() {
     const ok = await confirm({
-      title: 'Detach this comment?',
+      title: 'Detach this evidence?',
       message:
-        'This comment will become a standalone, top-level piece of evidence. Its own comments (if any) stay attached to it.',
+        'This will become a standalone, top-level piece of evidence. Its own linked evidence (if any) stays attached to it.',
       confirmLabel: 'Detach',
     });
     if (ok) await reparent(null);
@@ -195,7 +188,7 @@ export function EvidenceDetailPage() {
             to={`/engagements/${slug}/evidence/${evidence.parentEvidenceUuid}`}
             className="text-accent hover:underline"
           >
-            ↳ This is a comment — view the evidence it’s linked to
+            ↳ This is linked evidence — view the evidence it’s attached to
           </Link>
           <div className="flex flex-none gap-2">
             <Button
@@ -223,17 +216,90 @@ export function EvidenceDetailPage() {
       )}
 
       <div className="mt-3 min-w-0 space-y-4">
-        {/* Meta header (type, capturer, when, last-edited, tags) — above content. */}
+        {/* Meta header (type, capturer, when, last-edited) — above content. */}
         <Card className="p-4">
           <EvidenceMeta evidence={evidence} />
         </Card>
 
-        {/* Details: collapsed = read-only; expand = deliberate edit. */}
-        <AccordionSection
-          title="Details"
-          open={detailsOpen}
-          onOpenChange={openDetails}
-          summary={
+        {/* Details — read-only with an explicit Edit button (like Content). */}
+        <Card className="space-y-3 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-text">Details</h3>
+            {!editingDetails ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={startEditDetails}
+                disabled={!canWrite}
+                title={canWrite ? undefined : READ_ONLY_TITLE}
+              >
+                Edit
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditingDetails(false)}
+                  disabled={savingDetails}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => void saveDetails()}
+                  loading={savingDetails}
+                  disabled={!canWrite || !draft.title.trim()}
+                >
+                  Save
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {editingDetails ? (
+            <div className="space-y-4">
+              <Field
+                label="Title"
+                htmlFor="d-title"
+                required
+                error={!draft.title.trim() ? 'A title is required.' : undefined}
+              >
+                <Input
+                  id="d-title"
+                  value={draft.title}
+                  onChange={(e) => setDraft((f) => ({ ...f, title: e.target.value }))}
+                  invalid={!draft.title.trim()}
+                />
+              </Field>
+              <Field label="Description" htmlFor="d-desc" hint="Optional">
+                <MarkdownField
+                  id="d-desc"
+                  rows={3}
+                  value={draft.description}
+                  onChange={(v) => setDraft((f) => ({ ...f, description: v }))}
+                />
+              </Field>
+              <Field label="Tags">
+                <TagPicker
+                  tags={tags ?? []}
+                  selectedIds={draft.tagIds}
+                  onChange={(tagIds) => setDraft((f) => ({ ...f, tagIds }))}
+                  onCreateTag={onCreateTag}
+                />
+              </Field>
+              <div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setDeleting(true)}
+                  loading={del.isPending}
+                >
+                  Delete evidence
+                </Button>
+              </div>
+            </div>
+          ) : (
             <div className="space-y-2">
               <p className="text-base font-semibold text-text">
                 {evidence.title || <span className="text-muted">Untitled</span>}
@@ -251,96 +317,25 @@ export function EvidenceDetailPage() {
                 </div>
               )}
             </div>
-          }
-        >
-          <div className="space-y-4">
-            <Field
-              label="Title"
-              htmlFor="d-title"
-              required
-              error={!draft.title.trim() ? 'A title is required.' : undefined}
-            >
-              <Input
-                id="d-title"
-                value={draft.title}
-                onChange={(e) => setDraft((f) => ({ ...f, title: e.target.value }))}
-                invalid={!draft.title.trim()}
-                disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              />
-            </Field>
-            <Field label="Description" htmlFor="d-desc" hint="Optional">
-              <MarkdownField
-                id="d-desc"
-                rows={3}
-                value={draft.description}
-                onChange={(v) => setDraft((f) => ({ ...f, description: v }))}
-                disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              />
-            </Field>
-            <Field label="Tags">
-              <TagPicker
-                tags={tags ?? []}
-                selectedIds={draft.tagIds}
-                onChange={(tagIds) => setDraft((f) => ({ ...f, tagIds }))}
-                onCreateTag={onCreateTag}
-                disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              />
-            </Field>
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => setDeleting(true)}
-                loading={del.isPending}
-                disabled={!canWrite}
-                title={canWrite ? undefined : READ_ONLY_TITLE}
-              >
-                Delete
-              </Button>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(false)} disabled={savingDetails}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => void saveDetails()}
-                  loading={savingDetails}
-                  disabled={!canWrite || !draft.title.trim()}
-                  title={canWrite ? undefined : READ_ONLY_TITLE}
-                >
-                  Save
-                </Button>
-              </div>
-            </div>
-          </div>
-        </AccordionSection>
+          )}
+        </Card>
 
-        {/* Linked goals: collapsed = read-only list; expand = add/unlink. */}
+        {/* Linked goals — list with Add to goal + a Remove on each goal. */}
         {!isComment && (
-          <AccordionSection
-            title="Linked goals"
-            open={goalsOpen}
-            onOpenChange={setGoalsOpen}
-            summary={
-              <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={false} bare />
-            }
-          >
-            <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} bare />
-          </AccordionSection>
+          <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
         )}
 
         {/* The evidence content — its own deliberate Edit → Save. */}
         <EvidenceBody slug={slug} evidence={evidence} canWrite={canWrite} />
 
+        {/* Plain-text discussion comments. */}
+        {!isComment && <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />}
+
+        {/* Linked evidence (child evidence attached as follow-ups). */}
         {!isComment && (
           <Card className="space-y-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-text">
-                Comments <span className="font-normal text-muted">(Linked Evidence)</span>
-              </h3>
+              <h3 className="text-sm font-semibold text-text">Linked evidence</h3>
               <div className="flex flex-none gap-2">
                 <Button
                   size="sm"
@@ -352,11 +347,11 @@ export function EvidenceDetailPage() {
                     !canWrite
                       ? READ_ONLY_TITLE
                       : evidence.commentCount > 0
-                        ? `Detach its ${evidence.commentCount} comment(s) first — comments are one level deep.`
+                        ? `Detach its ${evidence.commentCount} linked item(s) first — linking is one level deep.`
                         : undefined
                   }
                 >
-                  Make a comment on…
+                  Link to another evidence…
                 </Button>
                 <Button
                   size="sm"
@@ -365,19 +360,19 @@ export function EvidenceDetailPage() {
                   disabled={!canWrite}
                   title={canWrite ? undefined : READ_ONLY_TITLE}
                 >
-                  Add comment
+                  Add linked evidence
                 </Button>
               </div>
             </div>
-            {comments.isLoading ? (
+            {linkedEvidence.isLoading ? (
               <Spinner />
-            ) : commentList.length === 0 ? (
+            ) : linkedList.length === 0 ? (
               <p className="text-sm text-muted">
-                No comments yet. Add one to link related evidence or record an update on this item.
+                No linked evidence yet. Attach a related capture as a follow-up on this item.
               </p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {commentList.map((c) => (
+                {linkedList.map((c) => (
                   <EvidenceEntryRow key={c.uuid} slug={slug} ev={c} />
                 ))}
               </ul>
@@ -391,14 +386,14 @@ export function EvidenceDetailPage() {
         open={adding}
         onClose={() => setAdding(false)}
         parentEvidenceUuid={evidence.uuid}
-        title="Add comment"
+        title="Add linked evidence"
       />
       <ReparentEvidenceModal
         slug={slug}
         open={reparenting !== null}
         currentUuid={uuid}
-        title={reparenting === 'move' ? 'Move to…' : 'Make a comment on…'}
-        confirmLabel={reparenting === 'move' ? 'Move here' : 'Make a comment'}
+        title={reparenting === 'move' ? 'Move to…' : 'Link to…'}
+        confirmLabel={reparenting === 'move' ? 'Move here' : 'Link here'}
         busy={linkBusy}
         onPick={(target) => void reparent(target)}
         onClose={() => setReparenting(null)}
