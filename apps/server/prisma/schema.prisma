@@ -91,7 +91,9 @@ model User {
   roles        UserEngagementRole[]
   prefs        UserEngagementPref[]
   evidencePrefs UserEvidencePref[]
-  evidence     Evidence[]
+  evidence     Evidence[]         @relation("EvidenceOperator")
+  editedEvidence Evidence[]       @relation("EvidenceLastEditor")
+  evidenceComments EvidenceComment[]
   generatedReports GeneratedReport[]
 
   @@map("users")
@@ -486,11 +488,18 @@ model Evidence {
   occurredAt     DateTime @map("occurred_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
+  // Who last edited any field of this evidence (null until first edit). Distinct
+  // from `operatorId`, which is always the original capturer.
+  lastEditedById Int?     @map("last_edited_by_id")
 
   engagement Engagement          @relation(fields: [engagementId], references: [id], onDelete: Cascade)
-  operator  User               @relation(fields: [operatorId], references: [id])
+  operator  User               @relation("EvidenceOperator", fields: [operatorId], references: [id])
+  lastEditedBy User?            @relation("EvidenceLastEditor", fields: [lastEditedById], references: [id])
   parent    Evidence?          @relation("EvidenceComments", fields: [parentEvidenceId], references: [id], onDelete: SetNull)
   comments  Evidence[]         @relation("EvidenceComments")
+  // Plain-text discussion comments (the user-facing "Comments"), distinct from the
+  // `comments` self-relation above which models linked evidence.
+  commentThread EvidenceComment[]
   tags      EvidenceTag[]
   findings  EvidenceFinding[]
   metadata  EvidenceMetadata[]
@@ -500,6 +509,24 @@ model Evidence {
   @@index([engagementId, occurredAt])
   @@index([parentEvidenceId])
   @@map("evidence")
+}
+
+/// A plain-text discussion comment on a piece of evidence (the user-facing
+/// "Comments"). Internal notes only — never included in the exported report.
+model EvidenceComment {
+  id         Int      @id @default(autoincrement())
+  uuid       String   @unique @default(uuid())
+  evidenceId Int      @map("evidence_id")
+  authorId   Int      @map("author_id")
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id])
+
+  @@index([evidenceId, createdAt])
+  @@map("evidence_comments")
 }
 
 model EvidenceMetadata {

@@ -540,6 +540,10 @@ export const evidenceSchema = z.object({
   originalFilename: z.string().nullable().optional(),
   occurredAt: isoDateSchema,
   createdAt: isoDateSchema,
+  /** Last modification time; equals `createdAt` until the evidence is edited. */
+  updatedAt: isoDateSchema,
+  /** Who last edited this evidence (any field), or null if never edited since creation. */
+  lastEditedBy: userSchema.pick({ slug: true, firstName: true, lastName: true }).nullable(),
   tags: z.array(tagSchema),
   /** Present when the evidence has a stored blob (image/recording/har). */
   hasContent: z.boolean(),
@@ -813,8 +817,40 @@ export const updateEvidenceInput = z.object({
   occurredAt: isoDateSchema.optional(),
   tagIds: z.array(z.number().int().positive()).optional(),
   parentEvidenceUuid: uuidSchema.nullable().optional(),
+  /**
+   * New text body for editable text evidence (note/event/codeblock/http). Stored
+   * as the content blob, replacing the previous one; empty string clears it. Only
+   * valid for text content types — the server rejects it for image/recording.
+   */
+  content: z.string().optional(),
 });
 export type UpdateEvidenceInput = z.infer<typeof updateEvidenceInput>;
+
+/**
+ * A plain-text discussion comment on a piece of evidence (the user-facing
+ * "Comments" thread — distinct from linked evidence). Internal only; never
+ * appears in the exported report. `edited` is true once the body has been changed
+ * after posting.
+ */
+export const evidenceCommentSchema = z.object({
+  uuid: uuidSchema,
+  body: z.string(),
+  author: userSchema.pick({ slug: true, firstName: true, lastName: true }),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  edited: z.boolean(),
+});
+export type EvidenceComment = z.infer<typeof evidenceCommentSchema>;
+
+export const createEvidenceCommentInput = z.object({
+  body: z.string().min(1).max(20_000),
+});
+export type CreateEvidenceCommentInput = z.infer<typeof createEvidenceCommentInput>;
+
+export const updateEvidenceCommentInput = z.object({
+  body: z.string().min(1).max(20_000),
+});
+export type UpdateEvidenceCommentInput = z.infer<typeof updateEvidenceCommentInput>;
 
 export const createFindingInput = z.object({
   title: z.string().min(1).max(255),

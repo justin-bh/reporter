@@ -10,6 +10,21 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Comments on evidence** — a lightweight, plain-text discussion thread on each
+  piece of evidence, for internal notes (never shown in the exported report). Any
+  writer can post a markdown comment; authors can edit or delete their own (with an
+  "edited" marker). The old "Comments (Linked Evidence)" section is renamed to
+  **Linked evidence** to end the naming overlap, and the evidence Details / Linked
+  goals panels use an explicit **Edit** / **Add to goal** button (each linked goal
+  has a **Remove**) instead of the expand-to-edit accordion.
+- **Edit evidence content, deliberately** — notes, events, code blocks, and HTTP
+  requests can now have their body edited from the evidence detail page. Editing
+  is explicit: an **Edit** button unlocks the field and a dedicated **Save**
+  persists it (clicking away never saves), keeping the markdown Write/Preview (and
+  the HTTP field/value preview). Each item now shows a **"Last edited by &lt;operator&gt;"**
+  line, and the detail page's Details / Linked-goals panels moved above the content
+  as collapsible sections — collapsed shows the values read-only, expanding lets you
+  edit them.
 - **Assessment type on the Engagements dashboard** — each engagement's report
   **Assessment type** (e.g. "External Penetration Assessment") now shows on both
   the dashboard cards (as a subtitle under the engagement name) and the table

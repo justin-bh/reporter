@@ -9,7 +9,6 @@ import {
   useUnlinkGoalEvidence,
   useUnlinkGoalFinding,
 } from '../../api/hooks.js';
-import { READ_ONLY_TITLE } from '../../lib/permissions.js';
 import { GoalStatusDot } from './GoalStatusDot.js';
 import { GoalPickerModal } from './GoalPickerModal.js';
 
@@ -75,15 +74,11 @@ export function LinkedGoalsSection({
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-text">Linked goals</h3>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => setPicking(true)}
-          disabled={!canWrite}
-          title={canWrite ? undefined : READ_ONLY_TITLE}
-        >
-          Add to goal
-        </Button>
+        {canWrite && (
+          <Button size="sm" variant="secondary" onClick={() => setPicking(true)}>
+            Add to goal
+          </Button>
+        )}
       </div>
 
       {query.isLoading ? (
@@ -114,11 +109,10 @@ export function LinkedGoalsSection({
                 <button
                   type="button"
                   onClick={() => unlink(g.id)}
-                  aria-label={`Unlink ${g.title}`}
-                  title="Unlink"
-                  className="px-1 text-muted hover:text-danger"
+                  aria-label={`Remove ${g.title}`}
+                  className="shrink-0 text-xs font-medium text-muted hover:text-danger"
                 >
-                  ✕
+                  Remove
                 </button>
               )}
             </li>
