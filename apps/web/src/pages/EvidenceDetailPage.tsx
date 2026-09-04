@@ -324,18 +324,17 @@ export function EvidenceDetailPage() {
           )}
         </Card>
 
-        {/* Linked goals — list with Add to goal + a Remove on each goal. */}
-        {!isComment && (
-          <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
-        )}
+        {/* Linked goals — available on any evidence (including linked evidence). */}
+        <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
 
         {/* The evidence content — its own deliberate Edit → Save. */}
         <EvidenceBody slug={slug} evidence={evidence} canWrite={canWrite} />
 
-        {/* Plain-text discussion comments. */}
-        {!isComment && <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />}
+        {/* Plain-text discussion comments — available on any evidence. */}
+        <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />
 
-        {/* Linked evidence (child evidence attached as follow-ups). */}
+        {/* Linked evidence (child evidence). Hidden on a linked-evidence item —
+            linking is one level deep, so it can't host its own children. */}
         {!isComment && (
           <Card className="space-y-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
