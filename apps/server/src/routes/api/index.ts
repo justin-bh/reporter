@@ -90,7 +90,7 @@ export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // List evidence (filter query + pagination), same shape as the web timeline.
-  // Lets clients (desktop) pick an existing piece of evidence to comment on.
+  // Lets clients (desktop) pick an existing piece of evidence to link a capture to.
   app.get(
     '/engagements/:slug/evidence',
     { preHandler: requireEngagementRole('read') },

@@ -274,9 +274,9 @@ function registerIpc(): void {
     if (!client) return [];
     // Fetch the largest page the server allows (newest first); the picker lists
     // recent top-level evidence. Older items fall off — the web UI / reporter-term
-    // (--comment-on <uuid>) can still target any evidence by UUID.
+    // (--link-to <uuid>) can still target any evidence by UUID.
     const page = await client.listEvidence(slug, { pageSize: 250 });
-    // Only top-level evidence can host comments (linked evidence is one level deep).
+    // Only top-level evidence can host linked evidence (linking is one level deep).
     return page.items
       .filter((e) => e.parentEvidenceUuid === null)
       .map((e) => ({
