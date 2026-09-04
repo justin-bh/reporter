@@ -116,7 +116,7 @@ export class ReporterClient {
   /**
    * List evidence in an engagement, newest first — optionally filtered by a
    * timeline query string and paginated. Handy for picking a piece of evidence
-   * to attach a comment to.
+   * to link a new capture to.
    */
   listEvidence(
     engagementSlug: string,
@@ -136,7 +136,7 @@ export class ReporterClient {
   /**
    * Create a piece of evidence. `metadata` is sent as the JSON `notes` part;
    * `file` (when present) is the binary blob part (screenshot PNG, asciicast, …).
-   * Set `metadata.parentEvidenceUuid` to file it as a comment on existing evidence.
+   * Set `metadata.parentEvidenceUuid` to file it as linked evidence on an existing item.
    */
   createEvidence(
     engagementSlug: string,

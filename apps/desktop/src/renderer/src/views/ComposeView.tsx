@@ -21,7 +21,7 @@ import type { CaptureDraft, EngagementLite, EvidenceLite, TagLite } from '../../
 export type LeaveGuard = () => Promise<boolean>;
 
 /**
- * A human, identifiable label for an evidence item in the "Comment on" picker.
+ * A human, identifiable label for an evidence item in the "Link to" picker.
  * Prefers the title, then the description, then the friendly type name — never
  * the bare content-type — and appends a short timestamp so near-identical
  * captures (e.g. a burst of screenshots) can still be told apart.
@@ -302,12 +302,12 @@ export function ComposeView({
 
       {evidenceOptions.length > 0 && (
         <Field
-          label="Comment on"
-          htmlFor="comment-on"
-          hint="Optional — link this as a comment on recent evidence"
+          label="Link to"
+          htmlFor="link-to"
+          hint="Optional — file this as linked evidence on recent evidence"
         >
           <Select
-            id="comment-on"
+            id="link-to"
             value={parentEvidenceUuid}
             onChange={(e) => setParentEvidenceUuid(e.target.value)}
           >

@@ -9,7 +9,7 @@ export interface RecordingMeta {
   title: string;
   description: string;
   tagIds: number[];
-  /** When set, upload this recording as a comment on the given evidence. */
+  /** When set, upload this recording as linked evidence on the given evidence. */
   parentEvidenceUuid?: string;
 }
 

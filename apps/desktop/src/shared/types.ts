@@ -43,7 +43,7 @@ export interface QueueItem {
   description: string;
   tagIds: number[];
   occurredAt: string;
-  /** When set, upload this capture as a comment on the given evidence. */
+  /** When set, upload this capture as linked evidence on the given evidence. */
   parentEvidenceUuid?: string;
   status: QueueStatus;
   serverUuid?: string;
@@ -59,7 +59,7 @@ export interface EngagementLite {
   status: EngagementStatus;
 }
 
-/** A slim piece of existing evidence, for the "comment on" picker in Compose. */
+/** A slim piece of existing evidence, for the "Link to" picker in Compose. */
 export interface EvidenceLite {
   uuid: string;
   /** Primary heading for the evidence — what the picker shows. May be empty on

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import * as p from '@clack/prompts';
 import { uuidSchema } from '@reporter/shared';
 import { CONFIG_PATH, loadConfig, type TermConfig } from './config.js';
@@ -16,12 +16,12 @@ async function ensureConfig(): Promise<TermConfig | null> {
   return runWizard();
 }
 
-/** Validate the optional --comment-on evidence UUID, exiting on a bad value. */
-function resolveCommentOn(value: string | undefined): string | undefined {
+/** Validate the optional --link-to evidence UUID, exiting on a bad value. */
+function resolveLinkTo(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const parsed = uuidSchema.safeParse(value);
   if (!parsed.success) {
-    console.error(`${sym.err} --comment-on must be a valid evidence UUID`);
+    console.error(`${sym.err} --link-to must be a valid evidence UUID`);
     process.exit(1);
   }
   return parsed.data;
@@ -50,16 +50,18 @@ const program = new Command();
 program
   .name('reporter-term')
   .description('Record terminal sessions and upload them to reporter as evidence')
-  .version('0.8.0');
+  .version('0.9.0');
 
 program
   .command('record', { isDefault: true })
   .description('Record a terminal session (default)')
-  .option('--comment-on <uuid>', 'File this recording as a comment on existing evidence (UUID)')
-  .action(async (opts: { commentOn?: string }) => {
+  .option('--link-to <uuid>', 'File this recording as linked evidence on existing evidence (UUID)')
+  // Deprecated alias of --link-to, hidden from help but still accepted.
+  .addOption(new Option('--comment-on <uuid>').hideHelp())
+  .action(async (opts: { linkTo?: string; commentOn?: string }) => {
     const config = await ensureConfig();
     if (!config) return;
-    const parentEvidenceUuid = resolveCommentOn(opts.commentOn);
+    const parentEvidenceUuid = resolveLinkTo(opts.linkTo ?? opts.commentOn);
     console.log(`\n${banner()}`);
     console.log(c.muted('Recording — type "exit" or press Ctrl-D to stop.\n'));
     const outputPath = join(config.outputDir, `${timestamp()}.cast`);
@@ -96,11 +98,13 @@ program
   .command('upload <file>')
   .description('Upload a saved .cast recording')
   .option('--title <title>', 'Title for the evidence (skips the Title prompt)')
-  .option('--comment-on <uuid>', 'File this recording as a comment on existing evidence (UUID)')
-  .action(async (file: string, opts: { title?: string; commentOn?: string }) => {
+  .option('--link-to <uuid>', 'File this recording as linked evidence on existing evidence (UUID)')
+  // Deprecated alias of --link-to, hidden from help but still accepted.
+  .addOption(new Option('--comment-on <uuid>').hideHelp())
+  .action(async (file: string, opts: { title?: string; linkTo?: string; commentOn?: string }) => {
     const config = await ensureConfig();
     if (!config) return;
-    const parentEvidenceUuid = resolveCommentOn(opts.commentOn);
+    const parentEvidenceUuid = resolveLinkTo(opts.linkTo ?? opts.commentOn);
     const title = resolveTitle(opts.title);
     p.intro(banner());
     await promptAndUpload(config, file, parentEvidenceUuid, { title });

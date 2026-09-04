@@ -22,7 +22,7 @@ export interface SubmitPayload {
   filePath?: string;
   content?: string;
   contentSubtype?: string;
-  /** When set, file this capture as a comment on the given evidence. */
+  /** When set, file this capture as linked evidence on the given evidence. */
   parentEvidenceUuid?: string;
 }
 

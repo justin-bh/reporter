@@ -140,7 +140,7 @@ export async function promptAndUpload(
   const engagementSlug = await chooseEngagement(config);
   if (!engagementSlug) return false;
   if (parentEvidenceUuid) {
-    p.log.info(`Filing as a comment on evidence ${c.muted(parentEvidenceUuid)}`);
+    p.log.info(`Filing as linked evidence on ${c.muted(parentEvidenceUuid)}`);
   }
 
   // Title is required. Use the flag value when supplied non-interactively,
@@ -177,12 +177,12 @@ export async function promptAndUpload(
     return true;
   } catch (err) {
     spin.stop(`${sym.err} Upload failed: ${err instanceof Error ? err.message : String(err)}`);
-    // Preserve the comment link and title in the retry hint so a copied command
-    // re-files it as a comment (not new top-level evidence) and keeps the title.
-    const commentFlag = parentEvidenceUuid ? ` --comment-on ${parentEvidenceUuid}` : '';
+    // Preserve the evidence link and title in the retry hint so a copied command
+    // re-files it as linked evidence (not new top-level evidence) and keeps the title.
+    const linkFlag = parentEvidenceUuid ? ` --link-to ${parentEvidenceUuid}` : '';
     const titleFlag = ` --title "${title.replace(/"/g, '\\"')}"`;
     p.log.info(`Your recording is saved at ${c.accent(castPath)} — retry with:`);
-    p.log.info(`  ${c.muted(`reporter-term upload "${castPath}"${titleFlag}${commentFlag}`)}`);
+    p.log.info(`  ${c.muted(`reporter-term upload "${castPath}"${titleFlag}${linkFlag}`)}`);
     return false;
   }
 }

@@ -8,6 +8,8 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-04
+
 ### Added
 
 - **Comments on evidence** — a lightweight, plain-text discussion thread on each
@@ -48,6 +50,16 @@ with `pnpm run version:bump <major|minor|patch>`.
   configurator, **Show timestamps** and **Show operator** (both off by default)
   control whether each evidence item's capture time and operator name appear
   anywhere in the generated report. Saved with the engagement's report config.
+
+### Changed
+
+- **Desktop & terminal apps say "linked evidence", not "comment".** To match the
+  web app's renamed **Linked evidence** section, the desktop capture app's
+  **Comment on** picker is now **Link to**, and `reporter-term`'s
+  `--comment-on <uuid>` flag is renamed to **`--link-to <uuid>`** (the old flag
+  keeps working as a hidden, deprecated alias). Upload log lines, retry hints, and
+  the client-API docs use "linked evidence" throughout. The underlying
+  `parentEvidenceUuid` wire field is unchanged.
 
 ### Fixed
 
