@@ -299,16 +299,6 @@ export function EvidenceDetailPage() {
                   onCreateTag={onCreateTag}
                 />
               </Field>
-              <div>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => setDeleting(true)}
-                  loading={del.isPending}
-                >
-                  Delete evidence
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="space-y-2">
@@ -386,6 +376,35 @@ export function EvidenceDetailPage() {
                 ))}
               </ul>
             )}
+          </Card>
+        )}
+
+        {/* Danger zone — deletion lives on its own at the very bottom, deliberately
+            separated from the Details edit flow, mirroring the engagement settings
+            Danger zone. The confirm step is the DeleteEvidenceDialog below. */}
+        {canWrite && (
+          <Card className="space-y-4 border-danger/40 p-4">
+            <h3 className="text-sm font-semibold text-danger">Danger zone</h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-text">Delete this evidence</p>
+                <p className="text-sm text-muted">
+                  Permanently removes this evidence and its content, comments, and goal links.{' '}
+                  {evidence.commentCount > 0
+                    ? `You’ll choose what happens to its ${evidence.commentCount} linked item(s). `
+                    : ''}
+                  This cannot be undone.
+                </p>
+              </div>
+              <Button
+                variant="danger"
+                onClick={() => setDeleting(true)}
+                loading={del.isPending}
+                className="shrink-0"
+              >
+                Delete evidence
+              </Button>
+            </div>
           </Card>
         )}
       </div>

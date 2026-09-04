@@ -8,6 +8,15 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ## [Unreleased]
 
+### Changed
+
+- **"Delete evidence" moved to a Danger zone.** Deleting a piece of evidence is no
+  longer tucked inside the Details **Edit** form — it now lives in its own **Danger
+  zone** card at the very bottom of the evidence detail page (red border, red
+  heading, description of what's removed), matching the engagement settings Danger
+  zone. Deletion still runs through the existing confirmation dialog (which, for an
+  item with linked evidence, lets you keep or cascade its children).
+
 ## [0.9.0] - 2026-09-04
 
 ### Added
