@@ -10,6 +10,9 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Changed
 
+- **"Linked evidence" now sits directly under "Linked goals"** on the evidence
+  detail page, instead of below the Content and Comments sections — grouping the
+  two linking panels together near the top.
 - **"Delete evidence" moved to a Danger zone.** Deleting a piece of evidence is no
   longer tucked inside the Details **Edit** form — it now lives in its own **Danger
   zone** card at the very bottom of the evidence detail page (red border, red

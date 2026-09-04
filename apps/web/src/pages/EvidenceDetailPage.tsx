@@ -323,12 +323,6 @@ export function EvidenceDetailPage() {
         {/* Linked goals — available on any evidence (including linked evidence). */}
         <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
 
-        {/* The evidence content — its own deliberate Edit → Save. */}
-        <EvidenceBody slug={slug} evidence={evidence} canWrite={canWrite} />
-
-        {/* Plain-text discussion comments — available on any evidence. */}
-        <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />
-
         {/* Linked evidence (child evidence). Hidden on a linked-evidence item —
             linking is one level deep, so it can't host its own children. */}
         {!isComment && (
@@ -378,6 +372,12 @@ export function EvidenceDetailPage() {
             )}
           </Card>
         )}
+
+        {/* The evidence content — its own deliberate Edit → Save. */}
+        <EvidenceBody slug={slug} evidence={evidence} canWrite={canWrite} />
+
+        {/* Plain-text discussion comments — available on any evidence. */}
+        <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />
 
         {/* Danger zone — deletion lives on its own at the very bottom, deliberately
             separated from the Details edit flow, mirroring the engagement settings
