@@ -438,6 +438,15 @@ function RecommendationsEditor({
   onChange: (v: RecommendationItem[]) => void;
   findings: Finding[];
 }) {
+  // Coverage: which weaknesses are addressed by at least one recommendation.
+  const weaknesses = findings.filter((f) => f.kind === 'weakness');
+  const covered = new Set(items.flatMap((i) => i.findingUuids ?? []));
+  const uncovered = weaknesses.filter((f) => !covered.has(f.uuid));
+  const coveredCount = weaknesses.length - uncovered.length;
+  // Quick-add: a new recommendation pre-linked to this finding (title it below).
+  const addFor = (findingUuid: string) =>
+    onChange([...items, { title: '', description: '', findingUuids: [findingUuid] }]);
+
   return (
     <SectionCard
       id={id}
@@ -445,6 +454,36 @@ function RecommendationsEditor({
       title="Strategic recommendations"
       hint="High-level guidance, numbered R1, R2, … in the report. Each must be linked to the finding(s) it addresses."
     >
+      {weaknesses.length > 0 && (
+        <div className="space-y-2 rounded-input border border-border bg-surface-2 p-3">
+          <p className="text-xs font-medium text-text">
+            Coverage — {coveredCount}/{weaknesses.length} weaknesses have a strategic recommendation
+          </p>
+          {uncovered.length === 0 ? (
+            <p className="text-xs text-muted">Every weakness is linked to a recommendation.</p>
+          ) : (
+            <ul className="space-y-1">
+              {uncovered.map((f) => (
+                <li key={f.uuid} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-sm text-muted">
+                    {f.title || '(untitled finding)'}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => addFor(f.uuid)}
+                    disabled={disabled}
+                    title={disabled ? disabledTitle : 'Add a recommendation linked to this finding'}
+                  >
+                    Add
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <RepeatableList
         items={items}
         onChange={onChange}
