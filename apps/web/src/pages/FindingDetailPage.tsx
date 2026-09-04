@@ -38,6 +38,7 @@ import { EvidencePickerModal } from '../components/findings/EvidencePickerModal.
 import { CategorySelect } from '../components/findings/CategorySelect.js';
 import { StandardsPicker } from '../components/findings/StandardsPicker.js';
 import { LinkedGoalsSection } from '../components/goals/LinkedGoalsSection.js';
+import { FindingRecommendations } from '../components/findings/FindingRecommendations.js';
 
 interface FindingForm {
   kind: FindingKind;
@@ -62,7 +63,7 @@ export function FindingDetailPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const { data: finding, isLoading } = useFinding(slug, uuid);
-  const { canWrite } = useEngagementPermissions(slug);
+  const { canWrite, canAdmin } = useEngagementPermissions(slug);
   const update = useUpdateFinding(slug, uuid);
   const del = useDeleteFinding(slug);
   // Which bucket the picker attaches into, or null when closed.
@@ -434,6 +435,8 @@ export function FindingDetailPage() {
           {canWrite && <SaveStatusIndicator status={status} />}
         </div>
       </Card>
+
+      <FindingRecommendations slug={slug} findingUuid={uuid} canAdmin={canAdmin} />
 
       <LinkedGoalsSection slug={slug} kind="finding" uuid={uuid} canWrite={canWrite} />
 

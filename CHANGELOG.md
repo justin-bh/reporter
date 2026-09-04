@@ -12,6 +12,15 @@ with `pnpm run version:bump <major|minor|patch>`.
 
 ### Added
 
+- **Strategic recommendations from a finding** — the finding detail page gains a
+  **Strategic recommendations** section where an engagement admin can add a new
+  program-level recommendation (auto-linked to the finding) or link an existing
+  one, and unlink. These are the same engagement-level R1/R2… recommendations that
+  appear in Reports → Content, so the two stay in sync. The finding's own
+  **Remediation** field is unchanged — the two are distinct. Reports → Content now
+  shows a **coverage** summary at the top of Strategic recommendations ("N/M
+  weaknesses have a strategic recommendation") that lists any uncovered weakness
+  with a one-click **Add**.
 - **Comments on evidence** — a lightweight, plain-text discussion thread on each
   piece of evidence, for internal notes (never shown in the exported report). Any
   writer can post a markdown comment; authors can edit or delete their own (with an
