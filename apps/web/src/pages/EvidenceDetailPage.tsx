@@ -53,6 +53,9 @@ export function EvidenceDetailPage() {
   const { canWrite } = useEngagementPermissions(slug);
   const { data: tags } = useTags(slug);
   const linkedEvidence = useLinkedEvidence(slug, uuid);
+  // The parent this item is linked to (only fetched when it's linked evidence),
+  // so the banner can name it.
+  const { data: parentEvidence } = useEvidence(slug, evidence?.parentEvidenceUuid ?? '');
   const update = useUpdateEvidence(slug);
   const del = useDeleteEvidence(slug);
   const createTag = useCreateTag(slug);
@@ -189,12 +192,15 @@ export function EvidenceDetailPage() {
 
       {isComment && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-surface-2 px-4 py-2 text-sm">
-          <Link
-            to={`/engagements/${slug}/evidence/${evidence.parentEvidenceUuid}`}
-            className="text-accent hover:underline"
-          >
-            ↳ This is linked evidence — view the evidence it’s attached to
-          </Link>
+          <p className="min-w-0 text-muted">
+            <span aria-hidden="true">↳</span> Linked evidence — attached to{' '}
+            <Link
+              to={`/engagements/${slug}/evidence/${evidence.parentEvidenceUuid}`}
+              className="font-medium text-accent hover:underline"
+            >
+              {parentEvidence ? `“${parentEvidence.title}”` : 'the linked evidence'}
+            </Link>
+          </p>
           <div className="flex flex-none gap-2">
             <Button
               size="sm"
@@ -324,18 +330,17 @@ export function EvidenceDetailPage() {
           )}
         </Card>
 
-        {/* Linked goals — list with Add to goal + a Remove on each goal. */}
-        {!isComment && (
-          <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
-        )}
+        {/* Linked goals — available on any evidence (including linked evidence). */}
+        <LinkedGoalsSection slug={slug} kind="evidence" uuid={uuid} canWrite={canWrite} />
 
         {/* The evidence content — its own deliberate Edit → Save. */}
         <EvidenceBody slug={slug} evidence={evidence} canWrite={canWrite} />
 
-        {/* Plain-text discussion comments. */}
-        {!isComment && <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />}
+        {/* Plain-text discussion comments — available on any evidence. */}
+        <EvidenceCommentsCard slug={slug} uuid={uuid} canWrite={canWrite} />
 
-        {/* Linked evidence (child evidence attached as follow-ups). */}
+        {/* Linked evidence (child evidence). Hidden on a linked-evidence item —
+            linking is one level deep, so it can't host its own children. */}
         {!isComment && (
           <Card className="space-y-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">

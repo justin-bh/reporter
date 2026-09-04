@@ -74,17 +74,17 @@ export function EvidenceEntryRow({ slug, ev }: { slug: string; ev: Evidence }) {
             {ev.parentEvidenceUuid && (
               <span
                 className="inline-flex items-center gap-1"
-                title="Comment linked to another piece of evidence"
+                title="Linked evidence — attached to another piece of evidence"
               >
-                <span aria-hidden>↳</span> comment
+                <span aria-hidden>↳</span> linked evidence
               </span>
             )}
             {ev.commentCount > 0 && (
               <span
                 className="inline-flex items-center gap-1"
-                title={`${ev.commentCount} ${ev.commentCount === 1 ? 'comment' : 'comments'}`}
+                title={`${ev.commentCount} linked ${ev.commentCount === 1 ? 'item' : 'items'}`}
               >
-                <span aria-hidden>💬</span> {ev.commentCount}
+                <span aria-hidden>🔗</span> {ev.commentCount}
               </span>
             )}
             {ev.tags.slice(0, 4).map((t) => (
